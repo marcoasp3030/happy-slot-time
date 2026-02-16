@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
     // Get all active notification rules across all companies
     const { data: rules, error: rulesErr } = await supabase
       .from("notification_rules")
-      .select("*, whatsapp_settings:company_id(base_url, instance_id, token, active)")
+      .select("*")
       .eq("active", true);
 
     if (rulesErr) {
