@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import { MessageSquare, Send, Settings } from 'lucide-react';
+import { MessageSquare, Send, Settings, Wifi, Bell } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function WhatsAppSettings() {
@@ -85,62 +85,99 @@ export default function WhatsAppSettings() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">WhatsApp (UAZAPI)</h1>
-          <p className="text-muted-foreground">Configure a integração com WhatsApp</p>
+        <div className="section-header">
+          <h1 className="section-title">WhatsApp (UAZAPI)</h1>
+          <p className="section-subtitle">Configure a integração com WhatsApp</p>
         </div>
 
-        <Card className="glass-card">
-          <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Settings className="h-5 w-5" /> Credenciais UAZAPI</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div><Label>URL Base</Label><Input value={settings.base_url} onChange={(e) => setSettings({ ...settings, base_url: e.target.value })} placeholder="https://api.uazapi.com" /></div>
-              <div><Label>ID da Instância</Label><Input value={settings.instance_id} onChange={(e) => setSettings({ ...settings, instance_id: e.target.value })} placeholder="sua-instancia" /></div>
-              <div><Label>Token/API Key</Label><Input type="password" value={settings.token} onChange={(e) => setSettings({ ...settings, token: e.target.value })} placeholder="Seu token" /></div>
-              <div><Label>Número de envio</Label><Input value={settings.from_number} onChange={(e) => setSettings({ ...settings, from_number: e.target.value })} placeholder="5511999999999" /></div>
+        {/* Credentials */}
+        <Card className="glass-card-static rounded-2xl">
+          <CardHeader className="px-4 sm:px-6">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Wifi className="h-4.5 w-4.5 text-primary" />
+              Credenciais UAZAPI
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 sm:px-6 space-y-4">
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-sm font-semibold">URL Base</Label>
+                <Input value={settings.base_url} onChange={(e) => setSettings({ ...settings, base_url: e.target.value })} placeholder="https://api.uazapi.com" className="h-10" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-semibold">ID da Instância</Label>
+                <Input value={settings.instance_id} onChange={(e) => setSettings({ ...settings, instance_id: e.target.value })} placeholder="sua-instancia" className="h-10" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-semibold">Token/API Key</Label>
+                <Input type="password" value={settings.token} onChange={(e) => setSettings({ ...settings, token: e.target.value })} placeholder="Seu token" className="h-10" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-semibold">Número de envio</Label>
+                <Input value={settings.from_number} onChange={(e) => setSettings({ ...settings, from_number: e.target.value })} placeholder="5511999999999" className="h-10" />
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <Switch checked={settings.active} onCheckedChange={(v) => setSettings({ ...settings, active: v })} />
-              <Label>Integração ativa</Label>
+              <Label className="font-medium">Integração ativa</Label>
             </div>
-            <div className="flex gap-3">
-              <Button onClick={saveSettings}>Salvar</Button>
-              <div className="flex items-center gap-2">
-                <Input value={testPhone} onChange={(e) => setTestPhone(e.target.value)} placeholder="Nº para teste" className="w-[180px]" />
-                <Button variant="outline" onClick={testConnection}><Send className="h-4 w-4 mr-1" />Testar</Button>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button onClick={saveSettings} className="gradient-primary border-0 font-semibold">Salvar</Button>
+              <div className="flex items-center gap-2 flex-1">
+                <Input value={testPhone} onChange={(e) => setTestPhone(e.target.value)} placeholder="Nº para teste" className="flex-1 sm:max-w-[200px] h-10" />
+                <Button variant="outline" onClick={testConnection} className="flex-shrink-0">
+                  <Send className="h-4 w-4 mr-1.5" />Testar
+                </Button>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="glass-card">
-          <CardHeader><CardTitle className="text-lg flex items-center gap-2"><MessageSquare className="h-5 w-5" /> Templates de Mensagem</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-xs text-muted-foreground">
+        {/* Templates */}
+        <Card className="glass-card-static rounded-2xl">
+          <CardHeader className="px-4 sm:px-6">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <MessageSquare className="h-4.5 w-4.5 text-primary" />
+              Templates de Mensagem
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 sm:px-6 space-y-4">
+            <p className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-xl font-mono leading-relaxed">
               Placeholders: {'{{cliente_nome}}'} {'{{data}}'} {'{{hora}}'} {'{{servico}}'} {'{{empresa_nome}}'}
             </p>
             {templates.map((t) => (
-              <div key={t.id} className="space-y-1">
-                <Label>{typeLabels[t.type] || t.type}</Label>
+              <div key={t.id} className="space-y-1.5">
+                <Label className="font-semibold text-sm">{typeLabels[t.type] || t.type}</Label>
                 <Textarea
                   defaultValue={t.template}
                   onBlur={(e) => updateTemplate(t.id, e.target.value)}
-                  rows={2}
+                  rows={3}
+                  className="text-sm"
                 />
               </div>
             ))}
           </CardContent>
         </Card>
 
-        <Card className="glass-card">
-          <CardHeader><CardTitle className="text-lg">Regras de Notificação</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
+        {/* Notification rules */}
+        <Card className="glass-card-static rounded-2xl">
+          <CardHeader className="px-4 sm:px-6">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Bell className="h-4.5 w-4.5 text-primary" />
+              Regras de Notificação
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 sm:px-6 space-y-4">
             {rules.map((r) => (
-              <div key={r.id} className="flex items-center gap-4">
-                <Label className="w-24">{ruleLabels[r.type] || r.type}</Label>
-                <Switch checked={r.active} onCheckedChange={(v) => updateRule(r.id, 'active', v)} />
-                <Input type="number" value={r.minutes_before} onChange={(e) => updateRule(r.id, 'minutes_before', parseInt(e.target.value))} className="w-24" />
-                <span className="text-sm text-muted-foreground">min antes</span>
+              <div key={r.id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-2 border-b border-border/40 last:border-0">
+                <div className="flex items-center justify-between sm:justify-start gap-3 sm:w-36">
+                  <Label className="font-semibold text-sm">{ruleLabels[r.type] || r.type}</Label>
+                  <Switch checked={r.active} onCheckedChange={(v) => updateRule(r.id, 'active', v)} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input type="number" value={r.minutes_before} onChange={(e) => updateRule(r.id, 'minutes_before', parseInt(e.target.value))} className="w-20 h-9 text-sm" />
+                  <span className="text-sm text-muted-foreground">min antes</span>
+                </div>
               </div>
             ))}
           </CardContent>
