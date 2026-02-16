@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import DashboardLayout from '@/components/DashboardLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -98,45 +98,47 @@ export default function Services() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Serviços</h1>
-            <p className="text-muted-foreground">Gerencie os serviços oferecidos</p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="section-header mb-0">
+            <h1 className="section-title">Serviços</h1>
+            <p className="section-subtitle">Gerencie os serviços oferecidos</p>
           </div>
-          <Button onClick={openNew}>
+          <Button onClick={openNew} className="gradient-primary border-0 font-semibold self-start sm:self-auto">
             <Plus className="h-4 w-4 mr-2" />
             Novo serviço
           </Button>
         </div>
 
         {services.length === 0 ? (
-          <Card className="glass-card">
+          <Card className="glass-card-static rounded-2xl">
             <CardContent className="py-12 text-center">
-              <p className="text-muted-foreground">Nenhum serviço cadastrado</p>
-              <Button className="mt-4" onClick={openNew}>Criar primeiro serviço</Button>
+              <p className="text-muted-foreground font-medium">Nenhum serviço cadastrado</p>
+              <Button className="mt-4 gradient-primary border-0" onClick={openNew}>Criar primeiro serviço</Button>
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             {services.map((s) => (
-              <Card key={s.id} className={`glass-card transition-all ${!s.active ? 'opacity-50' : ''}`}>
+              <Card key={s.id} className={`glass-card rounded-2xl transition-all ${!s.active ? 'opacity-50' : ''}`}>
                 <CardContent className="p-5">
                   <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="h-3 w-3 rounded-full" style={{ backgroundColor: s.color || '#10b981' }} />
-                      <h3 className="font-semibold">{s.name}</h3>
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="h-3.5 w-3.5 rounded-full flex-shrink-0" style={{ backgroundColor: s.color || '#10b981' }} />
+                      <h3 className="font-bold text-sm truncate">{s.name}</h3>
                     </div>
                     <Switch checked={s.active} onCheckedChange={() => handleToggle(s)} />
                   </div>
-                  <p className="text-sm text-muted-foreground mb-1">{s.duration} min</p>
-                  {s.price && <p className="text-sm font-medium">R$ {Number(s.price).toFixed(2)}</p>}
-                  {s.description && <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{s.description}</p>}
-                  <div className="flex gap-2 mt-4">
-                    <Button size="sm" variant="outline" onClick={() => openEdit(s)}>
-                      <Pencil className="h-3.5 w-3.5 mr-1" /> Editar
+                  <div className="space-y-0.5 mb-3">
+                    <p className="text-sm text-muted-foreground">{s.duration} min</p>
+                    {s.price && <p className="text-sm font-semibold">R$ {Number(s.price).toFixed(2)}</p>}
+                  </div>
+                  {s.description && <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{s.description}</p>}
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => openEdit(s)} className="text-xs h-8">
+                      <Pencil className="h-3 w-3 mr-1" /> Editar
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => handleDelete(s.id)} className="text-destructive hover:text-destructive">
-                      <Trash2 className="h-3.5 w-3.5" />
+                    <Button size="sm" variant="outline" onClick={() => handleDelete(s.id)} className="text-xs h-8 text-destructive hover:text-destructive">
+                      <Trash2 className="h-3 w-3" />
                     </Button>
                   </div>
                 </CardContent>
@@ -146,19 +148,36 @@ export default function Services() {
         )}
 
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogContent>
+          <DialogContent className="max-w-[95vw] sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>{editing ? 'Editar serviço' : 'Novo serviço'}</DialogTitle>
+              <DialogTitle className="font-bold">{editing ? 'Editar serviço' : 'Novo serviço'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              <div><Label>Nome *</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Ex: Corte feminino" /></div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><Label>Duração (min)</Label><Input type="number" value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} /></div>
-                <div><Label>Preço (R$)</Label><Input type="number" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="Opcional" /></div>
+              <div className="space-y-1.5">
+                <Label className="font-semibold text-sm">Nome *</Label>
+                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Ex: Corte feminino" className="h-10" />
               </div>
-              <div><Label>Descrição</Label><Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Opcional" /></div>
-              <div><Label>Cor</Label><Input type="color" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} className="h-10 w-20" /></div>
-              <Button onClick={handleSave} className="w-full">{editing ? 'Salvar' : 'Criar serviço'}</Button>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="font-semibold text-sm">Duração (min)</Label>
+                  <Input type="number" value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} className="h-10" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="font-semibold text-sm">Preço (R$)</Label>
+                  <Input type="number" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="Opcional" className="h-10" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="font-semibold text-sm">Descrição</Label>
+                <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Opcional" className="h-10" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="font-semibold text-sm">Cor</Label>
+                <Input type="color" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} className="h-10 w-20 p-1 cursor-pointer" />
+              </div>
+              <Button onClick={handleSave} className="w-full gradient-primary border-0 font-semibold h-10">
+                {editing ? 'Salvar' : 'Criar serviço'}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
+import { Clock, Settings } from 'lucide-react';
 
 const dayNames = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
@@ -47,49 +48,62 @@ export default function BusinessHours() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">Horários</h1>
-          <p className="text-muted-foreground">Configure horários de funcionamento e regras</p>
+        <div className="section-header">
+          <h1 className="section-title">Horários</h1>
+          <p className="section-subtitle">Configure horários de funcionamento e regras</p>
         </div>
 
-        <Card className="glass-card">
-          <CardHeader><CardTitle className="text-lg">Horários de Funcionamento</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
+        <Card className="glass-card-static rounded-2xl">
+          <CardHeader className="px-4 sm:px-6">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Clock className="h-4.5 w-4.5 text-primary" />
+              Horários de Funcionamento
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 sm:px-6 space-y-3">
             {hours.map((h) => (
-              <div key={h.id} className="flex items-center gap-4 flex-wrap">
-                <div className="w-24 font-medium text-sm">{dayNames[h.day_of_week]}</div>
-                <Switch checked={h.is_open} onCheckedChange={(v) => updateHour(h.id, 'is_open', v)} />
-                {h.is_open && (
-                  <>
-                    <Input type="time" value={h.open_time?.slice(0, 5)} onChange={(e) => updateHour(h.id, 'open_time', e.target.value)} className="w-[120px]" />
-                    <span className="text-muted-foreground">até</span>
-                    <Input type="time" value={h.close_time?.slice(0, 5)} onChange={(e) => updateHour(h.id, 'close_time', e.target.value)} className="w-[120px]" />
-                  </>
+              <div key={h.id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-2 border-b border-border/40 last:border-0">
+                <div className="flex items-center justify-between sm:justify-start gap-3 sm:w-40">
+                  <span className="font-medium text-sm">{dayNames[h.day_of_week]}</span>
+                  <Switch checked={h.is_open} onCheckedChange={(v) => updateHour(h.id, 'is_open', v)} />
+                </div>
+                {h.is_open ? (
+                  <div className="flex items-center gap-2 pl-0 sm:pl-0">
+                    <Input type="time" value={h.open_time?.slice(0, 5)} onChange={(e) => updateHour(h.id, 'open_time', e.target.value)} className="w-[110px] h-9 text-sm" />
+                    <span className="text-muted-foreground text-sm">até</span>
+                    <Input type="time" value={h.close_time?.slice(0, 5)} onChange={(e) => updateHour(h.id, 'close_time', e.target.value)} className="w-[110px] h-9 text-sm" />
+                  </div>
+                ) : (
+                  <span className="text-sm text-muted-foreground italic">Fechado</span>
                 )}
-                {!h.is_open && <span className="text-sm text-muted-foreground">Fechado</span>}
               </div>
             ))}
           </CardContent>
         </Card>
 
-        <Card className="glass-card">
-          <CardHeader><CardTitle className="text-lg">Regras de Agendamento</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div>
-                <Label>Intervalo entre horários (min)</Label>
-                <Input type="number" value={settings.slot_interval} onChange={(e) => setSettings({ ...settings, slot_interval: parseInt(e.target.value) || 30 })} />
+        <Card className="glass-card-static rounded-2xl">
+          <CardHeader className="px-4 sm:px-6">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Settings className="h-4.5 w-4.5 text-primary" />
+              Regras de Agendamento
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 sm:px-6 space-y-4">
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label className="text-sm font-semibold">Intervalo entre horários (min)</Label>
+                <Input type="number" value={settings.slot_interval} onChange={(e) => setSettings({ ...settings, slot_interval: parseInt(e.target.value) || 30 })} className="h-10" />
               </div>
-              <div>
-                <Label>Antecedência mínima (horas)</Label>
-                <Input type="number" value={settings.min_advance_hours} onChange={(e) => setSettings({ ...settings, min_advance_hours: parseInt(e.target.value) || 2 })} />
+              <div className="space-y-1.5">
+                <Label className="text-sm font-semibold">Antecedência mínima (horas)</Label>
+                <Input type="number" value={settings.min_advance_hours} onChange={(e) => setSettings({ ...settings, min_advance_hours: parseInt(e.target.value) || 2 })} className="h-10" />
               </div>
-              <div>
-                <Label>Capacidade por horário</Label>
-                <Input type="number" value={settings.max_capacity_per_slot} onChange={(e) => setSettings({ ...settings, max_capacity_per_slot: parseInt(e.target.value) || 1 })} />
+              <div className="space-y-1.5">
+                <Label className="text-sm font-semibold">Capacidade por horário</Label>
+                <Input type="number" value={settings.max_capacity_per_slot} onChange={(e) => setSettings({ ...settings, max_capacity_per_slot: parseInt(e.target.value) || 1 })} className="h-10" />
               </div>
             </div>
-            <Button onClick={saveSettings}>Salvar configurações</Button>
+            <Button onClick={saveSettings} className="gradient-primary border-0 font-semibold">Salvar configurações</Button>
           </CardContent>
         </Card>
       </div>

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
+import { Calendar, Filter } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Appointments() {
@@ -50,17 +51,26 @@ export default function Appointments() {
     completed: 'status-completed', rescheduled: 'status-pending', no_show: 'status-canceled',
   };
 
+  const formatDate = (dateStr: string) => {
+    const [y, m, d] = dateStr.split('-');
+    return `${d}/${m}/${y}`;
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">Agendamentos</h1>
-          <p className="text-muted-foreground">Gerencie todos os agendamentos</p>
+        <div className="section-header">
+          <h1 className="section-title">Agendamentos</h1>
+          <p className="section-subtitle">Gerencie todos os agendamentos</p>
         </div>
 
-        <div className="flex flex-wrap gap-3">
+        {/* Filters */}
+        <div className="flex flex-col sm:flex-row gap-3">
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-[160px] h-10">
+              <Filter className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>
               <SelectItem value="pending">Pendente</SelectItem>
@@ -69,38 +79,53 @@ export default function Appointments() {
               <SelectItem value="completed">Concluído</SelectItem>
             </SelectContent>
           </Select>
-          <Input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="w-[180px]" />
-          {dateFilter && <Button variant="outline" size="sm" onClick={() => setDateFilter('')}>Limpar data</Button>}
+          <div className="flex gap-2">
+            <Input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="flex-1 sm:w-[180px] h-10" />
+            {dateFilter && (
+              <Button variant="outline" size="sm" onClick={() => setDateFilter('')} className="h-10 px-3">
+                Limpar
+              </Button>
+            )}
+          </div>
         </div>
 
-        <Card className="glass-card">
+        {/* List */}
+        <Card className="glass-card-static rounded-2xl overflow-hidden">
           <CardContent className="p-0">
             {appointments.length === 0 ? (
-              <p className="text-muted-foreground text-sm py-12 text-center">Nenhum agendamento encontrado</p>
+              <div className="text-center py-12 px-4">
+                <div className="h-14 w-14 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-3">
+                  <Calendar className="h-6 w-6 text-muted-foreground" />
+                </div>
+                <p className="text-muted-foreground font-medium">Nenhum agendamento encontrado</p>
+                <p className="text-xs text-muted-foreground/70 mt-1">Tente alterar os filtros</p>
+              </div>
             ) : (
-              <div className="divide-y divide-border">
+              <div className="divide-y divide-border/50">
                 {appointments.map((apt) => (
-                  <div key={apt.id} className="flex items-center justify-between p-4 hover:bg-muted/30 transition-colors">
+                  <div key={apt.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 hover:bg-muted/30 transition-colors gap-3">
                     <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                        <span className="text-primary font-semibold text-sm">
+                      <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center flex-shrink-0">
+                        <span className="text-primary font-bold text-sm">
                           {apt.client_name?.charAt(0)?.toUpperCase()}
                         </span>
                       </div>
                       <div className="min-w-0">
-                        <p className="font-medium text-sm">{apt.client_name}</p>
+                        <p className="font-semibold text-sm">{apt.client_name}</p>
                         <p className="text-xs text-muted-foreground">
-                          {apt.services?.name} · {apt.appointment_date} · {apt.start_time?.slice(0, 5)} - {apt.end_time?.slice(0, 5)}
+                          {apt.services?.name} · {formatDate(apt.appointment_date)} · {apt.start_time?.slice(0, 5)} - {apt.end_time?.slice(0, 5)}
                         </p>
                         <p className="text-xs text-muted-foreground">{apt.client_phone}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="flex items-center gap-2 flex-shrink-0 pl-[52px] sm:pl-0">
                       <span className={statusClass[apt.status] || 'status-pending'}>
                         {statusLabel[apt.status] || apt.status}
                       </span>
                       <Select value={apt.status} onValueChange={(v) => updateStatus(apt.id, v)}>
-                        <SelectTrigger className="w-[130px] h-8 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectTrigger className="w-[120px] sm:w-[130px] h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="pending">Pendente</SelectItem>
                           <SelectItem value="confirmed">Confirmado</SelectItem>
