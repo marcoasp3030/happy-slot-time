@@ -25,42 +25,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [companyId, setCompanyId] = useState<string | null>(null);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-
-        if (session?.user) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('company_id')
-            .eq('user_id', session.user.id)
-            .single();
-          setCompanyId(profile?.company_id ?? null);
-        } else {
-          setCompanyId(null);
-        }
-        setLoading(false);
-      }
-    );
-
+    // First get the initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        supabase
-          .from('profiles')
-          .select('company_id')
-          .eq('user_id', session.user.id)
-          .single()
-          .then(({ data }) => {
-            setCompanyId(data?.company_id ?? null);
-            setLoading(false);
-          });
+        // Use setTimeout to avoid blocking auth initialization
+        setTimeout(async () => {
+          const { data } = await supabase
+            .from('profiles')
+            .select('company_id')
+            .eq('user_id', session.user.id)
+            .single();
+          setCompanyId(data?.company_id ?? null);
+          setLoading(false);
+        }, 0);
       } else {
         setLoading(false);
       }
     });
+
+    // Then listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+
+        if (session?.user) {
+          setTimeout(async () => {
+            const { data } = await supabase
+              .from('profiles')
+              .select('company_id')
+              .eq('user_id', session.user.id)
+              .single();
+            setCompanyId(data?.company_id ?? null);
+            setLoading(false);
+          }, 0);
+        } else {
+          setCompanyId(null);
+          setLoading(false);
+        }
+      }
+    );
 
     return () => subscription.unsubscribe();
   }, []);
