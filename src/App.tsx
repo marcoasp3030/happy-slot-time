@@ -2,8 +2,10 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
+import { AnimatePresence } from "framer-motion";
+import PageTransition from "@/components/PageTransition";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
@@ -26,6 +28,28 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function AnimatedRoutes() {
+  const location = useLocation();
+  return (
+    <AnimatePresence mode="wait">
+      <Routes location={location} key={location.pathname}>
+        <Route path="/" element={<PageTransition><Index /></PageTransition>} />
+        <Route path="/login" element={<PageTransition><Auth /></PageTransition>} />
+        <Route path="/agendar/:slug" element={<PageTransition><PublicBooking /></PageTransition>} />
+        <Route path="/dashboard" element={<ProtectedRoute><PageTransition><Dashboard /></PageTransition></ProtectedRoute>} />
+        <Route path="/servicos" element={<ProtectedRoute><PageTransition><Services /></PageTransition></ProtectedRoute>} />
+        <Route path="/profissionais" element={<ProtectedRoute><PageTransition><Staff /></PageTransition></ProtectedRoute>} />
+        <Route path="/horarios" element={<ProtectedRoute><PageTransition><BusinessHours /></PageTransition></ProtectedRoute>} />
+        <Route path="/agendamentos" element={<ProtectedRoute><PageTransition><Appointments /></PageTransition></ProtectedRoute>} />
+        <Route path="/aparencia" element={<ProtectedRoute><PageTransition><Appearance /></PageTransition></ProtectedRoute>} />
+        <Route path="/whatsapp" element={<ProtectedRoute><PageTransition><WhatsAppSettings /></PageTransition></ProtectedRoute>} />
+        <Route path="/plano" element={<ProtectedRoute><PageTransition><Plan /></PageTransition></ProtectedRoute>} />
+        <Route path="*" element={<PageTransition><NotFound /></PageTransition>} />
+      </Routes>
+    </AnimatePresence>
+  );
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -33,20 +57,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/login" element={<Auth />} />
-            <Route path="/agendar/:slug" element={<PublicBooking />} />
-            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/servicos" element={<ProtectedRoute><Services /></ProtectedRoute>} />
-            <Route path="/profissionais" element={<ProtectedRoute><Staff /></ProtectedRoute>} />
-            <Route path="/horarios" element={<ProtectedRoute><BusinessHours /></ProtectedRoute>} />
-            <Route path="/agendamentos" element={<ProtectedRoute><Appointments /></ProtectedRoute>} />
-            <Route path="/aparencia" element={<ProtectedRoute><Appearance /></ProtectedRoute>} />
-            <Route path="/whatsapp" element={<ProtectedRoute><WhatsAppSettings /></ProtectedRoute>} />
-            <Route path="/plano" element={<ProtectedRoute><Plan /></ProtectedRoute>} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <AnimatedRoutes />
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
