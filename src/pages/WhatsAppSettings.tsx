@@ -55,8 +55,24 @@ export default function WhatsAppSettings() {
     fetchData();
   };
 
-  const testConnection = () => {
-    toast.info('Teste de conexão será implementado com a edge function UAZAPI');
+  const testConnection = async () => {
+    if (!testPhone || !companyId) {
+      toast.error('Informe um número para teste');
+      return;
+    }
+    try {
+      toast.loading('Enviando mensagem de teste...');
+      const { data, error } = await supabase.functions.invoke('send-whatsapp', {
+        body: { company_id: companyId, type: 'test', phone: testPhone.replace(/\D/g, '') },
+      });
+      toast.dismiss();
+      if (error) throw error;
+      if (data?.success) toast.success('Mensagem de teste enviada!');
+      else toast.error(data?.error || 'Erro ao enviar teste');
+    } catch (e: any) {
+      toast.dismiss();
+      toast.error(e.message || 'Erro ao conectar com UAZAPI');
+    }
   };
 
   const typeLabels: Record<string, string> = {
