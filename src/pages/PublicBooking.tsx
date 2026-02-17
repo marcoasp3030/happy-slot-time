@@ -5,11 +5,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Calendar, Clock, CheckCircle, ArrowLeft, ArrowRight, User, Sparkles, MapPin, Phone, Star, Video } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, ArrowLeft, ArrowRight, User, Sparkles, MapPin, Phone, Star, Video, ClipboardList } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Checkbox } from '@/components/ui/checkbox';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-type Step = 'service' | 'staff' | 'date' | 'time' | 'info' | 'success';
+type Step = 'service' | 'staff' | 'date' | 'time' | 'anamnesis' | 'info' | 'success';
 
 const stepVariants = {
   enter: { opacity: 0, x: 40 },
@@ -38,6 +41,8 @@ export default function PublicBooking() {
   const [clientPhone, setClientPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [meetLink, setMeetLink] = useState<string | null>(null);
+  const [anamnesisTemplates, setAnamnesisTemplates] = useState<any[]>([]);
+  const [anamnesisResponses, setAnamnesisResponses] = useState<Record<string, any>>({});
 
   useEffect(() => {
     if (!slug) return;
@@ -63,6 +68,26 @@ export default function PublicBooking() {
     };
     fetchData();
   }, [slug]);
+
+  // Fetch anamnesis templates when service is selected
+  useEffect(() => {
+    if (!selectedService?.requires_anamnesis || !company) {
+      setAnamnesisTemplates([]);
+      setAnamnesisResponses({});
+      return;
+    }
+    const fetchTemplates = async () => {
+      const { data } = await supabase
+        .from('anamnesis_templates')
+        .select('*')
+        .eq('active', true)
+        .order('sort_order')
+        .or(`service_id.eq.${selectedService.id},service_id.is.null`);
+      setAnamnesisTemplates(data || []);
+      setAnamnesisResponses({});
+    };
+    fetchTemplates();
+  }, [selectedService, company]);
 
   useEffect(() => {
     if (!selectedDate || !company) return;
@@ -118,6 +143,13 @@ export default function PublicBooking() {
     return slots;
   };
 
+  const validateAnamnesis = () => {
+    for (const t of anamnesisTemplates) {
+      if (t.required && !anamnesisResponses[t.id]) return false;
+    }
+    return true;
+  };
+
   const handleSubmit = async () => {
     if (!clientName.trim() || !clientPhone.trim() || !company || !selectedService) return;
     setSubmitting(true);
@@ -138,8 +170,22 @@ export default function PublicBooking() {
       notes: notes.trim() || null,
     }).select('id').single();
 
+    if (error) { setSubmitting(false); toast.error('Erro ao agendar. Tente novamente.'); return; }
+
+    // Save anamnesis responses if any
+    if (hasAnamnesis && inserted?.id && Object.keys(anamnesisResponses).length > 0) {
+      await supabase.from('anamnesis_responses').insert({
+        company_id: company.id,
+        service_id: selectedService.id,
+        appointment_id: inserted.id,
+        client_name: clientName.trim(),
+        client_phone: clientPhone.trim(),
+        responses: anamnesisResponses,
+        filled_by: 'client',
+      });
+    }
+
     setSubmitting(false);
-    if (error) { toast.error('Erro ao agendar. Tente novamente.'); return; }
 
     // Check for meet link after a delay (Google Calendar sync is async)
     if (inserted?.id) {
@@ -172,7 +218,8 @@ export default function PublicBooking() {
   const bgColor = pageSettings?.background_color || '#f8fafc';
   const btnRadius = pageSettings?.button_style === 'square' ? '12px' : '9999px';
 
-  const steps: Step[] = ['service', ...(staffList.length > 0 ? ['staff'] as Step[] : []), 'date', 'time', 'info'];
+  const hasAnamnesis = selectedService?.requires_anamnesis && anamnesisTemplates.length > 0;
+  const steps: Step[] = ['service', ...(staffList.length > 0 ? ['staff'] as Step[] : []), 'date', 'time', ...(hasAnamnesis ? ['anamnesis'] as Step[] : []), 'info'];
   const currentStepIndex = steps.indexOf(step);
 
   const stepLabels: Record<string, string> = {
@@ -180,6 +227,7 @@ export default function PublicBooking() {
     staff: 'Profissional',
     date: 'Data',
     time: 'Horário',
+    anamnesis: 'Anamnese',
     info: 'Dados',
   };
 
@@ -557,7 +605,7 @@ export default function PublicBooking() {
                       initial={{ opacity: 0, scale: 0.9 }}
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ delay: i * 0.02 }}
-                      onClick={() => { setSelectedTime(t); setStep('info'); }}
+                      onClick={() => { setSelectedTime(t); setStep(hasAnamnesis ? 'anamnesis' : 'info'); }}
                       className="p-3.5 rounded-xl bg-white shadow-sm hover:shadow-md border-2 border-transparent transition-all duration-200 font-bold text-sm group"
                       style={{ color: secondaryColor }}
                       onMouseEnter={(e) => {
@@ -575,6 +623,124 @@ export default function PublicBooking() {
                 </div>
               )}
               <BackButton onClick={() => setStep('date')} />
+            </motion.div>
+          )}
+
+          {/* Anamnesis step */}
+          {step === 'anamnesis' && (
+            <motion.div
+              key="anamnesis"
+              variants={stepVariants}
+              initial="enter" animate="center" exit="exit"
+              transition={{ duration: 0.3, ease: 'easeInOut' }}
+              className="space-y-4"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <div className="h-8 w-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: primaryColor + '15' }}>
+                  <ClipboardList className="h-4 w-4" style={{ color: primaryColor }} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold" style={{ color: secondaryColor }}>Ficha de anamnese</h2>
+                  <p className="text-xs text-muted-foreground">Preencha as informações abaixo</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                {anamnesisTemplates.map((field) => (
+                  <div key={field.id} className="p-4 rounded-2xl bg-white shadow-sm space-y-2">
+                    <Label className="font-bold text-sm" style={{ color: secondaryColor }}>
+                      {field.field_label} {field.required && <span className="text-red-500">*</span>}
+                    </Label>
+
+                    {field.field_type === 'text' && (
+                      <Input
+                        value={anamnesisResponses[field.id] || ''}
+                        onChange={(e) => setAnamnesisResponses(prev => ({ ...prev, [field.id]: e.target.value }))}
+                        placeholder="Digite aqui..."
+                        className="h-11 rounded-xl bg-white shadow-sm border-border/60"
+                      />
+                    )}
+
+                    {field.field_type === 'textarea' && (
+                      <Textarea
+                        value={anamnesisResponses[field.id] || ''}
+                        onChange={(e) => setAnamnesisResponses(prev => ({ ...prev, [field.id]: e.target.value }))}
+                        placeholder="Digite aqui..."
+                        rows={3}
+                        className="rounded-xl bg-white shadow-sm border-border/60"
+                      />
+                    )}
+
+                    {field.field_type === 'number' && (
+                      <Input
+                        type="number"
+                        value={anamnesisResponses[field.id] || ''}
+                        onChange={(e) => setAnamnesisResponses(prev => ({ ...prev, [field.id]: e.target.value }))}
+                        placeholder="0"
+                        className="h-11 rounded-xl bg-white shadow-sm border-border/60"
+                      />
+                    )}
+
+                    {field.field_type === 'select' && Array.isArray(field.field_options) && (
+                      <Select
+                        value={anamnesisResponses[field.id] || ''}
+                        onValueChange={(v) => setAnamnesisResponses(prev => ({ ...prev, [field.id]: v }))}
+                      >
+                        <SelectTrigger className="h-11 rounded-xl bg-white shadow-sm border-border/60">
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(field.field_options as string[]).map((opt: string) => (
+                            <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+
+                    {field.field_type === 'checkbox' && Array.isArray(field.field_options) && (
+                      <div className="space-y-2">
+                        {(field.field_options as string[]).map((opt: string) => {
+                          const checked = Array.isArray(anamnesisResponses[field.id]) && anamnesisResponses[field.id].includes(opt);
+                          return (
+                            <label key={opt} className="flex items-center gap-2 cursor-pointer">
+                              <Checkbox
+                                checked={checked}
+                                onCheckedChange={(c) => {
+                                  setAnamnesisResponses(prev => {
+                                    const current = Array.isArray(prev[field.id]) ? prev[field.id] : [];
+                                    return {
+                                      ...prev,
+                                      [field.id]: c ? [...current, opt] : current.filter((x: string) => x !== opt),
+                                    };
+                                  });
+                                }}
+                              />
+                              <span className="text-sm">{opt}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <Button
+                onClick={() => {
+                  if (!validateAnamnesis()) {
+                    toast.error('Preencha todos os campos obrigatórios');
+                    return;
+                  }
+                  setStep('info');
+                }}
+                className="w-full h-12 font-bold text-sm shadow-md text-white border-0"
+                style={{ backgroundColor: primaryColor, borderRadius: btnRadius }}
+              >
+                <ArrowRight className="h-4 w-4 mr-2" />
+                Continuar
+              </Button>
+
+              <BackButton onClick={() => setStep('time')} />
             </motion.div>
           )}
 
@@ -668,7 +834,7 @@ export default function PublicBooking() {
                 )}
               </Button>
 
-              <BackButton onClick={() => setStep('time')} />
+              <BackButton onClick={() => setStep(hasAnamnesis ? 'anamnesis' : 'time')} />
             </motion.div>
           )}
 
@@ -732,7 +898,7 @@ export default function PublicBooking() {
               <Button
                 onClick={() => {
                   setStep('service'); setSelectedService(null); setSelectedStaff(null);
-                  setSelectedDate(''); setSelectedTime(''); setClientName(''); setClientPhone(''); setNotes(''); setMeetLink(null);
+                  setSelectedDate(''); setSelectedTime(''); setClientName(''); setClientPhone(''); setNotes(''); setMeetLink(null); setAnamnesisResponses({});
                 }}
                 variant="outline"
                 className="font-bold mt-2 h-11 px-6"
