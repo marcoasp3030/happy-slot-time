@@ -262,6 +262,7 @@ export default function Appointments() {
                 <SelectItem value="confirmed">Confirmado</SelectItem>
                 <SelectItem value="completed">Concluído</SelectItem>
                 <SelectItem value="canceled">Cancelado</SelectItem>
+                <SelectItem value="rescheduled">Remarcado</SelectItem>
                 <SelectItem value="no_show">Não compareceu</SelectItem>
               </SelectContent>
             </Select>
