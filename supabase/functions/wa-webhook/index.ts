@@ -345,8 +345,78 @@ Deno.serve(async (req) => {
     if (body.key) log("🔵 key:", JSON.stringify(body.key));
     if (body.message) log("🔵 message type:", typeof body.message, "keys:", body.message && typeof body.message === "object" ? Object.keys(body.message).join(",") : "N/A");
 
-    // Skip non-message events (chats updates, status, etc.)
-    const eventType = body.EventType || body.eventType || body.event;
+    // ── Handle messages_update events (delivery status: Delivered, Read, etc.) ──
+    if (eventType === "messages_update") {
+      const ev = body.event;
+      if (ev && ev.MessageIDs && ev.Type) {
+        const statusMap: Record<string, string> = {
+          "Sent": "sent", "Delivered": "delivered", "Read": "read", "Failed": "failed",
+        };
+        const newStatus = statusMap[ev.Type];
+        if (newStatus) {
+          const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+          const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+          const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
+          const sb = createClient(supabaseUrl, serviceKey);
+          
+          for (const msgId of ev.MessageIDs) {
+            const { error } = await sb.from("whatsapp_messages")
+              .update({ delivery_status: newStatus })
+              .eq("wa_message_id", msgId);
+            if (!error) {
+              log("📬 Delivery status updated:", msgId, "→", newStatus);
+            }
+          }
+        }
+      }
+      return new Response(
+        JSON.stringify({ ok: true, handled: "messages_update" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ── Handle reaction events ──
+    if (eventType === "messages_reaction" || eventType === "reactions") {
+      const msg = body.message || body.event;
+      const emoji = msg?.reaction?.text || msg?.reactionMessage?.text || body.reaction?.text;
+      const reactedMsgId = msg?.reaction?.key?.id || msg?.reactionMessage?.key?.id || body.reaction?.key?.id;
+      const reactPhone = extractPhone(body);
+      
+      if (emoji && reactPhone && !isFromMe(body)) {
+        log("😀 Reaction received! emoji:", emoji, "phone:", reactPhone, "msgId:", reactedMsgId);
+        
+        // Forward reaction to send-whatsapp for processing as a trigger
+        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        const forwardUrl = `${supabaseUrl}/functions/v1/send-whatsapp`;
+        
+        const res = await fetch(forwardUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+          body: JSON.stringify({
+            action: "reaction-trigger",
+            company_id: companyId,
+            phone: reactPhone,
+            emoji,
+            reacted_message_id: reactedMsgId,
+          }),
+        });
+        const result = await res.text();
+        log("😀 Reaction trigger result:", res.status, result.substring(0, 200));
+        
+        return new Response(result, {
+          status: res.status,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      
+      return new Response(
+        JSON.stringify({ ok: true, handled: "reaction" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Skip other non-message events (chats updates, etc.)
     if (eventType && eventType !== "messages" && eventType !== "message" && eventType !== "Message") {
       log("📩 Skipping non-message event:", eventType);
       return new Response(
@@ -401,6 +471,8 @@ Deno.serve(async (req) => {
       company_id: companyId,
       phone,
       message: msg || "[áudio]",
+      // Pass the UAZAPI message ID for delivery tracking and reactions
+      wa_message_id: body.message?.messageid || body.message?.id || null,
     };
 
     // Include button/list response context if present

@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { toast } from '@/hooks/use-toast';
-import { Bot, Settings, MessageSquare, Plus, Trash2, BookOpen, History, Copy, ExternalLink, BarChart3, Clock, PhoneForwarded, Mic, Zap, ShieldCheck } from 'lucide-react';
+import { Bot, Settings, MessageSquare, Plus, Trash2, BookOpen, History, Copy, ExternalLink, BarChart3, Clock, PhoneForwarded, Mic, Zap, ShieldCheck, Heart } from 'lucide-react';
 import AgentCapabilities from '@/components/AgentCapabilities';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
@@ -108,6 +108,13 @@ export default function WhatsAppAgent() {
         openai_api_key: settings.openai_api_key,
         gemini_api_key: (settings as any).gemini_api_key,
         preferred_provider: (settings as any).preferred_provider,
+        auto_react_enabled: settings.auto_react_enabled,
+        react_on_confirm: settings.react_on_confirm,
+        react_on_cancel: settings.react_on_cancel,
+        react_on_thanks: settings.react_on_thanks,
+        react_on_booking: settings.react_on_booking,
+        react_on_greeting: settings.react_on_greeting,
+        reaction_triggers: settings.reaction_triggers,
       } as any)
       .eq('id', settings.id);
     setSaving(false);
@@ -218,6 +225,9 @@ export default function WhatsAppAgent() {
             </TabsTrigger>
             <TabsTrigger value="capabilities" className="gap-1.5">
               <ShieldCheck className="h-3.5 w-3.5" /> Capacidades
+            </TabsTrigger>
+            <TabsTrigger value="reactions" className="gap-1.5">
+              <Heart className="h-3.5 w-3.5" /> Reações
             </TabsTrigger>
             <TabsTrigger value="knowledge" className="gap-1.5">
               <BookOpen className="h-3.5 w-3.5" /> Base de Conhecimento
@@ -524,7 +534,126 @@ export default function WhatsAppAgent() {
             />
           </TabsContent>
 
-          {/* KNOWLEDGE BASE TAB */}
+          {/* REACTIONS TAB */}
+          <TabsContent value="reactions" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Reações Automáticas</CardTitle>
+                <CardDescription>O agente reage automaticamente com emoji nas mensagens dos clientes baseado no contexto</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="font-medium">Ativar Reações Automáticas</Label>
+                    <p className="text-xs text-muted-foreground">O agente reagirá com emoji após processar cada mensagem</p>
+                  </div>
+                  <Switch
+                    checked={settings?.auto_react_enabled || false}
+                    onCheckedChange={(v) => setSettings({ ...settings, auto_react_enabled: v })}
+                  />
+                </div>
+
+                <Separator />
+
+                <div className="space-y-4">
+                  <h4 className="font-medium text-sm">Emoji por Situação</h4>
+                  <p className="text-xs text-muted-foreground">Defina qual emoji o agente usará para reagir em cada tipo de interação</p>
+                  
+                  {[
+                    { key: 'react_on_greeting', label: 'Saudação', desc: 'Quando o cliente diz "Oi", "Bom dia", etc.', default: '👋' },
+                    { key: 'react_on_confirm', label: 'Confirmação', desc: 'Quando um agendamento é confirmado', default: '✅' },
+                    { key: 'react_on_booking', label: 'Novo Agendamento', desc: 'Quando um agendamento é criado', default: '📅' },
+                    { key: 'react_on_cancel', label: 'Cancelamento', desc: 'Quando um agendamento é cancelado', default: '😢' },
+                    { key: 'react_on_thanks', label: 'Agradecimento', desc: 'Quando o cliente agradece', default: '❤️' },
+                  ].map(item => (
+                    <div key={item.key} className="flex items-center gap-3 p-3 border border-border/60 rounded-xl bg-card/50">
+                      <Input
+                        value={(settings as any)?.[item.key] || item.default}
+                        onChange={(e) => setSettings({ ...settings, [item.key]: e.target.value })}
+                        className="w-16 h-10 text-center text-xl"
+                        maxLength={2}
+                        disabled={!settings?.auto_react_enabled}
+                      />
+                      <div className="flex-1">
+                        <Label className="text-sm font-medium">{item.label}</Label>
+                        <p className="text-xs text-muted-foreground">{item.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <Separator />
+
+                <div className="space-y-4">
+                  <h4 className="font-medium text-sm">Gatilhos por Reação do Cliente</h4>
+                  <p className="text-xs text-muted-foreground">Quando o cliente reagir com um emoji, execute uma ação automaticamente</p>
+                  
+                  {(settings?.reaction_triggers || []).map((trigger: any, index: number) => (
+                    <div key={index} className="flex items-center gap-3 p-3 border border-border/60 rounded-xl bg-card/50">
+                      <Input
+                        value={trigger.emoji || ''}
+                        onChange={(e) => {
+                          const triggers = [...(settings?.reaction_triggers || [])];
+                          triggers[index] = { ...triggers[index], emoji: e.target.value };
+                          setSettings({ ...settings, reaction_triggers: triggers });
+                        }}
+                        className="w-16 h-10 text-center text-xl"
+                        maxLength={2}
+                        placeholder="😀"
+                      />
+                      <select
+                        value={trigger.action || ''}
+                        onChange={(e) => {
+                          const triggers = [...(settings?.reaction_triggers || [])];
+                          const actionLabels: Record<string, string> = {
+                            confirm_appointment: 'Confirmar agendamento',
+                            cancel_appointment: 'Cancelar agendamento',
+                            custom: 'Ação personalizada',
+                          };
+                          triggers[index] = { ...triggers[index], action: e.target.value, label: actionLabels[e.target.value] || e.target.value };
+                          setSettings({ ...settings, reaction_triggers: triggers });
+                        }}
+                        className="flex-1 h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        <option value="confirm_appointment">✅ Confirmar agendamento</option>
+                        <option value="cancel_appointment">❌ Cancelar agendamento</option>
+                        <option value="custom">💬 Enviar para o agente</option>
+                      </select>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-10 w-10 text-destructive hover:text-destructive"
+                        onClick={() => {
+                          const triggers = [...(settings?.reaction_triggers || [])];
+                          triggers.splice(index, 1);
+                          setSettings({ ...settings, reaction_triggers: triggers });
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const triggers = [...(settings?.reaction_triggers || [])];
+                      triggers.push({ emoji: '🙏', action: 'custom', label: 'Ação personalizada' });
+                      setSettings({ ...settings, reaction_triggers: triggers });
+                    }}
+                  >
+                    <Plus className="h-4 w-4 mr-1" /> Adicionar gatilho
+                  </Button>
+                </div>
+
+                <Button onClick={saveSettings} disabled={saving} className="gradient-primary border-0 font-semibold">
+                  {saving ? 'Salvando...' : 'Salvar Configurações de Reações'}
+                </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="knowledge" className="space-y-4">
             <Card>
               <CardHeader>

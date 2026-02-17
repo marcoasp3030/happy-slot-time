@@ -136,8 +136,16 @@ Deno.serve(async (req) => {
         audio_message_id: body.audio_message_id || null,
         audio_wa_msg_id: body.audio_wa_msg_id || null,
         audio_chat_id: body.audio_chat_id || null,
+        wa_message_id: body.wa_message_id || null,
       });
       return new Response(JSON.stringify(result), { headers: jsonH, status: result.error ? 500 : 200 });
+    }
+
+    // ─── Reaction trigger route (emoji reaction from client) ───
+    if (body.action === "reaction-trigger") {
+      log("😀 Reaction trigger! emoji:", body.emoji, "phone:", body.phone, "company:", body.company_id);
+      const result = await handleReactionTrigger(supabase, body.company_id, body.phone, body.emoji, body.reacted_message_id);
+      return new Response(JSON.stringify(result), { headers: jsonH });
     }
 
     // ─── Original send-whatsapp logic ───
@@ -615,6 +623,109 @@ async function sendAudioViaUazapi(wsSettings: any, phone: string, audioData: Uin
   }
 }
 
+// ─── React to a message with emoji via UAZAPI ───
+async function reactToMessage(wsSettings: { base_url: string; token: string }, messageId: string, emoji: string): Promise<void> {
+  try {
+    const url = wsSettings.base_url.replace(/\/$/, "") + "/message/react";
+    log("😀 Reacting to message:", messageId, "emoji:", emoji);
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", token: wsSettings.token },
+      body: JSON.stringify({ id: messageId, reaction: emoji }),
+    });
+    const resText = await res.text();
+    log("😀 React result:", res.status, resText.substring(0, 200));
+  } catch (e: any) {
+    log("😀 React error (non-fatal):", e.message);
+  }
+}
+
+// ─── Handle reaction trigger (client reacted with emoji) ───
+async function handleReactionTrigger(sb: any, companyId: string, phone: string, emoji: string, reactedMsgId?: string): Promise<any> {
+  log("😀 handleReactionTrigger:", companyId, phone, emoji);
+  
+  // Get agent settings to check reaction triggers
+  const { data: ag } = await sb.from("whatsapp_agent_settings")
+    .select("reaction_triggers, enabled")
+    .eq("company_id", companyId).single();
+  
+  if (!ag?.enabled) return { ok: true, skipped: "agent_disabled" };
+  
+  const triggers = ag.reaction_triggers || [];
+  const matchedTrigger = triggers.find((t: any) => t.emoji === emoji);
+  
+  if (!matchedTrigger) {
+    log("😀 No trigger matched for emoji:", emoji);
+    return { ok: true, skipped: "no_trigger", emoji };
+  }
+  
+  log("😀 Trigger matched! action:", matchedTrigger.action, "label:", matchedTrigger.label);
+  
+  const cleanPhone = phone.replace(/\D/g, "");
+  const { data: ws } = await sb.from("whatsapp_settings")
+    .select("base_url, instance_id, token, active")
+    .eq("company_id", companyId).single();
+  
+  if (matchedTrigger.action === "confirm_appointment") {
+    // Find the most recent pending appointment for this client
+    const { data: appts } = await sb.from("appointments")
+      .select("id, appointment_date, start_time, services(name)")
+      .eq("company_id", companyId)
+      .or(`client_phone.eq.${cleanPhone},client_phone.eq.+${cleanPhone}`)
+      .eq("status", "pending")
+      .order("appointment_date", { ascending: true })
+      .limit(1);
+    
+    if (appts && appts.length > 0) {
+      const appt = appts[0];
+      await sb.from("appointments").update({ status: "confirmed" }).eq("id", appt.id);
+      log("😀 ✅ Appointment confirmed via reaction:", appt.id);
+      
+      // Send confirmation message
+      if (ws?.active && ws?.base_url && ws?.token) {
+        const msg = `Agendamento confirmado! ✅ ${appt.services?.name || "Serviço"} em ${formatDate(appt.appointment_date)} às ${appt.start_time?.substring(0, 5)}`;
+        await sendUazapiMessage(ws, cleanPhone, msg);
+      }
+      
+      return { ok: true, action: "confirmed", appointment_id: appt.id };
+    } else {
+      if (ws?.active && ws?.base_url && ws?.token) {
+        await sendUazapiMessage(ws, cleanPhone, "Não encontrei nenhum agendamento pendente para confirmar. 🤔");
+      }
+      return { ok: true, action: "no_pending_appointment" };
+    }
+  } else if (matchedTrigger.action === "cancel_appointment") {
+    const { data: appts } = await sb.from("appointments")
+      .select("id, appointment_date, start_time, services(name)")
+      .eq("company_id", companyId)
+      .or(`client_phone.eq.${cleanPhone},client_phone.eq.+${cleanPhone}`)
+      .in("status", ["pending", "confirmed"])
+      .order("appointment_date", { ascending: true })
+      .limit(1);
+    
+    if (appts && appts.length > 0) {
+      const appt = appts[0];
+      await sb.from("appointments").update({ status: "canceled" }).eq("id", appt.id);
+      log("😀 ❌ Appointment canceled via reaction:", appt.id);
+      
+      if (ws?.active && ws?.base_url && ws?.token) {
+        const msg = `Agendamento cancelado. 😢 ${appt.services?.name || "Serviço"} em ${formatDate(appt.appointment_date)} foi cancelado. Deseja remarcar?`;
+        await sendUazapiMessage(ws, cleanPhone, msg);
+      }
+      
+      return { ok: true, action: "canceled", appointment_id: appt.id };
+    }
+    return { ok: true, action: "no_appointment_found" };
+  }
+  
+  // Custom action - forward as a message to the agent
+  log("😀 Custom action, forwarding as agent message:", matchedTrigger.label);
+  const result = await handleAgent(sb, companyId, phone, `[REAÇÃO: ${emoji}] ${matchedTrigger.label || "Reagiu com " + emoji}`, {
+    is_audio: false, audio_media_url: null, audio_media_key: null, audio_message_id: null,
+  });
+  return result;
+}
+
 // ─── Download audio from UAZAPI (try multiple endpoints) ───
 async function downloadAudioFromUazapi(wsSettings: any, messageId: string, waMessageId?: string, chatId?: string): Promise<string | null> {
   if (!wsSettings?.base_url || !wsSettings?.token) return null;
@@ -763,6 +874,7 @@ interface AudioParams {
   audio_message_id: string | null;
   audio_wa_msg_id?: string | null;
   audio_chat_id?: string | null;
+  wa_message_id?: string | null;
 }
 
 async function handleAgent(sb: any, cid: string, phone: string, msg: string, audioParams: AudioParams = { is_audio: false, audio_media_url: null, audio_media_key: null, audio_message_id: null }): Promise<any> {
@@ -849,14 +961,18 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
     }
   }
 
-  // Save incoming message
+  // Save incoming message (with wa_message_id for delivery tracking + reactions)
   log("🤖 Saving incoming message...");
-  const { error: msgErr } = await sb.from("whatsapp_messages").insert({ 
+  const incomingInsert: any = { 
     conversation_id: conv.id, company_id: cid, direction: "incoming", 
     message_type: isAudioMsg ? "audio" : "text", 
     content: actualMsg,
+    delivery_status: "read",
     metadata: isAudioMsg ? { original_type: "audio", transcribed: actualMsg !== msg } : {}
-  });
+  };
+  // wa_message_id passed from wa-webhook for reaction/tracking support
+  if (audioParams.wa_message_id) incomingInsert.wa_message_id = audioParams.wa_message_id;
+  const { error: msgErr } = await sb.from("whatsapp_messages").insert(incomingInsert);
   log("🤖 Message saved:", msgErr ? `ERROR: ${msgErr.message}` : "OK");
 
   await sb.from("whatsapp_conversations").update({ last_message_at: new Date().toISOString() }).eq("id", conv.id);
@@ -1048,6 +1164,49 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
         }
       } else {
         log("🤖 ⚠️ Cannot send: WS inactive or missing credentials");
+      }
+    }
+
+    // ── Auto-react to client's message based on agent settings ──
+    if (ag?.auto_react_enabled) {
+      try {
+        const { data: ws2 } = await sb.from("whatsapp_settings").select("base_url, token").eq("company_id", cid).single();
+        if (ws2?.base_url && ws2?.token) {
+          // Get the last incoming message's wa_message_id
+          const { data: lastIncoming } = await sb.from("whatsapp_messages")
+            .select("wa_message_id")
+            .eq("conversation_id", conv.id)
+            .eq("direction", "incoming")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .single();
+          
+          if (lastIncoming?.wa_message_id) {
+            // Detect intent from the reply to choose appropriate reaction
+            let autoEmoji: string | null = null;
+            const lowerReply = (displayReply || "").toLowerCase();
+            const lowerMsg = actualMsg.toLowerCase();
+            
+            if (lowerReply.includes("confirmado") || lowerReply.includes("✅")) {
+              autoEmoji = ag.react_on_confirm || "✅";
+            } else if (lowerReply.includes("cancelado") || lowerReply.includes("cancelamento")) {
+              autoEmoji = ag.react_on_cancel || "😢";
+            } else if (lowerReply.includes("agendamento criado") || lowerReply.includes("📅")) {
+              autoEmoji = ag.react_on_booking || "📅";
+            } else if (/obrigad[oa]|valeu|gratidão/i.test(lowerMsg)) {
+              autoEmoji = ag.react_on_thanks || "❤️";
+            } else if (/^(oi|olá|ola|bom dia|boa tarde|boa noite|hey|hi|hello)/i.test(lowerMsg)) {
+              autoEmoji = ag.react_on_greeting || "👋";
+            }
+            
+            if (autoEmoji) {
+              await reactToMessage({ base_url: ws2.base_url, token: ws2.token }, lastIncoming.wa_message_id, autoEmoji);
+              log("😀 ✅ Auto-reacted with:", autoEmoji);
+            }
+          }
+        }
+      } catch (e: any) {
+        log("😀 Auto-react error (non-fatal):", e.message);
       }
     }
 
