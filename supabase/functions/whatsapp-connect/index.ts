@@ -81,11 +81,13 @@ Deno.serve(async (req) => {
     }
 
     const baseUrl = settings.base_url.replace(/\/$/, "");
+    const instancePath = settings.instance_id ? `/${settings.instance_id}` : "";
     const url = new URL(req.url);
+    const action = url.searchParams.get("action");
     const action = url.searchParams.get("action");
 
     async function callUazapi(endpoint: string, method: string, body?: any) {
-      const uazapiUrl = `${baseUrl}${endpoint}`;
+      const uazapiUrl = `${baseUrl}${instancePath}${endpoint}`;
       console.log(`Calling UAZAPI: ${method} ${uazapiUrl}`);
 
       const headers: Record<string, string> = {
