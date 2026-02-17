@@ -142,7 +142,7 @@ export default function WhatsAppSettings() {
       else toast.error(data?.error || 'Erro ao enviar teste');
     } catch (e: any) {
       toast.dismiss();
-      toast.error(e.message || 'Erro ao conectar com UAZAPI');
+      toast.error(e.message || 'Erro ao enviar mensagem de teste');
     }
   };
 
@@ -165,8 +165,8 @@ export default function WhatsAppSettings() {
     <DashboardLayout>
       <div className="space-y-6">
         <div className="section-header">
-          <h1 className="section-title">WhatsApp (UAZAPI)</h1>
-          <p className="section-subtitle">Configure a integração com WhatsApp</p>
+          <h1 className="section-title">WhatsApp</h1>
+          <p className="section-subtitle">Configure a integração com WhatsApp para envio de notificações automáticas</p>
         </div>
 
         {/* Connection Card - QR Code flow */}
@@ -177,36 +177,43 @@ export default function WhatsAppSettings() {
           onInstanceCreated={fetchData}
         />
 
-        {/* Credentials */}
+        {/* Credentials - collapsible inside connection area */}
         <Card className="glass-card-static rounded-2xl">
           <CardHeader className="px-4 sm:px-6">
             <CardTitle className="text-lg flex items-center gap-2">
-              <Wifi className="h-4.5 w-4.5 text-primary" />
-              Credenciais UAZAPI
+              <Settings className="h-4.5 w-4.5 text-primary" />
+              Credenciais da API
             </CardTitle>
           </CardHeader>
           <CardContent className="px-4 sm:px-6 space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Insira as credenciais do seu provedor de API WhatsApp para habilitar o envio de mensagens e a conexão via QR Code.
+            </p>
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label className="text-sm font-semibold">URL Base</Label>
-                <Input value={settings.base_url} onChange={(e) => setSettings({ ...settings, base_url: e.target.value })} placeholder="https://api.uazapi.com" className="h-10" />
+                <Label className="text-sm font-semibold">URL Base da API</Label>
+                <Input value={settings.base_url} onChange={(e) => setSettings({ ...settings, base_url: e.target.value })} placeholder="https://api.seuservidor.com" className="h-10" />
+                <p className="text-xs text-muted-foreground">Endereço do servidor da API WhatsApp</p>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-sm font-semibold">ID da Instância</Label>
-                <Input value={settings.instance_id} onChange={(e) => setSettings({ ...settings, instance_id: e.target.value })} placeholder="sua-instancia" className="h-10" />
+                <Input value={settings.instance_id} onChange={(e) => setSettings({ ...settings, instance_id: e.target.value })} placeholder="minha-instancia" className="h-10" />
+                <p className="text-xs text-muted-foreground">Identificador único da sua instância</p>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-sm font-semibold">Token da Instância</Label>
                 <Input type="password" value={settings.token} onChange={(e) => setSettings({ ...settings, token: e.target.value })} placeholder="Token para envio de mensagens" className="h-10" />
+                <p className="text-xs text-muted-foreground">Token de autenticação para enviar mensagens</p>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-sm font-semibold">Admin Token</Label>
-                <Input type="password" value={settings.admin_token} onChange={(e) => setSettings({ ...settings, admin_token: e.target.value })} placeholder="Token de gerenciamento da instância" className="h-10" />
-                <p className="text-xs text-muted-foreground">Usado para conectar/desconectar a instância (QR Code)</p>
+                <Label className="text-sm font-semibold">Token de Administração</Label>
+                <Input type="password" value={settings.admin_token} onChange={(e) => setSettings({ ...settings, admin_token: e.target.value })} placeholder="Token de gerenciamento" className="h-10" />
+                <p className="text-xs text-muted-foreground">Usado para criar instâncias e conectar via QR Code</p>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-sm font-semibold">Número de envio</Label>
                 <Input value={settings.from_number} onChange={(e) => setSettings({ ...settings, from_number: e.target.value })} placeholder="5511999999999" className="h-10" />
+                <p className="text-xs text-muted-foreground">Número que aparecerá como remetente</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -214,11 +221,11 @@ export default function WhatsAppSettings() {
               <Label className="font-medium">Integração ativa</Label>
             </div>
             <div className="flex flex-col sm:flex-row gap-3">
-              <Button onClick={saveSettings} className="gradient-primary border-0 font-semibold">Salvar</Button>
+              <Button onClick={saveSettings} className="gradient-primary border-0 font-semibold">Salvar credenciais</Button>
               <div className="flex items-center gap-2 flex-1">
-                <Input value={testPhone} onChange={(e) => setTestPhone(e.target.value)} placeholder="Nº para teste" className="flex-1 sm:max-w-[200px] h-10" />
+                <Input value={testPhone} onChange={(e) => setTestPhone(e.target.value)} placeholder="Nº para teste (ex: 5511999...)" className="flex-1 sm:max-w-[220px] h-10" />
                 <Button variant="outline" onClick={testConnection} className="flex-shrink-0">
-                  <Send className="h-4 w-4 mr-1.5" />Testar
+                  <Send className="h-4 w-4 mr-1.5" />Testar envio
                 </Button>
               </div>
             </div>
