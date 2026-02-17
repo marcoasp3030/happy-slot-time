@@ -177,10 +177,13 @@ async function sendUazapiMessage(
   phone: string,
   message: string
 ): Promise<any> {
-  const url = `${settings.base_url.replace(/\/$/, "")}/send/text`;
+  const baseUrl = settings.base_url.replace(/\/$/, "");
+  const url = `${baseUrl}/send/text`;
 
-  console.log(`[send-whatsapp] POST ${url}`);
-  console.log(`[send-whatsapp] phone: ${phone}`);
+  console.log(`[send-whatsapp] ➡️  POST ${url}`);
+  console.log(`[send-whatsapp]    Token: ${settings.token?.substring(0, 8)}...`);
+  console.log(`[send-whatsapp]    Phone: ${phone}`);
+  console.log(`[send-whatsapp]    Message length: ${message.length}`);
 
   const res = await fetch(url, {
     method: "POST",
@@ -194,12 +197,15 @@ async function sendUazapiMessage(
     }),
   });
 
+  const text = await res.text();
+  console.log(`[send-whatsapp] ⬅️  Status: ${res.status}`);
+  console.log(`[send-whatsapp]    Response: ${text.substring(0, 500)}`);
+
   if (!res.ok) {
-    const text = await res.text();
     throw new Error(`UAZAPI error ${res.status}: ${text}`);
   }
 
-  return res.json();
+  try { return JSON.parse(text); } catch { return { raw: text }; }
 }
 
 function formatDate(dateStr: string): string {
