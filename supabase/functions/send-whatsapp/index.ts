@@ -388,7 +388,7 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string): Pr
 
 async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
   const cp = ph.replace(/\D/g, "");
-  const [m, a, c, s, h, k, cs] = await Promise.all([
+  const [m, a, c, s, h, k, cs, as_] = await Promise.all([
     sb.from("whatsapp_messages").select("direction, content, created_at").eq("conversation_id", convId).order("created_at", { ascending: false }).limit(20),
     sb.from("appointments").select("id, client_name, appointment_date, start_time, end_time, status, services(name), staff(name)").eq("company_id", cid).or("client_phone.eq." + cp + ",client_phone.eq.+" + cp).in("status", ["pending", "confirmed"]).order("appointment_date", { ascending: true }).limit(10),
     sb.from("companies").select("name, address, phone").eq("id", cid).single(),
@@ -396,8 +396,9 @@ async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
     sb.from("business_hours").select("day_of_week, open_time, close_time, is_open").eq("company_id", cid),
     sb.from("whatsapp_knowledge_base").select("category, title, content").eq("company_id", cid).eq("active", true),
     sb.from("company_settings").select("slot_interval, max_capacity_per_slot, min_advance_hours").eq("company_id", cid).single(),
+    sb.from("whatsapp_agent_settings").select("custom_prompt").eq("company_id", cid).single(),
   ]);
-  return { msgs: (m.data || []).reverse(), appts: a.data || [], co: c.data || {}, svcs: s.data || [], hrs: h.data || [], kb: k.data || [], cs: cs.data || {} };
+  return { msgs: (m.data || []).reverse(), appts: a.data || [], co: c.data || {}, svcs: s.data || [], hrs: h.data || [], kb: k.data || [], cs: { ...(cs.data || {}), custom_prompt: as_.data?.custom_prompt } };
 }
 
 async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string): Promise<string> {
@@ -434,7 +435,8 @@ ${ctx.co.name || ""} | End: ${ctx.co.address || ""} | Tel: ${ctx.co.phone || ""}
 Horários: ${hrs}
 Serviços: ${svcs}
 ${kbs ? "Info extra: " + kbs : ""}
-Agendamentos do cliente: ${appts || "nenhum"}`;
+Agendamentos do cliente: ${appts || "nenhum"}
+${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" + ctx.cs.custom_prompt : ""}`;
 
 
   const messages: any[] = [{ role: "system", content: sys }];

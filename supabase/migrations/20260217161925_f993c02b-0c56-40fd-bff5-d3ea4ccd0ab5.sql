@@ -1,0 +1,1 @@
+ALTER TABLE public.whatsapp_agent_settings ADD COLUMN custom_prompt text DEFAULT NULL;

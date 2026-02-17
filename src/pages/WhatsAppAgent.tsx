@@ -78,6 +78,7 @@ export default function WhatsAppAgent() {
         respond_audio_with_audio: settings.respond_audio_with_audio,
         handoff_after_failures: settings.handoff_after_failures,
         elevenlabs_voice_id: settings.elevenlabs_voice_id,
+        custom_prompt: settings.custom_prompt,
       })
       .eq('id', settings.id);
     setSaving(false);
@@ -270,6 +271,21 @@ export default function WhatsAppAgent() {
                       </p>
                     </div>
                   )}
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <Label className="font-medium">Prompt Personalizado do Agente</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Adicione instruções extras para o agente. Exemplo: tom de voz, regras específicas do seu negócio, informações que ele deve sempre mencionar, etc.
+                  </p>
+                  <Textarea
+                    value={settings?.custom_prompt || ''}
+                    onChange={(e) => setSettings({ ...settings, custom_prompt: e.target.value })}
+                    rows={5}
+                    placeholder="Ex: Sempre ofereça nosso pacote promocional de 5 sessões. Nunca mencione concorrentes. Use um tom mais formal..."
+                  />
                 </div>
 
                 <div className="bg-muted/60 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
