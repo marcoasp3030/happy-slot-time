@@ -962,6 +962,39 @@ export type Database = {
           },
         ]
       }
+      prompt_templates: {
+        Row: {
+          active: boolean
+          category: string
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          prompt_content: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          category?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          prompt_content: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          category?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          prompt_content?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       public_page_settings: {
         Row: {
           background_color: string | null

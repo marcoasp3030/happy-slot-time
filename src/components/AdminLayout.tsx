@@ -18,6 +18,7 @@ const adminNavItems = [
   { title: 'Google Calendar', icon: Calendar, path: '/admin/google-calendar' },
   { title: 'Logs & Auditoria', icon: ScrollText, path: '/admin/logs' },
   { title: 'Consumo de Tokens', icon: Activity, path: '/admin/tokens' },
+  { title: 'Biblioteca de Prompts', icon: ScrollText, path: '/admin/prompts' },
   { title: 'Plataforma', icon: Settings, path: '/admin/plataforma' },
 ];
 
