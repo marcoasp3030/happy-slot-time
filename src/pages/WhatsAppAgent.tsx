@@ -29,6 +29,7 @@ export default function WhatsAppAgent() {
   const [agentLogs, setAgentLogs] = useState<any[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<any>(null);
   const [conversationMessages, setConversationMessages] = useState<any[]>([]);
+  const [promptTemplates, setPromptTemplates] = useState<any[]>([]);
 
   // Knowledge base form
   const [kbCategory, setKbCategory] = useState('general');
@@ -45,11 +46,12 @@ export default function WhatsAppAgent() {
 
   async function fetchAll() {
     setLoading(true);
-    const [settingsRes, kbRes, convsRes, logsRes] = await Promise.all([
+    const [settingsRes, kbRes, convsRes, logsRes, promptsRes] = await Promise.all([
       supabase.from('whatsapp_agent_settings').select('*').eq('company_id', companyId!).single(),
       supabase.from('whatsapp_knowledge_base').select('*').eq('company_id', companyId!).order('created_at', { ascending: false }),
       supabase.from('whatsapp_conversations').select('*').eq('company_id', companyId!).order('last_message_at', { ascending: false }).limit(50),
       supabase.from('whatsapp_agent_logs').select('*').eq('company_id', companyId!).order('created_at', { ascending: false }).limit(100),
+      supabase.from('prompt_templates').select('*').eq('active', true).order('name'),
     ]);
 
     if (settingsRes.data) {
@@ -63,6 +65,7 @@ export default function WhatsAppAgent() {
     setKnowledgeItems(kbRes.data || []);
     setConversations(convsRes.data || []);
     setAgentLogs(logsRes.data || []);
+    setPromptTemplates((promptsRes.data as any[]) || []);
     setLoading(false);
   }
 
@@ -491,11 +494,36 @@ export default function WhatsAppAgent() {
 
                 <Separator />
 
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <Label className="font-medium">Prompt Personalizado do Agente</Label>
                   <p className="text-xs text-muted-foreground">
                     Adicione instruções extras para o agente. Exemplo: tom de voz, regras específicas do seu negócio, informações que ele deve sempre mencionar, etc.
                   </p>
+
+                  {promptTemplates.length > 0 && (
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">📋 Selecionar template da biblioteca</Label>
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          const selected = promptTemplates.find((t: any) => t.id === e.target.value);
+                          if (selected) {
+                            setSettings({ ...settings, custom_prompt: selected.prompt_content });
+                            toast({ title: `Template "${selected.name}" aplicado!` });
+                          }
+                        }}
+                        className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        <option value="">Escolha um template para preencher automaticamente...</option>
+                        {promptTemplates.map((t: any) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}{t.description ? ` — ${t.description}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
                   <Textarea
                     value={settings?.custom_prompt || ''}
                     onChange={(e) => setSettings({ ...settings, custom_prompt: e.target.value })}

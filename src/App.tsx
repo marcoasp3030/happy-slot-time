@@ -39,6 +39,7 @@ import AuditLogs from "./pages/AuditLogs";
 import WhatsAppAgent from "./pages/WhatsAppAgent";
 import AdminTokenUsage from "./pages/admin/AdminTokenUsage";
 import TokenUsage from "./pages/TokenUsage";
+import AdminPromptTemplates from "./pages/admin/AdminPromptTemplates";
 
 const queryClient = new QueryClient();
 
@@ -143,6 +144,7 @@ function AnimatedRoutes() {
       <Route path="/admin/plataforma" element={<AdminRoute><PageTransition><AdminPlatformSettings /></PageTransition></AdminRoute>} />
       <Route path="/admin/logs" element={<AdminRoute><PageTransition><AdminAuditLogs /></PageTransition></AdminRoute>} />
       <Route path="/admin/tokens" element={<AdminRoute><PageTransition><AdminTokenUsage /></PageTransition></AdminRoute>} />
+      <Route path="/admin/prompts" element={<AdminRoute><PageTransition><AdminPromptTemplates /></PageTransition></AdminRoute>} />
       
       <Route path="*" element={<PageTransition><NotFound /></PageTransition>} />
     </Routes>
