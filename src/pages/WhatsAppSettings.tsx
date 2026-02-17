@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useRole } from '@/hooks/useRole';
 import { supabase } from '@/integrations/supabase/client';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,6 +21,7 @@ interface TemplateButton {
 
 export default function WhatsAppSettings() {
   const { companyId } = useAuth();
+  const { isSuperAdmin } = useRole();
   const [settings, setSettings] = useState({ base_url: '', instance_id: '', token: '', admin_token: '', from_number: '', active: false } as any);
   const [templates, setTemplates] = useState<any[]>([]);
   const [rules, setRules] = useState<any[]>([]);
@@ -177,57 +179,72 @@ export default function WhatsAppSettings() {
           onInstanceCreated={fetchData}
         />
 
-        {/* Credentials - collapsible inside connection area */}
+        {/* Credentials - only visible for super_admin */}
+        {isSuperAdmin && (
+          <Card className="glass-card-static rounded-2xl">
+            <CardHeader className="px-4 sm:px-6">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Settings className="h-4.5 w-4.5 text-primary" />
+                Credenciais da API
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 sm:px-6 space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Configure as credenciais do provedor de API WhatsApp. Estas configurações são visíveis apenas para administradores da plataforma.
+              </p>
+              <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-semibold">URL Base da API</Label>
+                  <Input value={settings.base_url} onChange={(e) => setSettings({ ...settings, base_url: e.target.value })} placeholder="https://api.seuservidor.com" className="h-10" />
+                  <p className="text-xs text-muted-foreground">Endereço do servidor da API WhatsApp</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-semibold">ID da Instância</Label>
+                  <Input value={settings.instance_id} onChange={(e) => setSettings({ ...settings, instance_id: e.target.value })} placeholder="minha-instancia" className="h-10" />
+                  <p className="text-xs text-muted-foreground">Identificador único da sua instância</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-semibold">Token da Instância</Label>
+                  <Input type="password" value={settings.token} onChange={(e) => setSettings({ ...settings, token: e.target.value })} placeholder="Token para envio de mensagens" className="h-10" />
+                  <p className="text-xs text-muted-foreground">Token de autenticação para enviar mensagens</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-semibold">Token de Administração</Label>
+                  <Input type="password" value={settings.admin_token} onChange={(e) => setSettings({ ...settings, admin_token: e.target.value })} placeholder="Token de gerenciamento" className="h-10" />
+                  <p className="text-xs text-muted-foreground">Usado para criar instâncias e conectar via QR Code</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-semibold">Número de envio</Label>
+                  <Input value={settings.from_number} onChange={(e) => setSettings({ ...settings, from_number: e.target.value })} placeholder="5511999999999" className="h-10" />
+                  <p className="text-xs text-muted-foreground">Número que aparecerá como remetente</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch checked={settings.active} onCheckedChange={(v) => setSettings({ ...settings, active: v })} />
+                <Label className="font-medium">Integração ativa</Label>
+              </div>
+              <Button onClick={saveSettings} className="gradient-primary border-0 font-semibold">Salvar credenciais</Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Test send - visible for all users */}
         <Card className="glass-card-static rounded-2xl">
           <CardHeader className="px-4 sm:px-6">
             <CardTitle className="text-lg flex items-center gap-2">
-              <Settings className="h-4.5 w-4.5 text-primary" />
-              Credenciais da API
+              <Send className="h-4.5 w-4.5 text-primary" />
+              Testar Envio
             </CardTitle>
           </CardHeader>
-          <CardContent className="px-4 sm:px-6 space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Insira as credenciais do seu provedor de API WhatsApp para habilitar o envio de mensagens e a conexão via QR Code.
+          <CardContent className="px-4 sm:px-6">
+            <p className="text-sm text-muted-foreground mb-3">
+              Envie uma mensagem de teste para verificar se a conexão está funcionando.
             </p>
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label className="text-sm font-semibold">URL Base da API</Label>
-                <Input value={settings.base_url} onChange={(e) => setSettings({ ...settings, base_url: e.target.value })} placeholder="https://api.seuservidor.com" className="h-10" />
-                <p className="text-xs text-muted-foreground">Endereço do servidor da API WhatsApp</p>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm font-semibold">ID da Instância</Label>
-                <Input value={settings.instance_id} onChange={(e) => setSettings({ ...settings, instance_id: e.target.value })} placeholder="minha-instancia" className="h-10" />
-                <p className="text-xs text-muted-foreground">Identificador único da sua instância</p>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm font-semibold">Token da Instância</Label>
-                <Input type="password" value={settings.token} onChange={(e) => setSettings({ ...settings, token: e.target.value })} placeholder="Token para envio de mensagens" className="h-10" />
-                <p className="text-xs text-muted-foreground">Token de autenticação para enviar mensagens</p>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm font-semibold">Token de Administração</Label>
-                <Input type="password" value={settings.admin_token} onChange={(e) => setSettings({ ...settings, admin_token: e.target.value })} placeholder="Token de gerenciamento" className="h-10" />
-                <p className="text-xs text-muted-foreground">Usado para criar instâncias e conectar via QR Code</p>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm font-semibold">Número de envio</Label>
-                <Input value={settings.from_number} onChange={(e) => setSettings({ ...settings, from_number: e.target.value })} placeholder="5511999999999" className="h-10" />
-                <p className="text-xs text-muted-foreground">Número que aparecerá como remetente</p>
-              </div>
-            </div>
             <div className="flex items-center gap-2">
-              <Switch checked={settings.active} onCheckedChange={(v) => setSettings({ ...settings, active: v })} />
-              <Label className="font-medium">Integração ativa</Label>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <Button onClick={saveSettings} className="gradient-primary border-0 font-semibold">Salvar credenciais</Button>
-              <div className="flex items-center gap-2 flex-1">
-                <Input value={testPhone} onChange={(e) => setTestPhone(e.target.value)} placeholder="Nº para teste (ex: 5511999...)" className="flex-1 sm:max-w-[220px] h-10" />
-                <Button variant="outline" onClick={testConnection} className="flex-shrink-0">
-                  <Send className="h-4 w-4 mr-1.5" />Testar envio
-                </Button>
-              </div>
+              <Input value={testPhone} onChange={(e) => setTestPhone(e.target.value)} placeholder="Nº para teste (ex: 5511999...)" className="flex-1 sm:max-w-[280px] h-10" />
+              <Button variant="outline" onClick={testConnection} className="flex-shrink-0">
+                <Send className="h-4 w-4 mr-1.5" />Testar envio
+              </Button>
             </div>
           </CardContent>
         </Card>
