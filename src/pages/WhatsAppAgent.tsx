@@ -112,6 +112,7 @@ export default function WhatsAppAgent() {
         gemini_api_key: (settings as any).gemini_api_key,
         preferred_provider: (settings as any).preferred_provider,
         auto_react_enabled: settings.auto_react_enabled,
+        ignore_groups: settings.ignore_groups,
         react_on_confirm: settings.react_on_confirm,
         react_on_cancel: settings.react_on_cancel,
         react_on_thanks: settings.react_on_thanks,

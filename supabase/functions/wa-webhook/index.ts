@@ -248,6 +248,21 @@ function detectAudioMessage(body: any): { isAudio: boolean; mediaUrl: string | n
   return { isAudio: false, mediaUrl: null, mediaKey: null, messageId: null, whatsappMsgId: null, chatId: null };
 }
 
+function isGroupMessage(body: any): boolean {
+  const msg = body.message;
+  if (msg && typeof msg === "object") {
+    const chatid = msg.chatid || msg.chat_id || "";
+    if (typeof chatid === "string" && chatid.includes("@g.us")) return true;
+    const sender = msg.sender || "";
+    if (typeof sender === "string" && sender.includes("@g.us")) return true;
+  }
+  if (body.key?.remoteJid && typeof body.key.remoteJid === "string" && body.key.remoteJid.includes("@g.us")) return true;
+  if (body.data?.key?.remoteJid && typeof body.data.key.remoteJid === "string" && body.data.key.remoteJid.includes("@g.us")) return true;
+  if (body.chat?.jid && typeof body.chat.jid === "string" && body.chat.jid.includes("@g.us")) return true;
+  if (body.remoteJid && typeof body.remoteJid === "string" && body.remoteJid.includes("@g.us")) return true;
+  return false;
+}
+
 function extractPhone(body: any): string | null {
   const clean = (jid: string) => jid.replace("@s.whatsapp.net", "").replace("@c.us", "").replace(/\D/g, "");
   const isLid = (jid: string) => jid.includes("@lid") || jid.includes("@g.us");
@@ -493,6 +508,28 @@ Deno.serve(async (req) => {
         JSON.stringify({ ok: true, skipped: "from_me" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // ── Check if message is from a group and if we should ignore it ──
+    if (isGroupMessage(body)) {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
+      const sb = createClient(supabaseUrl, serviceKey);
+      
+      const { data: agentSettings } = await sb
+        .from("whatsapp_agent_settings")
+        .select("ignore_groups")
+        .eq("company_id", companyId)
+        .single();
+      
+      if (agentSettings?.ignore_groups !== false) {
+        log("👥 Skipping group message (ignore_groups enabled)");
+        return new Response(
+          JSON.stringify({ ok: true, skipped: "group_message" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     const phone = extractPhone(body);

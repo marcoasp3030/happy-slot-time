@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
-import { MapPin, Phone, Clock, Scissors, Users, FileText, Image, Mic, Upload, Trash2, Info, ShieldCheck, UserCheck, Mail, Building2, Globe, MapPinned, Briefcase, CreditCard, QrCode, Link, Sparkles, Loader2 } from 'lucide-react';
+import { MapPin, Phone, Clock, Scissors, Users, FileText, Image, Mic, Upload, Trash2, Info, ShieldCheck, UserCheck, Mail, Building2, Globe, MapPinned, Briefcase, CreditCard, QrCode, Link, Sparkles, Loader2, UsersRound } from 'lucide-react';
 
 interface AgentCapabilitiesProps {
   settings: any;
@@ -199,6 +199,29 @@ export default function AgentCapabilities({ settings, onSettingsChange, onSave, 
               rows={3}
               placeholder="Ex: Aceitamos PIX, cartão de crédito e débito. Estacionamento gratuito no local. Wi-Fi disponível."
             />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Group Messages */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <UsersRound className="h-4.5 w-4.5 text-primary" />
+            Grupos do WhatsApp
+          </CardTitle>
+          <CardDescription>Configure o comportamento do agente em grupos</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/40">
+            <div className="flex items-center gap-3">
+              <UsersRound className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <Label className="font-medium text-sm">Ignorar mensagens de grupos</Label>
+                <p className="text-xs text-muted-foreground">O agente não responderá mensagens enviadas em grupos do WhatsApp</p>
+              </div>
+            </div>
+            <Switch checked={settings?.ignore_groups ?? true} onCheckedChange={(v) => u('ignore_groups', v)} />
           </div>
         </CardContent>
       </Card>

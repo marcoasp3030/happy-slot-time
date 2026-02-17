@@ -1537,6 +1537,7 @@ export type Database = {
           greeting_message: string | null
           handoff_after_failures: number | null
           id: string
+          ignore_groups: boolean | null
           max_reschedule_suggestions: number | null
           openai_api_key: string | null
           payment_link_url: string | null
@@ -1588,6 +1589,7 @@ export type Database = {
           greeting_message?: string | null
           handoff_after_failures?: number | null
           id?: string
+          ignore_groups?: boolean | null
           max_reschedule_suggestions?: number | null
           openai_api_key?: string | null
           payment_link_url?: string | null
@@ -1639,6 +1641,7 @@ export type Database = {
           greeting_message?: string | null
           handoff_after_failures?: number | null
           id?: string
+          ignore_groups?: boolean | null
           max_reschedule_suggestions?: number | null
           openai_api_key?: string | null
           payment_link_url?: string | null

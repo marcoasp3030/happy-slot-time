@@ -1,0 +1,1 @@
+ALTER TABLE public.whatsapp_agent_settings ADD COLUMN ignore_groups BOOLEAN DEFAULT true;
