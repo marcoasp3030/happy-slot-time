@@ -421,38 +421,47 @@ export default function PublicBooking() {
                     setSelectedService(s);
                     setStep(staffList.length > 0 ? 'staff' : 'date');
                   }}
-                  className="w-full text-left p-4 rounded-2xl bg-white shadow-sm hover:shadow-lg border border-transparent hover:border-opacity-30 transition-all duration-300 group relative overflow-hidden"
+                  className="w-full text-left rounded-2xl bg-white shadow-sm hover:shadow-lg border border-transparent hover:border-opacity-30 transition-all duration-300 group relative overflow-hidden"
                   style={{ ['--hover-border' as string]: primaryColor }}
                 >
-                  <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                    style={{ background: `linear-gradient(135deg, ${primaryColor}05, ${primaryColor}10)` }}
-                  />
-                  <div className="relative flex items-center justify-between">
-                    <div className="flex items-center gap-3.5">
-                      <div
-                        className="h-12 w-12 rounded-xl flex items-center justify-center shadow-sm"
-                        style={{ background: `linear-gradient(135deg, ${(s.color || primaryColor)}15, ${(s.color || primaryColor)}25)` }}
-                      >
-                        <Star className="h-5 w-5" style={{ color: s.color || primaryColor }} />
-                      </div>
-                      <div>
-                        <p className="font-bold text-sm" style={{ color: secondaryColor }}>{s.name}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-xs text-muted-foreground flex items-center gap-1">
-                            <Clock className="h-3 w-3" />{s.duration} min
-                          </span>
-                          {s.price && (
-                            <span className="text-xs font-bold" style={{ color: primaryColor }}>
-                              R$ {Number(s.price).toFixed(2)}
+                  {s.image_url && (
+                    <div className="w-full h-36 overflow-hidden">
+                      <img src={s.image_url} alt={s.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                    </div>
+                  )}
+                  <div className="p-4">
+                    <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+                      style={{ background: `linear-gradient(135deg, ${primaryColor}05, ${primaryColor}10)` }}
+                    />
+                    <div className="relative flex items-center justify-between">
+                      <div className="flex items-center gap-3.5">
+                        {!s.image_url && (
+                          <div
+                            className="h-12 w-12 rounded-xl flex items-center justify-center shadow-sm"
+                            style={{ background: `linear-gradient(135deg, ${(s.color || primaryColor)}15, ${(s.color || primaryColor)}25)` }}
+                          >
+                            <Star className="h-5 w-5" style={{ color: s.color || primaryColor }} />
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-bold text-sm" style={{ color: secondaryColor }}>{s.name}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Clock className="h-3 w-3" />{s.duration} min
                             </span>
+                            {s.price && (
+                              <span className="text-xs font-bold" style={{ color: primaryColor }}>
+                                R$ {Number(s.price).toFixed(2)}
+                              </span>
+                            )}
+                          </div>
+                          {s.description && (
+                            <p className="text-xs text-muted-foreground/60 mt-1 line-clamp-2">{s.description}</p>
                           )}
                         </div>
-                        {s.description && (
-                          <p className="text-xs text-muted-foreground/60 mt-1 line-clamp-1">{s.description}</p>
-                        )}
                       </div>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground group-hover:translate-x-1 transition-all" />
                     </div>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground group-hover:translate-x-1 transition-all" />
                   </div>
                 </motion.button>
               ))}
