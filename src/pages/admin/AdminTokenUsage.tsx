@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { Activity, DollarSign, Zap, TrendingUp, Search } from "lucide-react";
+import { useEffect, useState as useStateHook } from "react";
 import { format, subDays, startOfMonth, endOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -18,6 +19,14 @@ export default function AdminTokenUsage() {
   const [period, setPeriod] = useState("30d");
   const [tenantFilter, setTenantFilter] = useState("all");
   const [searchTenant, setSearchTenant] = useState("");
+  const [usdBrl, setUsdBrl] = useStateHook<number>(5.70);
+
+  useEffect(() => {
+    fetch("https://open.er-api.com/v6/latest/USD")
+      .then(r => r.json())
+      .then(d => { if (d?.rates?.BRL) setUsdBrl(d.rates.BRL); })
+      .catch(() => {});
+  }, []);
 
   const dateFrom = period === "7d" ? subDays(new Date(), 7).toISOString()
     : period === "30d" ? subDays(new Date(), 30).toISOString()
@@ -164,6 +173,7 @@ export default function AdminTokenUsage() {
                 <div>
                   <p className="text-sm text-muted-foreground">Custo Total</p>
                   <p className="text-2xl font-bold">US$ {totalCost.toFixed(4)}</p>
+                  <p className="text-xs text-muted-foreground">≈ R$ {(totalCost * usdBrl).toFixed(4)}</p>
                 </div>
               </div>
             </CardContent>
@@ -266,7 +276,7 @@ export default function AdminTokenUsage() {
                       <TableCell className="font-medium">{c.name}</TableCell>
                       <TableCell className="text-right">{c.count.toLocaleString("pt-BR")}</TableCell>
                       <TableCell className="text-right">{c.tokens.toLocaleString("pt-BR")}</TableCell>
-                      <TableCell className="text-right">{c.cost.toFixed(4)}</TableCell>
+                      <TableCell className="text-right">US$ {c.cost.toFixed(4)} <span className="text-muted-foreground text-xs">/ R$ {(c.cost * usdBrl).toFixed(4)}</span></TableCell>
                       <TableCell className="text-right">
                         {limit ? (
                           <Badge variant={pct >= 100 ? "destructive" : pct >= 80 ? "secondary" : "outline"}>
