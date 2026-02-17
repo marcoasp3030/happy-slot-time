@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { toast } from '@/hooks/use-toast';
-import { Bot, Settings, MessageSquare, Plus, Trash2, BookOpen, History, Copy, ExternalLink, BarChart3, Clock, PhoneForwarded, Mic, Zap, ShieldCheck, Heart } from 'lucide-react';
+import { Bot, Settings, MessageSquare, Plus, Trash2, BookOpen, History, Copy, ExternalLink, BarChart3, Clock, PhoneForwarded, Mic, Zap, ShieldCheck, Heart, Sparkles, Wand2 } from 'lucide-react';
 import AgentCapabilities from '@/components/AgentCapabilities';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
@@ -30,6 +30,9 @@ export default function WhatsAppAgent() {
   const [selectedConversation, setSelectedConversation] = useState<any>(null);
   const [conversationMessages, setConversationMessages] = useState<any[]>([]);
   const [promptTemplates, setPromptTemplates] = useState<any[]>([]);
+
+  const [generatingPrompt, setGeneratingPrompt] = useState(false);
+  const [improvingPrompt, setImprovingPrompt] = useState(false);
 
   // Knowledge base form
   const [kbCategory, setKbCategory] = useState('general');
@@ -206,6 +209,40 @@ export default function WhatsAppAgent() {
     setAgentLogs([]);
     toast({ title: 'Todas as conversas foram resetadas!' });
     fetchAll();
+  }
+
+  async function generatePromptWithAI() {
+    setGeneratingPrompt(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-agent-prompt', {
+        body: { action: 'generate' },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setSettings({ ...settings, custom_prompt: data.text });
+      toast({ title: 'Prompt gerado com sucesso!', description: 'Revise e salve as configurações.' });
+    } catch (err: any) {
+      toast({ title: 'Erro ao gerar prompt', description: err.message, variant: 'destructive' });
+    } finally {
+      setGeneratingPrompt(false);
+    }
+  }
+
+  async function improvePromptWithAI() {
+    setImprovingPrompt(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-agent-prompt', {
+        body: { action: 'improve', current_prompt: settings?.custom_prompt || '' },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setSettings({ ...settings, custom_prompt: data.text });
+      toast({ title: 'Prompt melhorado!', description: 'Revise e salve as configurações.' });
+    } catch (err: any) {
+      toast({ title: 'Erro ao melhorar prompt', description: err.message, variant: 'destructive' });
+    } finally {
+      setImprovingPrompt(false);
+    }
   }
 
   if (loading) {
@@ -508,6 +545,27 @@ export default function WhatsAppAgent() {
                       </select>
                     </div>
                   )}
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={generatePromptWithAI}
+                      disabled={generatingPrompt || improvingPrompt}
+                    >
+                      <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+                      {generatingPrompt ? 'Gerando...' : 'Gerar com IA'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={improvePromptWithAI}
+                      disabled={improvingPrompt || generatingPrompt || !settings?.custom_prompt?.trim()}
+                    >
+                      <Wand2 className="h-3.5 w-3.5 mr-1.5" />
+                      {improvingPrompt ? 'Melhorando...' : 'Melhorar Prompt'}
+                    </Button>
+                  </div>
 
                   <Textarea
                     value={settings?.custom_prompt || ''}
