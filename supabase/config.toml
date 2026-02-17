@@ -2,3 +2,6 @@ project_id = "hqzizllylxkfwowwjwxe"
 
 [functions.whatsapp-agent-webhook]
 verify_jwt = false
+
+[functions.whatsapp-connect]
+verify_jwt = false
