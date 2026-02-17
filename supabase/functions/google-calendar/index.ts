@@ -274,6 +274,7 @@ Deno.serve(async (req) => {
           description,
           start: { dateTime: startDateTime, timeZone: "America/Sao_Paulo" },
           end: { dateTime: endDateTime, timeZone: "America/Sao_Paulo" },
+          colorId: "2",
         }),
       });
 
@@ -397,6 +398,7 @@ Deno.serve(async (req) => {
           description,
           start: { dateTime: startDateTime, timeZone: "America/Sao_Paulo" },
           end: { dateTime: endDateTime, timeZone: "America/Sao_Paulo" },
+          colorId: "2",
         }),
       });
 
