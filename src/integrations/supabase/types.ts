@@ -1287,6 +1287,7 @@ export type Database = {
           cancellation_policy_hours: number | null
           company_id: string
           created_at: string
+          custom_prompt: string | null
           elevenlabs_api_key: string | null
           elevenlabs_voice_id: string | null
           enabled: boolean
@@ -1302,6 +1303,7 @@ export type Database = {
           cancellation_policy_hours?: number | null
           company_id: string
           created_at?: string
+          custom_prompt?: string | null
           elevenlabs_api_key?: string | null
           elevenlabs_voice_id?: string | null
           enabled?: boolean
@@ -1317,6 +1319,7 @@ export type Database = {
           cancellation_policy_hours?: number | null
           company_id?: string
           created_at?: string
+          custom_prompt?: string | null
           elevenlabs_api_key?: string | null
           elevenlabs_voice_id?: string | null
           enabled?: boolean
