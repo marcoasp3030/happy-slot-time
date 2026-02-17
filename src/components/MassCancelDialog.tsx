@@ -33,7 +33,7 @@ export default function MassCancelDialog() {
   const [reschedule, setReschedule] = useState(false);
   const [rescheduleMode, setRescheduleMode] = useState<'auto' | 'manual'>('auto');
   const [targetDate, setTargetDate] = useState('');
-  const [targetSlots, setTargetSlots] = useState<{ total: number; free: number; occupied: number; isOpen: boolean } | null>(null);
+  const [targetSlots, setTargetSlots] = useState<{ total: number; free: number; occupied: number; isOpen: boolean; freeSlots: string[] } | null>(null);
   const [targetSlotsLoading, setTargetSlotsLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [previewCount, setPreviewCount] = useState<number | null>(null);
@@ -87,7 +87,7 @@ export default function MassCancelDialog() {
       ]);
       const bh = bhRes.data;
       if (!bh || !bh.is_open) {
-        setTargetSlots({ total: 0, free: 0, occupied: 0, isOpen: false });
+        setTargetSlots({ total: 0, free: 0, occupied: 0, isOpen: false, freeSlots: [] });
         return;
       }
       const interval = settingsRes.data?.slot_interval || 30;
@@ -96,7 +96,7 @@ export default function MassCancelDialog() {
       const timeBlocks = blocksRes.data || [];
       const fullDayBlock = timeBlocks.find((b: any) => !b.start_time && !b.end_time && !b.staff_id);
       if (fullDayBlock) {
-        setTargetSlots({ total: 0, free: 0, occupied: 0, isOpen: false });
+        setTargetSlots({ total: 0, free: 0, occupied: 0, isOpen: false, freeSlots: [] });
         return;
       }
       const dateBlocks = timeBlocks.filter((b: any) => b.start_time && b.end_time && !b.staff_id);
@@ -106,6 +106,7 @@ export default function MassCancelDialog() {
       const end = closeH * 60 + closeM;
       let total = 0;
       let free = 0;
+      const freeSlotsList: string[] = [];
       while (current + interval <= end) {
         const hh = String(Math.floor(current / 60)).padStart(2, '0');
         const mm = String(current % 60).padStart(2, '0');
@@ -128,11 +129,12 @@ export default function MassCancelDialog() {
           });
           if (conflicts.length < maxCapacity) {
             free++;
+            freeSlotsList.push(slotStart);
           }
         }
         current += interval;
       }
-      setTargetSlots({ total, free, occupied: total - free, isOpen: true });
+      setTargetSlots({ total, free, occupied: total - free, isOpen: true, freeSlots: freeSlotsList });
     } catch (e) {
       console.error('Error fetching target slots:', e);
       setTargetSlots(null);
@@ -426,6 +428,18 @@ export default function MassCancelDialog() {
                                 )}
                                 {previewCount !== null && targetSlots.free >= previewCount && (
                                   <p>✅ Capacidade suficiente para remarcar todos os {previewCount} agendamentos</p>
+                                )}
+                                {targetSlots.freeSlots.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 pt-1">
+                                    {targetSlots.freeSlots.map((slot) => (
+                                      <span
+                                        key={slot}
+                                        className="inline-block px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-semibold"
+                                      >
+                                        {slot}
+                                      </span>
+                                    ))}
+                                  </div>
                                 )}
                               </div>
                             )}
