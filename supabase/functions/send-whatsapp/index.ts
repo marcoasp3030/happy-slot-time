@@ -481,14 +481,43 @@ async function sendAudioViaUazapi(wsSettings: any, phone: string, audioData: Uin
   const audioUrl = urlData.publicUrl;
   log("🔊 TTS uploaded to:", audioUrl);
 
-  const sendUrl = wsSettings.base_url.replace(/\/$/, "") + "/send/audio";
-  const res = await fetch(sendUrl, {
+  // Try /send/ptt first (UAZAPI v2 PTT endpoint), fallback to /send/audio
+  const baseUrl = wsSettings.base_url.replace(/\/$/, "");
+  const endpoints = ["/send/ptt", "/send/audio"];
+  
+  for (const ep of endpoints) {
+    const sendUrl = baseUrl + ep;
+    const sendBody: any = { number: phone, url: audioUrl, delay: 1 };
+    // For /send/ptt, UAZAPI may also accept 'audio' field
+    if (ep === "/send/ptt") {
+      sendBody.ptt = true;
+    }
+    
+    log("🔊 Trying UAZAPI audio send:", sendUrl);
+    const res = await fetch(sendUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", token: wsSettings.token },
+      body: JSON.stringify(sendBody),
+    });
+    const resText = await res.text();
+    log("🔊 UAZAPI audio send result:", res.status, resText.substring(0, 200));
+    
+    if (res.status === 200 || res.status === 201) {
+      log("🔊 ✅ Audio sent successfully via", ep);
+      return;
+    }
+    log("🔊 ⚠️ Endpoint", ep, "returned", res.status, "- trying next...");
+  }
+  
+  // If both failed, try sending as document (MP3 file)
+  log("🔊 ⚠️ Both audio endpoints failed, trying /send/document as fallback");
+  const docRes = await fetch(baseUrl + "/send/document", {
     method: "POST",
     headers: { "Content-Type": "application/json", token: wsSettings.token },
-    body: JSON.stringify({ number: phone, url: audioUrl }),
+    body: JSON.stringify({ number: phone, url: audioUrl, fileName: "audio.mp3" }),
   });
-  log("🔊 UAZAPI audio send:", res.status);
-  await res.text();
+  log("🔊 Document fallback result:", docRes.status);
+  await docRes.text();
 }
 
 // ─── Download audio from UAZAPI (try multiple endpoints) ───
