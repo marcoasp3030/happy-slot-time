@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   Search, Users, ClipboardList, Layers, Plus, Camera, Trash2,
-  Phone, ChevronRight, ChevronLeft, ImageIcon, ArrowLeft, Pencil
+  Phone, ChevronRight, ChevronLeft, ImageIcon, ArrowLeft, Pencil, UserPlus
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Progress } from '@/components/ui/progress';
@@ -59,6 +59,10 @@ export default function ClientRecords() {
 
   // Delete confirmation state
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'anamnesis' | 'package'; id: string; name: string } | null>(null);
+
+  // New client state
+  const [newClientOpen, setNewClientOpen] = useState(false);
+  const [newClientForm, setNewClientForm] = useState({ client_name: '', client_phone: '' });
 
   // Photos state
   const [photos, setPhotos] = useState<any[]>([]);
@@ -312,6 +316,31 @@ export default function ClientRecords() {
       await deletePackage(deleteTarget.id);
     }
     setDeleteTarget(null);
+  };
+
+  const saveNewClient = async () => {
+    if (!companyId || !newClientForm.client_name.trim() || !newClientForm.client_phone.trim()) {
+      toast.error('Preencha nome e telefone'); return;
+    }
+    // Check if client already exists
+    const exists = clients.some(c => c.client_phone === newClientForm.client_phone.trim());
+    if (exists) {
+      toast.error('Já existe um cliente com este telefone'); return;
+    }
+    // Create a minimal anamnesis record so the client appears in the list
+    const { error } = await supabase.from('anamnesis_responses').insert({
+      company_id: companyId,
+      client_name: newClientForm.client_name.trim(),
+      client_phone: newClientForm.client_phone.trim(),
+      responses: {},
+      filled_by: 'professional',
+      notes: 'Cadastro inicial do cliente',
+    });
+    if (error) { toast.error('Erro: ' + error.message); return; }
+    toast.success('Cliente cadastrado com sucesso');
+    setNewClientOpen(false);
+    setNewClientForm({ client_name: '', client_phone: '' });
+    fetchResponses();
   };
 
   const openPackageDetail = (pkg: any) => {
@@ -916,11 +945,18 @@ export default function ClientRecords() {
     <DashboardLayout>
       <div className="space-y-5">
         <div className="section-header">
-          <h1 className="section-title flex items-center gap-2">
-            <Users className="h-5 w-5 text-primary" />
-            Fichas de Clientes
-          </h1>
-          <p className="section-subtitle">Prontuário unificado: anamnese, sessões e fotos</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="section-title flex items-center gap-2">
+                <Users className="h-5 w-5 text-primary" />
+                Fichas de Clientes
+              </h1>
+              <p className="section-subtitle">Prontuário unificado: anamnese, sessões e fotos</p>
+            </div>
+            <Button size="sm" className="gradient-primary border-0 font-semibold gap-1.5" onClick={() => { setNewClientForm({ client_name: '', client_phone: '' }); setNewClientOpen(true); }}>
+              <UserPlus className="h-4 w-4" />Novo cliente
+            </Button>
+          </div>
         </div>
 
         <div className="relative max-w-xs">
@@ -968,6 +1004,24 @@ export default function ClientRecords() {
           </div>
         )}
       </div>
+
+      {/* NEW CLIENT DIALOG */}
+      <Dialog open={newClientOpen} onOpenChange={setNewClientOpen}>
+        <DialogContent className="max-w-[95vw] sm:max-w-sm">
+          <DialogHeader><DialogTitle className="font-bold">Novo Cliente</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label className="font-semibold text-sm">Nome *</Label>
+              <Input value={newClientForm.client_name} onChange={(e) => setNewClientForm({ ...newClientForm, client_name: e.target.value })} placeholder="Nome do cliente" className="h-10" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="font-semibold text-sm">Telefone *</Label>
+              <Input value={newClientForm.client_phone} onChange={(e) => setNewClientForm({ ...newClientForm, client_phone: e.target.value })} placeholder="(00) 00000-0000" className="h-10" />
+            </div>
+            <Button onClick={saveNewClient} className="w-full gradient-primary border-0 font-semibold h-10">Cadastrar cliente</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }
