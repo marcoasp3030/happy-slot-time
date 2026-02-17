@@ -791,6 +791,7 @@ export type Database = {
           description: string | null
           duration: number
           id: string
+          image_url: string | null
           name: string
           price: number | null
           requires_anamnesis: boolean
@@ -805,6 +806,7 @@ export type Database = {
           description?: string | null
           duration?: number
           id?: string
+          image_url?: string | null
           name: string
           price?: number | null
           requires_anamnesis?: boolean
@@ -819,6 +821,7 @@ export type Database = {
           description?: string | null
           duration?: number
           id?: string
+          image_url?: string | null
           name?: string
           price?: number | null
           requires_anamnesis?: boolean
