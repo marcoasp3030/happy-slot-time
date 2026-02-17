@@ -433,6 +433,11 @@ REGRAS ESSENCIAIS:
 - Separe assuntos com \\n\\n (enviados como mensagens separadas)
 - NÃO repita o que o cliente já sabe ou que já foi dito na conversa
 
+REGRA DE NOME DO CLIENTE (IMPORTANTE):
+- Nome do cliente: ${conv.client_name || "DESCONHECIDO"}
+- ${conv.client_name ? `Use o nome "${conv.client_name}" para personalizar as respostas de forma natural (ex: "Claro, ${conv.client_name}!")` : "O nome do cliente ainda NÃO É CONHECIDO. Na PRIMEIRA oportunidade natural, pergunte o nome do cliente de forma simpática (ex: 'Como posso te chamar?'). Use a ferramenta save_client_name assim que souber o nome."}
+- Se o cliente informar o nome em qualquer mensagem, use save_client_name IMEDIATAMENTE para salvar
+
 REGRA ANTI-REPETIÇÃO (CRÍTICO):
 - ${hasHistory ? "Esta conversa JÁ ESTÁ EM ANDAMENTO. NÃO cumprimente novamente. NÃO diga 'oi', 'olá', 'tudo bem?'. Vá direto ao ponto respondendo a última mensagem." : "Esta é a PRIMEIRA mensagem do cliente. Cumprimente brevemente e pergunte como pode ajudar."}
 - NUNCA repita saudações se já houve troca de mensagens
@@ -461,6 +466,7 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
     { type: "function", function: { name: "check_availability", description: "Horarios disponiveis", parameters: { type: "object", properties: { date: { type: "string" } }, required: ["date"] } } },
     { type: "function", function: { name: "reschedule_appointment", description: "Reagenda", parameters: { type: "object", properties: { appointment_id: { type: "string" }, new_date: { type: "string" }, new_time: { type: "string" } }, required: ["appointment_id", "new_date", "new_time"] } } },
     { type: "function", function: { name: "request_handoff", description: "Transfere humano", parameters: { type: "object", properties: {} } } },
+    { type: "function", function: { name: "save_client_name", description: "Salva o nome do cliente quando ele se apresenta", parameters: { type: "object", properties: { name: { type: "string", description: "Nome do cliente" } }, required: ["name"] } } },
   ];
 
   log("🧠 Sending request to AI gateway...");
@@ -526,6 +532,9 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
       } else if (fn === "request_handoff") {
         await sb.from("whatsapp_conversations").update({ handoff_requested: true, status: "handoff" }).eq("id", conv.id);
         txt = txt || "Transferindo para atendente! 🙋";
+      } else if (fn === "save_client_name" && args.name) {
+        await sb.from("whatsapp_conversations").update({ client_name: args.name }).eq("id", conv.id);
+        log("🧠 Client name saved:", args.name);
       }
       await sb.from("whatsapp_agent_logs").insert({ company_id: cid, conversation_id: conv.id, action: fn, details: args });
     }
