@@ -1240,6 +1240,202 @@ export type Database = {
         }
         Relationships: []
       }
+      whatsapp_agent_logs: {
+        Row: {
+          action: string
+          company_id: string
+          conversation_id: string | null
+          created_at: string
+          details: Json | null
+          id: string
+        }
+        Insert: {
+          action: string
+          company_id: string
+          conversation_id?: string | null
+          created_at?: string
+          details?: Json | null
+          id?: string
+        }
+        Update: {
+          action?: string
+          company_id?: string
+          conversation_id?: string | null
+          created_at?: string
+          details?: Json | null
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_agent_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_agent_logs_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_agent_settings: {
+        Row: {
+          cancellation_policy_hours: number | null
+          company_id: string
+          created_at: string
+          elevenlabs_api_key: string | null
+          elevenlabs_voice_id: string | null
+          enabled: boolean
+          greeting_message: string | null
+          handoff_after_failures: number | null
+          id: string
+          max_reschedule_suggestions: number | null
+          openai_api_key: string | null
+          respond_audio_with_audio: boolean | null
+          updated_at: string
+        }
+        Insert: {
+          cancellation_policy_hours?: number | null
+          company_id: string
+          created_at?: string
+          elevenlabs_api_key?: string | null
+          elevenlabs_voice_id?: string | null
+          enabled?: boolean
+          greeting_message?: string | null
+          handoff_after_failures?: number | null
+          id?: string
+          max_reschedule_suggestions?: number | null
+          openai_api_key?: string | null
+          respond_audio_with_audio?: boolean | null
+          updated_at?: string
+        }
+        Update: {
+          cancellation_policy_hours?: number | null
+          company_id?: string
+          created_at?: string
+          elevenlabs_api_key?: string | null
+          elevenlabs_voice_id?: string | null
+          enabled?: boolean
+          greeting_message?: string | null
+          handoff_after_failures?: number | null
+          id?: string
+          max_reschedule_suggestions?: number | null
+          openai_api_key?: string | null
+          respond_audio_with_audio?: boolean | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_agent_settings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_conversations: {
+        Row: {
+          client_name: string | null
+          company_id: string
+          created_at: string
+          current_appointment_id: string | null
+          current_intent: string | null
+          handoff_requested: boolean | null
+          id: string
+          last_message_at: string | null
+          phone: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          client_name?: string | null
+          company_id: string
+          created_at?: string
+          current_appointment_id?: string | null
+          current_intent?: string | null
+          handoff_requested?: boolean | null
+          id?: string
+          last_message_at?: string | null
+          phone: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          client_name?: string | null
+          company_id?: string
+          created_at?: string
+          current_appointment_id?: string | null
+          current_intent?: string | null
+          handoff_requested?: boolean | null
+          id?: string
+          last_message_at?: string | null
+          phone?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_conversations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_conversations_current_appointment_id_fkey"
+            columns: ["current_appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_knowledge_base: {
+        Row: {
+          active: boolean
+          category: string
+          company_id: string
+          content: string
+          created_at: string
+          id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          category?: string
+          company_id: string
+          content: string
+          created_at?: string
+          id?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          category?: string
+          company_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_knowledge_base_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       whatsapp_logs: {
         Row: {
           appointment_id: string | null
@@ -1287,6 +1483,57 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_messages: {
+        Row: {
+          company_id: string
+          content: string | null
+          conversation_id: string
+          created_at: string
+          direction: string
+          id: string
+          media_url: string | null
+          message_type: string
+          metadata: Json | null
+        }
+        Insert: {
+          company_id: string
+          content?: string | null
+          conversation_id: string
+          created_at?: string
+          direction?: string
+          id?: string
+          media_url?: string | null
+          message_type?: string
+          metadata?: Json | null
+        }
+        Update: {
+          company_id?: string
+          content?: string | null
+          conversation_id?: string
+          created_at?: string
+          direction?: string
+          id?: string
+          media_url?: string | null
+          message_type?: string
+          metadata?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_messages_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_conversations"
             referencedColumns: ["id"]
           },
         ]
