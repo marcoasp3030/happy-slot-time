@@ -809,9 +809,29 @@ export default function WhatsAppAgent() {
                             }`}
                           >
                             <p className="whitespace-pre-wrap">{msg.content}</p>
-                            <p className="text-[10px] text-muted-foreground mt-1">
-                              {new Date(msg.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                            </p>
+                            <div className="flex items-center gap-1 justify-end mt-1">
+                              <span className="text-[10px] text-muted-foreground">
+                                {new Date(msg.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              {msg.direction === 'outgoing' && (
+                                <span className={`text-[11px] leading-none ${
+                                  msg.delivery_status === 'read' ? 'text-blue-500' 
+                                  : msg.delivery_status === 'failed' ? 'text-destructive'
+                                  : 'text-muted-foreground'
+                                }`} title={
+                                  msg.delivery_status === 'sent' ? 'Enviado' 
+                                  : msg.delivery_status === 'delivered' ? 'Entregue' 
+                                  : msg.delivery_status === 'read' ? 'Lido' 
+                                  : msg.delivery_status === 'failed' ? 'Falhou'
+                                  : 'Enviado'
+                                }>
+                                  {msg.delivery_status === 'failed' ? '✕' 
+                                   : msg.delivery_status === 'delivered' ? '✔✔' 
+                                   : msg.delivery_status === 'read' ? '✔✔' 
+                                   : '✔'}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
