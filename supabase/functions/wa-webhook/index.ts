@@ -428,6 +428,46 @@ Deno.serve(async (req) => {
       );
     }
 
+    // ── Detect reaction inside regular "messages" event ──
+    const msgObj = body.message;
+    if (msgObj && typeof msgObj === "object" && (msgObj.messageType === "reactionMessage" || (msgObj.reaction && typeof msgObj.reaction === "object" && msgObj.reaction.text))) {
+      const emoji = msgObj.reaction?.text;
+      const reactedMsgId = msgObj.reaction?.key?.id || msgObj.reaction?.id;
+      const reactPhone = extractPhone(body);
+      
+      log("😀 Reaction detected inside messages event! emoji:", emoji, "phone:", reactPhone, "msgId:", reactedMsgId, "messageType:", msgObj.messageType);
+      
+      if (emoji && reactPhone && !isFromMe(body)) {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        const forwardUrl = `${supabaseUrl}/functions/v1/send-whatsapp`;
+        
+        const res = await fetch(forwardUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+          body: JSON.stringify({
+            action: "reaction-trigger",
+            company_id: companyId,
+            phone: reactPhone,
+            emoji,
+            reacted_message_id: reactedMsgId,
+          }),
+        });
+        const result = await res.text();
+        log("😀 Reaction trigger result:", res.status, result.substring(0, 200));
+        
+        return new Response(result, {
+          status: res.status,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      
+      return new Response(
+        JSON.stringify({ ok: true, handled: "reaction_in_message" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Log fromMe detection details
     log("🔵 fromMe check:", 
       "body.fromMe:", body.fromMe, 
