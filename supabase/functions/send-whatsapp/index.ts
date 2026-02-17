@@ -1010,7 +1010,7 @@ async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
   const agentCaps = as_.data || {};
   return {
     msgs: (m.data || []).reverse(), appts: a.data || [], co: c.data || {}, svcs: s.data || [], hrs: h.data || [],
-    kb: k.data || [], cs: { ...(cs.data || {}), custom_prompt: agentCaps.custom_prompt, timezone: agentCaps.timezone || "America/Sao_Paulo" },
+    kb: k.data || [], cs: { ...(cs.data || {}), custom_prompt: agentCaps.custom_prompt, timezone: agentCaps.timezone || "America/Sao_Paulo", ai_model: agentCaps.ai_model || "google/gemini-2.5-flash" },
     staff: st.data || [], staffServices: ss.data || [], agentFiles: af.data || [],
     caps: {
       can_share_address: agentCaps.can_share_address ?? true,
@@ -1173,7 +1173,8 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
   for (const m of ctx.msgs) messages.push({ role: m.direction === "incoming" ? "user" : "assistant", content: m.content || "" });
   messages.push({ role: "user", content: userMsg });
 
-  log("🧠 AI request: model=google/gemini-2.5-flash, messages:", messages.length, "system_len:", sys.length);
+  const aiModel = ctx.cs?.ai_model || "google/gemini-2.5-flash";
+  log("🧠 AI request: model=" + aiModel + ", messages:", messages.length, "system_len:", sys.length);
 
   const tools: any[] = [
     { type: "function", function: { name: "confirm_appointment", description: "Confirma agendamento existente", parameters: { type: "object", properties: { appointment_id: { type: "string" } }, required: ["appointment_id"] } } },
@@ -1269,7 +1270,7 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
   const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "google/gemini-2.5-flash", messages, tools }),
+    body: JSON.stringify({ model: aiModel, messages, tools }),
   });
   log("🧠 AI response status:", r.status, "in", Date.now() - t0, "ms");
 
