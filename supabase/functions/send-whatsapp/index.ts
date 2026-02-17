@@ -804,58 +804,66 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
     const reply = await callAI(sb, cid, conv, ctx, actualMsg);
     log("🤖 AI reply in", Date.now() - t2, "ms:", reply.substring(0, 150));
 
+    // Check if reply is a menu marker (buttons/list already sent via /send/menu)
+    const menuAlreadySent = reply === "__MENU_SENT__";
+    const displayReply = menuAlreadySent ? "[menu interativo enviado]" : reply;
+
     // Save outgoing message
-    const { error: outErr } = await sb.from("whatsapp_messages").insert({ conversation_id: conv.id, company_id: cid, direction: "outgoing", message_type: "text", content: reply });
+    const { error: outErr } = await sb.from("whatsapp_messages").insert({ conversation_id: conv.id, company_id: cid, direction: "outgoing", message_type: menuAlreadySent ? "interactive" : "text", content: displayReply });
     log("🤖 Outgoing msg saved:", outErr ? `ERROR: ${outErr.message}` : "OK");
 
-    // Send via UAZAPI
-    log("🤖 Fetching WhatsApp settings to send reply...");
-    const { data: ws, error: wsErr } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
-    log("🤖 WS settings:", ws ? `active=${ws.active} base_url=${ws.base_url}` : "NOT FOUND", "error:", wsErr?.message);
+    // Send via UAZAPI (skip if menu was already sent)
+    if (menuAlreadySent) {
+      log("🤖 ✅ Menu already sent via /send/menu, skipping text send");
+    } else {
+      log("🤖 Fetching WhatsApp settings to send reply...");
+      const { data: ws, error: wsErr } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
+      log("🤖 WS settings:", ws ? `active=${ws.active} base_url=${ws.base_url}` : "NOT FOUND", "error:", wsErr?.message);
 
-    if (ws?.active && ws?.base_url && ws?.token) {
-      const cleanPhone = phone.replace(/\D/g, "");
-      
-      // Check if we should respond with audio (when incoming was audio and setting is enabled)
-      if (isAudioMsg && ag?.respond_audio_with_audio && ag?.elevenlabs_voice_id) {
-        log("🔊 Responding with audio (respond_audio_with_audio=true)");
-        try {
-          const audioData = await textToSpeech(reply, ag.elevenlabs_voice_id);
-          if (audioData) {
-            await sendAudioViaUazapi(ws, cleanPhone, audioData);
-            log("🔊 ✅ Audio response sent!");
-          } else {
-            log("🔊 TTS returned null, falling back to text");
+      if (ws?.active && ws?.base_url && ws?.token) {
+        const cleanPhone = phone.replace(/\D/g, "");
+        
+        // Check if we should respond with audio (when incoming was audio and setting is enabled)
+        if (isAudioMsg && ag?.respond_audio_with_audio && ag?.elevenlabs_voice_id) {
+          log("🔊 Responding with audio (respond_audio_with_audio=true)");
+          try {
+            const audioData = await textToSpeech(reply, ag.elevenlabs_voice_id);
+            if (audioData) {
+              await sendAudioViaUazapi(ws, cleanPhone, audioData);
+              log("🔊 ✅ Audio response sent!");
+            } else {
+              log("🔊 TTS returned null, falling back to text");
+              await sendHumanizedReply(
+                { base_url: ws.base_url, instance_id: ws.instance_id || "", token: ws.token },
+                cleanPhone, reply
+              );
+            }
+          } catch (e: any) {
+            logErr("🔊 Audio response failed, falling back to text:", e.message);
             await sendHumanizedReply(
               { base_url: ws.base_url, instance_id: ws.instance_id || "", token: ws.token },
               cleanPhone, reply
             );
           }
-        } catch (e: any) {
-          logErr("🔊 Audio response failed, falling back to text:", e.message);
-          await sendHumanizedReply(
-            { base_url: ws.base_url, instance_id: ws.instance_id || "", token: ws.token },
-            cleanPhone, reply
-          );
+        } else {
+          // Standard text reply
+          try {
+            log("🤖 Sending humanized reply via UAZAPI...");
+            await sendHumanizedReply(
+              { base_url: ws.base_url, instance_id: ws.instance_id || "", token: ws.token },
+              cleanPhone, reply
+            );
+            log("🤖 ✅ Humanized reply sent successfully!");
+          } catch (e: any) {
+            logErr("🤖 ❌ Send error:", e.message);
+          }
         }
       } else {
-        // Standard text reply
-        try {
-          log("🤖 Sending humanized reply via UAZAPI...");
-          await sendHumanizedReply(
-            { base_url: ws.base_url, instance_id: ws.instance_id || "", token: ws.token },
-            cleanPhone, reply
-          );
-          log("🤖 ✅ Humanized reply sent successfully!");
-        } catch (e: any) {
-          logErr("🤖 ❌ Send error:", e.message);
-        }
+        log("🤖 ⚠️ Cannot send: WS inactive or missing credentials");
       }
-    } else {
-      log("🤖 ⚠️ Cannot send: WS inactive or missing credentials");
     }
 
-    return { ok: true, response: reply, conversation_id: conv.id, is_audio: isAudioMsg };
+    return { ok: true, response: displayReply, conversation_id: conv.id, is_audio: isAudioMsg };
   } catch (aiErr: any) {
     logErr("🤖 ❌ AI call FAILED:", aiErr.message, aiErr.stack);
     return { error: aiErr.message, conversation_id: conv.id };
@@ -999,14 +1007,18 @@ FLUXO DE AGENDAMENTO (IMPORTANTE):
 - Para cancelar, confirme com o cliente e use cancel_appointment
 - O agendamento criado será automaticamente sincronizado com o Google Agenda
 
-BOTÕES INTERATIVOS (IMPORTANTE):
-- Use send_buttons quando quiser oferecer opções rápidas ao cliente (máximo 3 botões)
-- Exemplos de uso: escolha de serviço (2-3 opções), confirmação sim/não, escolha de profissional
-- Formato choices: ["Texto visível|id_curto"] — ex: ["Corte|corte", "Barba|barba", "Combo|combo"]
-- Use send_list quando houver MAIS de 3 opções (ex: muitos horários, muitos serviços)
-- Formato list choices: ["Título|Descrição"] — ex: ["09:00|Disponível", "10:00|Disponível"]
-- PREFIRA botões sempre que possível — é mais fácil para o cliente interagir
-- NÃO use botões para mensagens informativas simples, apenas quando precisa de uma ESCOLHA do cliente
+BOTÕES INTERATIVOS (OBRIGATÓRIO — SEMPRE USE QUANDO HOUVER ESCOLHA):
+- REGRA: Toda vez que o cliente precisa ESCOLHER entre opções, você DEVE usar send_buttons ou send_list. NUNCA liste opções como texto simples.
+- send_buttons: para 2-3 opções rápidas (serviços, sim/não, profissionais, horários)
+- send_list: para 4+ opções (muitos horários, muitos serviços)
+- Formato choices para buttons: ["Texto do botão|id_curto"] — ex: ["Corte de cabelo|corte", "Barba|barba"]
+- Formato choices para list: ["Título|Descrição"] — ex: ["09:00|Horário disponível", "10:00|Horário disponível"]
+- EXEMPLOS DE USO OBRIGATÓRIO:
+  * Cliente quer agendar e há serviços → send_buttons com os serviços (ou send_list se >3)
+  * Verificou disponibilidade e há horários → send_buttons com top 3 horários (ou send_list se >3)
+  * Precisa confirmar algo → send_buttons ["Sim|sim", "Não|nao"]
+  * Precisa escolher profissional → send_buttons com nomes
+- IMPORTANTE: Ao usar send_buttons/send_list, inclua o texto explicativo no campo "text" do botão. NÃO retorne texto adicional no content — o texto dos botões já é a resposta.
 
 DADOS (use só quando relevante, não despeje tudo de uma vez):
 ${dataParts.join(" | ")}
@@ -1262,6 +1274,7 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
       } else if (fn === "send_buttons" || fn === "send_list") {
         // Send interactive buttons or list via UAZAPI /send/menu
         const { data: ws } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
+        let menuSentOk = false;
         if (ws?.active && ws?.base_url && ws?.token) {
           try {
             const menuType = fn === "send_buttons" ? "button" : "list";
@@ -1277,14 +1290,17 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
               }
             );
             log("🔘 ✅ Menu sent successfully! type:", menuType);
+            menuSentOk = true;
+            // Mark txt as __MENU_SENT__ so we skip sendHumanizedReply later
+            txt = "__MENU_SENT__";
           } catch (e: any) {
             logErr("🔘 ❌ Menu send error:", e.message);
             // Fallback: send as plain text with numbered options
             const fallbackText = args.text + "\n\n" + (args.choices || []).map((c: string, i: number) => `${i + 1}. ${c.split("|")[0]}`).join("\n");
-            txt = txt || fallbackText;
+            txt = fallbackText;
           }
         }
-        if (!txt) txt = args.text || "";
+        if (!menuSentOk && !txt) txt = args.text || "";
       }
       await sb.from("whatsapp_agent_logs").insert({ company_id: cid, conversation_id: conv.id, action: fn, details: args });
     }
