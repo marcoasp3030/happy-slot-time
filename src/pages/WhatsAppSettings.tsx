@@ -93,7 +93,12 @@ export default function WhatsAppSettings() {
         </div>
 
         {/* Connection Card - QR Code flow */}
-        <WhatsAppConnectionCard hasCredentials={!!(settings.base_url && settings.token)} />
+        <WhatsAppConnectionCard
+          hasCredentials={!!(settings.base_url)}
+          hasInstanceToken={!!settings.token}
+          hasAdminToken={!!settings.admin_token}
+          onInstanceCreated={fetchData}
+        />
 
         {/* Credentials */}
         <Card className="glass-card-static rounded-2xl">

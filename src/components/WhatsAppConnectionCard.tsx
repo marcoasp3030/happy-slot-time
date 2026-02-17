@@ -3,19 +3,21 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Wifi, WifiOff, QrCode, RefreshCw, Smartphone, CheckCircle2 } from 'lucide-react';
+import { Loader2, Wifi, WifiOff, QrCode, RefreshCw, Smartphone, CheckCircle2, Plus } from 'lucide-react';
 
-type ConnectionStatus = 'idle' | 'connecting' | 'polling' | 'connected' | 'error';
+type ConnectionStatus = 'idle' | 'creating' | 'connecting' | 'polling' | 'connected' | 'error' | 'needs-instance';
 
 interface WhatsAppConnectionCardProps {
   hasCredentials: boolean;
+  hasInstanceToken: boolean;
+  hasAdminToken: boolean;
+  onInstanceCreated?: () => void;
 }
 
-export default function WhatsAppConnectionCard({ hasCredentials }: WhatsAppConnectionCardProps) {
+export default function WhatsAppConnectionCard({ hasCredentials, hasInstanceToken, hasAdminToken, onInstanceCreated }: WhatsAppConnectionCardProps) {
   const [status, setStatus] = useState<ConnectionStatus>('idle');
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [pairCode, setPairCode] = useState<string | null>(null);
-  const [instanceStatus, setInstanceStatus] = useState<string>('unknown');
   const [error, setError] = useState<string | null>(null);
   const [connectedPhone, setConnectedPhone] = useState<string | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -28,13 +30,14 @@ export default function WhatsAppConnectionCard({ hasCredentials }: WhatsAppConne
     }
   }, []);
 
-  // Check initial status on mount
   useEffect(() => {
-    if (hasCredentials) {
+    if (hasCredentials && hasInstanceToken) {
       checkStatus();
+    } else if (hasCredentials && !hasInstanceToken) {
+      setStatus('needs-instance');
     }
     return () => stopPolling();
-  }, [hasCredentials]);
+  }, [hasCredentials, hasInstanceToken]);
 
   const checkStatus = async () => {
     try {
@@ -43,9 +46,13 @@ export default function WhatsAppConnectionCard({ hasCredentials }: WhatsAppConne
       });
       if (fnError) throw fnError;
 
+      if (data?.error && data?.needsCreate) {
+        setStatus('needs-instance');
+        return;
+      }
+
       const instance = data?.data?.instance || data?.data;
       const st = instance?.status || 'disconnected';
-      setInstanceStatus(st);
 
       if (st === 'connected' || instance?.connected === true) {
         setStatus('connected');
@@ -56,8 +63,32 @@ export default function WhatsAppConnectionCard({ hasCredentials }: WhatsAppConne
         setStatus('idle');
       }
     } catch {
-      // Silently fail on initial check
       setStatus('idle');
+    }
+  };
+
+  const createInstance = async () => {
+    setStatus('creating');
+    setError(null);
+
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('whatsapp-connect?action=create', {
+        method: 'POST',
+        body: {},
+      });
+
+      if (fnError) throw fnError;
+      if (!data?.success) throw new Error(data?.error || 'Falha ao criar instância');
+
+      // Notify parent to refresh settings (new token saved)
+      onInstanceCreated?.();
+      
+      // After creation, start connection automatically
+      setStatus('idle');
+      setTimeout(() => startConnection(), 1000);
+    } catch (e: any) {
+      setError(e.message || 'Erro ao criar instância');
+      setStatus('error');
     }
   };
 
@@ -76,7 +107,6 @@ export default function WhatsAppConnectionCard({ hasCredentials }: WhatsAppConne
       if (fnError) throw fnError;
       if (!data?.success) throw new Error(data?.error || 'Falha ao iniciar conexão');
 
-      // Start polling for QR code / status
       setStatus('polling');
       startTimeRef.current = Date.now();
       startPolling();
@@ -88,13 +118,11 @@ export default function WhatsAppConnectionCard({ hasCredentials }: WhatsAppConne
 
   const startPolling = () => {
     stopPolling();
-    // Poll immediately, then every 3s
     pollStatus();
     pollingRef.current = setInterval(pollStatus, 3000);
   };
 
   const pollStatus = async () => {
-    // Timeout after 2.5 minutes
     if (Date.now() - startTimeRef.current > 150000) {
       stopPolling();
       setStatus('error');
@@ -111,7 +139,6 @@ export default function WhatsAppConnectionCard({ hasCredentials }: WhatsAppConne
 
       const instance = data?.data?.instance || data?.data;
       const st = instance?.status || 'disconnected';
-      setInstanceStatus(st);
 
       if (st === 'connected' || instance?.connected === true) {
         stopPolling();
@@ -122,7 +149,6 @@ export default function WhatsAppConnectionCard({ hasCredentials }: WhatsAppConne
         return;
       }
 
-      // Update QR code
       if (instance?.qrcode) {
         setQrCode(instance.qrcode);
       }
@@ -143,7 +169,6 @@ export default function WhatsAppConnectionCard({ hasCredentials }: WhatsAppConne
       setQrCode(null);
       setPairCode(null);
       setConnectedPhone(null);
-      setInstanceStatus('disconnected');
     } catch {
       setError('Erro ao desconectar');
     }
@@ -160,7 +185,7 @@ export default function WhatsAppConnectionCard({ hasCredentials }: WhatsAppConne
         </CardHeader>
         <CardContent className="px-4 sm:px-6">
           <p className="text-sm text-muted-foreground">
-            Configure a URL base e o token da UAZAPI acima antes de conectar o WhatsApp.
+            Configure a URL base e o Admin Token da UAZAPI acima antes de conectar o WhatsApp.
           </p>
         </CardContent>
       </Card>
@@ -176,12 +201,40 @@ export default function WhatsAppConnectionCard({ hasCredentials }: WhatsAppConne
             Conexão WhatsApp
           </CardTitle>
           <Badge variant={status === 'connected' ? 'default' : 'secondary'}>
-            {status === 'connected' ? '🟢 Conectado' : '⚪ Desconectado'}
+            {status === 'connected' ? '🟢 Conectado' : status === 'needs-instance' ? '🟡 Sem instância' : '⚪ Desconectado'}
           </Badge>
         </div>
       </CardHeader>
       <CardContent className="px-4 sm:px-6 space-y-4">
-        {status === 'connected' ? (
+        {/* Needs instance creation */}
+        {status === 'needs-instance' ? (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Nenhuma instância encontrada. Crie uma instância para conectar seu WhatsApp.
+            </p>
+            {error && (
+              <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-sm text-destructive">
+                {error}
+              </div>
+            )}
+            <Button
+              onClick={createInstance}
+              disabled={!hasAdminToken}
+              className="gradient-primary border-0 font-semibold"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Criar Instância
+            </Button>
+            {!hasAdminToken && (
+              <p className="text-xs text-destructive">Configure o Admin Token acima para criar instâncias.</p>
+            )}
+          </div>
+        ) : status === 'creating' ? (
+          <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/40">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Criando instância na UAZAPI...</p>
+          </div>
+        ) : status === 'connected' ? (
           <div className="space-y-4">
             <div className="flex items-start gap-3 p-4 rounded-xl bg-primary/5 border border-primary/10">
               <CheckCircle2 className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
@@ -199,7 +252,6 @@ export default function WhatsAppConnectionCard({ hasCredentials }: WhatsAppConne
           </div>
         ) : status === 'polling' ? (
           <div className="space-y-4">
-            {/* QR Code display */}
             <div className="flex flex-col items-center gap-4">
               {qrCode ? (
                 <div className="p-3 bg-white rounded-xl shadow-md">
@@ -227,7 +279,6 @@ export default function WhatsAppConnectionCard({ hasCredentials }: WhatsAppConne
               )}
             </div>
 
-            {/* Step-by-step instructions */}
             <div className="bg-muted/60 rounded-xl p-4 text-sm space-y-2">
               <p className="font-semibold text-foreground flex items-center gap-2">
                 <QrCode className="h-4 w-4" /> Como conectar:

@@ -177,12 +177,10 @@ async function sendUazapiMessage(
   phone: string,
   message: string
 ): Promise<any> {
-  const baseUrl = settings.base_url.replace(/\/$/, "");
-  const instancePath = settings.instance_id ? `/${settings.instance_id}` : "";
-  const url = `${baseUrl}${instancePath}/send/text`;
+  const url = `${settings.base_url.replace(/\/$/, "")}/send/text`;
 
   console.log(`[send-whatsapp] POST ${url}`);
-  console.log(`[send-whatsapp] instance_id: ${settings.instance_id}, phone: ${phone}`);
+  console.log(`[send-whatsapp] phone: ${phone}`);
 
   const res = await fetch(url, {
     method: "POST",
