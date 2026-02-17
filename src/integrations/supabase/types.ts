@@ -237,6 +237,7 @@ export type Database = {
         Row: {
           company_id: string
           created_at: string
+          google_calendar_sync_mode: string
           id: string
           max_capacity_per_slot: number
           min_advance_hours: number
@@ -245,6 +246,7 @@ export type Database = {
         Insert: {
           company_id: string
           created_at?: string
+          google_calendar_sync_mode?: string
           id?: string
           max_capacity_per_slot?: number
           min_advance_hours?: number
@@ -253,6 +255,7 @@ export type Database = {
         Update: {
           company_id?: string
           created_at?: string
+          google_calendar_sync_mode?: string
           id?: string
           max_capacity_per_slot?: number
           min_advance_hours?: number
@@ -277,6 +280,7 @@ export type Database = {
           created_at: string
           id: string
           refresh_token: string
+          staff_id: string | null
           token_expires_at: string
           updated_at: string
         }
@@ -288,6 +292,7 @@ export type Database = {
           created_at?: string
           id?: string
           refresh_token: string
+          staff_id?: string | null
           token_expires_at: string
           updated_at?: string
         }
@@ -299,6 +304,7 @@ export type Database = {
           created_at?: string
           id?: string
           refresh_token?: string
+          staff_id?: string | null
           token_expires_at?: string
           updated_at?: string
         }
@@ -306,8 +312,15 @@ export type Database = {
           {
             foreignKeyName: "google_calendar_tokens_company_id_fkey"
             columns: ["company_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "google_calendar_tokens_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
             referencedColumns: ["id"]
           },
         ]
@@ -535,24 +548,33 @@ export type Database = {
           company_id: string
           created_at: string
           id: string
+          invite_status: string
+          invite_token: string | null
           name: string
           photo_url: string | null
+          user_id: string | null
         }
         Insert: {
           active?: boolean
           company_id: string
           created_at?: string
           id?: string
+          invite_status?: string
+          invite_token?: string | null
           name: string
           photo_url?: string | null
+          user_id?: string | null
         }
         Update: {
           active?: boolean
           company_id?: string
           created_at?: string
           id?: string
+          invite_status?: string
+          invite_token?: string | null
           name?: string
           photo_url?: string | null
+          user_id?: string | null
         }
         Relationships: [
           {

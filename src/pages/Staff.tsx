@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import DashboardLayout from '@/components/DashboardLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
-import { Plus, Pencil, Trash2, User } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Plus, Pencil, Trash2, User, Link2, Copy, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Staff() {
@@ -17,6 +18,7 @@ export default function Staff() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [name, setName] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const fetchStaff = async () => {
     if (!companyId) return;
@@ -29,13 +31,21 @@ export default function Staff() {
   const openNew = () => { setEditing(null); setName(''); setOpen(true); };
   const openEdit = (s: any) => { setEditing(s); setName(s.name); setOpen(true); };
 
+  const generateToken = () => {
+    return Math.random().toString(36).substring(2) + Date.now().toString(36);
+  };
+
   const handleSave = async () => {
     if (!companyId || !name.trim()) return;
     if (editing) {
       await supabase.from('staff').update({ name: name.trim() }).eq('id', editing.id);
       toast.success('Profissional atualizado');
     } else {
-      await supabase.from('staff').insert({ company_id: companyId, name: name.trim() });
+      await supabase.from('staff').insert({
+        company_id: companyId,
+        name: name.trim(),
+        invite_token: generateToken(),
+      });
       toast.success('Profissional adicionado');
     }
     setOpen(false);
@@ -52,6 +62,32 @@ export default function Staff() {
     await supabase.from('staff').delete().eq('id', id);
     toast.success('Excluído');
     fetchStaff();
+  };
+
+  const handleGenerateInvite = async (s: any) => {
+    const token = generateToken();
+    await supabase.from('staff').update({ invite_token: token, invite_status: 'pending' }).eq('id', s.id);
+    toast.success('Link de convite gerado!');
+    fetchStaff();
+  };
+
+  const copyInviteLink = (s: any) => {
+    if (!s.invite_token) return;
+    const url = `${window.location.origin}/convite/${s.invite_token}`;
+    navigator.clipboard.writeText(url);
+    setCopiedId(s.id);
+    toast.success('Link copiado!');
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const getInviteStatusBadge = (s: any) => {
+    if (s.invite_status === 'accepted') {
+      return <Badge variant="default" className="text-xs">Conectado</Badge>;
+    }
+    if (s.invite_token) {
+      return <Badge variant="secondary" className="text-xs">Convite pendente</Badge>;
+    }
+    return null;
   };
 
   return (
@@ -88,14 +124,32 @@ export default function Staff() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-sm truncate">{s.name}</h3>
-                      <p className="text-xs text-muted-foreground">{s.active ? 'Ativo' : 'Inativo'}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <p className="text-xs text-muted-foreground">{s.active ? 'Ativo' : 'Inativo'}</p>
+                        {getInviteStatusBadge(s)}
+                      </div>
                     </div>
                     <Switch checked={s.active} onCheckedChange={() => handleToggle(s)} />
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button size="sm" variant="outline" onClick={() => openEdit(s)} className="text-xs h-8">
                       <Pencil className="h-3 w-3 mr-1" />Editar
                     </Button>
+                    {s.invite_status !== 'accepted' && (
+                      s.invite_token ? (
+                        <Button size="sm" variant="outline" onClick={() => copyInviteLink(s)} className="text-xs h-8">
+                          {copiedId === s.id ? (
+                            <><CheckCircle2 className="h-3 w-3 mr-1 text-primary" />Copiado</>
+                          ) : (
+                            <><Copy className="h-3 w-3 mr-1" />Copiar link</>
+                          )}
+                        </Button>
+                      ) : (
+                        <Button size="sm" variant="outline" onClick={() => handleGenerateInvite(s)} className="text-xs h-8">
+                          <Link2 className="h-3 w-3 mr-1" />Gerar convite
+                        </Button>
+                      )
+                    )}
                     <Button size="sm" variant="outline" onClick={() => handleDelete(s.id)} className="text-xs h-8 text-destructive hover:text-destructive">
                       <Trash2 className="h-3 w-3" />
                     </Button>
