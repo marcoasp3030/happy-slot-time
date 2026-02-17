@@ -23,6 +23,8 @@ export default function WhatsAppSettings() {
   const { companyId } = useAuth();
   const { isSuperAdmin } = useRole();
   const [settings, setSettings] = useState({ base_url: '', instance_id: '', token: '', admin_token: '', from_number: '', active: false } as any);
+  const [dbHasCredentials, setDbHasCredentials] = useState(false);
+  const [dbHasAdminToken, setDbHasAdminToken] = useState(false);
   const [templates, setTemplates] = useState<any[]>([]);
   const [rules, setRules] = useState<any[]>([]);
   const [testPhone, setTestPhone] = useState('');
@@ -45,6 +47,8 @@ export default function WhatsAppSettings() {
         from_number: s.from_number || '',
         active: s.active ?? false,
       });
+      setDbHasCredentials(!!s.base_url);
+      setDbHasAdminToken(!!s.admin_token);
     }
     const tpls = templatesRes.data || [];
     setTemplates(tpls);
@@ -173,9 +177,9 @@ export default function WhatsAppSettings() {
 
         {/* Connection Card - QR Code flow */}
         <WhatsAppConnectionCard
-          hasCredentials={!!(settings.base_url)}
+          hasCredentials={dbHasCredentials}
           hasInstanceToken={!!settings.token}
-          hasAdminToken={!!settings.admin_token}
+          hasAdminToken={dbHasAdminToken}
           onInstanceCreated={fetchData}
         />
 
