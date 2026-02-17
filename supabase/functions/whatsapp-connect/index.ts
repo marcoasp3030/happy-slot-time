@@ -305,6 +305,13 @@ Deno.serve(async (req) => {
 
             console.log(`[whatsapp-connect] ✅ Webhook configured automatically`);
 
+            // Auto-activate WhatsApp settings when instance is connected
+            await supabase
+              .from("whatsapp_settings")
+              .update({ active: true })
+              .eq("company_id", companyId);
+            console.log(`[whatsapp-connect] ✅ WhatsApp settings activated automatically`);
+
             // Set presence to available (online) via UAZAPI /send/presence
             try {
               await callUazapi(
