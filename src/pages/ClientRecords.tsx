@@ -31,6 +31,13 @@ interface ClientGroup {
   completedSessions: number;
 }
 
+const formatPhone = (value: string) => {
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 2) return digits.length ? `(${digits}` : '';
+  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+};
+
 export default function ClientRecords() {
   const { companyId } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
@@ -555,7 +562,7 @@ export default function ClientRecords() {
                   </div>
                   <div className="space-y-1.5">
                     <Label className="font-semibold text-sm">Telefone *</Label>
-                    <Input value={packageForm.client_phone} onChange={(e) => setPackageForm({ ...packageForm, client_phone: e.target.value })} className="h-10" />
+                    <Input value={packageForm.client_phone} onChange={(e) => setPackageForm({ ...packageForm, client_phone: formatPhone(e.target.value) })} placeholder="(00) 00000-0000" className="h-10" />
                   </div>
                 </div>
                 <div className="space-y-1.5">
@@ -821,7 +828,7 @@ export default function ClientRecords() {
                 </div>
                 <div className="space-y-1.5">
                   <Label className="font-semibold text-sm">Telefone *</Label>
-                  <Input value={anamnesisForm.client_phone} onChange={(e) => setAnamnesisForm({ ...anamnesisForm, client_phone: e.target.value })} className="h-10" />
+                  <Input value={anamnesisForm.client_phone} onChange={(e) => setAnamnesisForm({ ...anamnesisForm, client_phone: formatPhone(e.target.value) })} placeholder="(00) 00000-0000" className="h-10" />
                 </div>
               </div>
               <div className="space-y-1.5">
@@ -891,7 +898,7 @@ export default function ClientRecords() {
                 </div>
                 <div className="space-y-1.5">
                   <Label className="font-semibold text-sm">Telefone *</Label>
-                  <Input value={packageForm.client_phone} onChange={(e) => setPackageForm({ ...packageForm, client_phone: e.target.value })} className="h-10" />
+                  <Input value={packageForm.client_phone} onChange={(e) => setPackageForm({ ...packageForm, client_phone: formatPhone(e.target.value) })} placeholder="(00) 00000-0000" className="h-10" />
                 </div>
               </div>
               <div className="space-y-1.5">
@@ -1016,7 +1023,7 @@ export default function ClientRecords() {
             </div>
             <div className="space-y-1.5">
               <Label className="font-semibold text-sm">Telefone *</Label>
-              <Input value={newClientForm.client_phone} onChange={(e) => setNewClientForm({ ...newClientForm, client_phone: e.target.value })} placeholder="(00) 00000-0000" className="h-10" />
+              <Input value={newClientForm.client_phone} onChange={(e) => setNewClientForm({ ...newClientForm, client_phone: formatPhone(e.target.value) })} placeholder="(00) 00000-0000" className="h-10" />
             </div>
             <Button onClick={saveNewClient} className="w-full gradient-primary border-0 font-semibold h-10">Cadastrar cliente</Button>
           </div>
