@@ -1,0 +1,480 @@
+import { useState, useEffect } from 'react';
+import DashboardLayout from '@/components/DashboardLayout';
+import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { toast } from '@/hooks/use-toast';
+import { Bot, Settings, MessageSquare, Plus, Trash2, BookOpen, History, Copy, ExternalLink } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
+
+export default function WhatsAppAgent() {
+  const { companyId } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [settings, setSettings] = useState<any>(null);
+  const [knowledgeItems, setKnowledgeItems] = useState<any[]>([]);
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [agentLogs, setAgentLogs] = useState<any[]>([]);
+  const [selectedConversation, setSelectedConversation] = useState<any>(null);
+  const [conversationMessages, setConversationMessages] = useState<any[]>([]);
+
+  // Knowledge base form
+  const [kbCategory, setKbCategory] = useState('general');
+  const [kbTitle, setKbTitle] = useState('');
+  const [kbContent, setKbContent] = useState('');
+
+  const webhookUrl = companyId
+    ? `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-agent-webhook?company_id=${companyId}`
+    : '';
+
+  useEffect(() => {
+    if (companyId) fetchAll();
+  }, [companyId]);
+
+  async function fetchAll() {
+    setLoading(true);
+    const [settingsRes, kbRes, convsRes, logsRes] = await Promise.all([
+      supabase.from('whatsapp_agent_settings').select('*').eq('company_id', companyId!).single(),
+      supabase.from('whatsapp_knowledge_base').select('*').eq('company_id', companyId!).order('created_at', { ascending: false }),
+      supabase.from('whatsapp_conversations').select('*').eq('company_id', companyId!).order('last_message_at', { ascending: false }).limit(50),
+      supabase.from('whatsapp_agent_logs').select('*').eq('company_id', companyId!).order('created_at', { ascending: false }).limit(100),
+    ]);
+
+    if (settingsRes.data) {
+      setSettings(settingsRes.data);
+    } else {
+      // Create default settings
+      const { data } = await supabase.from('whatsapp_agent_settings').insert({ company_id: companyId! }).select().single();
+      setSettings(data);
+    }
+
+    setKnowledgeItems(kbRes.data || []);
+    setConversations(convsRes.data || []);
+    setAgentLogs(logsRes.data || []);
+    setLoading(false);
+  }
+
+  async function saveSettings() {
+    if (!settings) return;
+    setSaving(true);
+    const { error } = await supabase
+      .from('whatsapp_agent_settings')
+      .update({
+        enabled: settings.enabled,
+        greeting_message: settings.greeting_message,
+        cancellation_policy_hours: settings.cancellation_policy_hours,
+        max_reschedule_suggestions: settings.max_reschedule_suggestions,
+        respond_audio_with_audio: settings.respond_audio_with_audio,
+        handoff_after_failures: settings.handoff_after_failures,
+      })
+      .eq('id', settings.id);
+    setSaving(false);
+    if (error) {
+      toast({ title: 'Erro ao salvar', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: 'Configurações salvas!' });
+    }
+  }
+
+  async function addKnowledgeItem() {
+    if (!kbTitle.trim() || !kbContent.trim()) {
+      toast({ title: 'Preencha título e conteúdo', variant: 'destructive' });
+      return;
+    }
+    const { error } = await supabase.from('whatsapp_knowledge_base').insert({
+      company_id: companyId!,
+      category: kbCategory,
+      title: kbTitle,
+      content: kbContent,
+    });
+    if (error) {
+      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: 'Item adicionado!' });
+      setKbTitle('');
+      setKbContent('');
+      fetchAll();
+    }
+  }
+
+  async function deleteKnowledgeItem(id: string) {
+    await supabase.from('whatsapp_knowledge_base').delete().eq('id', id);
+    fetchAll();
+  }
+
+  async function loadConversationMessages(conv: any) {
+    setSelectedConversation(conv);
+    const { data } = await supabase
+      .from('whatsapp_messages')
+      .select('*')
+      .eq('conversation_id', conv.id)
+      .order('created_at', { ascending: true });
+    setConversationMessages(data || []);
+  }
+
+  async function resolveHandoff(convId: string) {
+    await supabase
+      .from('whatsapp_conversations')
+      .update({ handoff_requested: false, status: 'active' })
+      .eq('id', convId);
+    toast({ title: 'Handoff resolvido, agente reativado.' });
+    fetchAll();
+  }
+
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center py-20">
+          <div className="animate-pulse text-muted-foreground">Carregando...</div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  return (
+    <DashboardLayout>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Bot className="h-6 w-6 text-primary" />
+              Agente IA WhatsApp
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Atendimento automatizado via WhatsApp com inteligência artificial
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <Badge variant={settings?.enabled ? 'default' : 'secondary'}>
+              {settings?.enabled ? '🟢 Ativo' : '⚪ Inativo'}
+            </Badge>
+          </div>
+        </div>
+
+        <Tabs defaultValue="settings" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="settings" className="gap-1.5">
+              <Settings className="h-3.5 w-3.5" /> Configurações
+            </TabsTrigger>
+            <TabsTrigger value="knowledge" className="gap-1.5">
+              <BookOpen className="h-3.5 w-3.5" /> Base de Conhecimento
+            </TabsTrigger>
+            <TabsTrigger value="conversations" className="gap-1.5">
+              <MessageSquare className="h-3.5 w-3.5" /> Conversas
+            </TabsTrigger>
+            <TabsTrigger value="logs" className="gap-1.5">
+              <History className="h-3.5 w-3.5" /> Logs
+            </TabsTrigger>
+          </TabsList>
+
+          {/* SETTINGS TAB */}
+          <TabsContent value="settings" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Configuração Geral</CardTitle>
+                <CardDescription>Ative o agente e configure o comportamento</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="font-medium">Ativar Agente IA</Label>
+                    <p className="text-xs text-muted-foreground">O agente responderá automaticamente às mensagens recebidas</p>
+                  </div>
+                  <Switch
+                    checked={settings?.enabled || false}
+                    onCheckedChange={(v) => setSettings({ ...settings, enabled: v })}
+                  />
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <Label>Mensagem de Saudação</Label>
+                  <Textarea
+                    value={settings?.greeting_message || ''}
+                    onChange={(e) => setSettings({ ...settings, greeting_message: e.target.value })}
+                    rows={3}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Política de Cancelamento (horas mínimas)</Label>
+                    <Input
+                      type="number"
+                      value={settings?.cancellation_policy_hours || 24}
+                      onChange={(e) => setSettings({ ...settings, cancellation_policy_hours: Number(e.target.value) })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Máximo de sugestões de horário</Label>
+                    <Input
+                      type="number"
+                      value={settings?.max_reschedule_suggestions || 5}
+                      onChange={(e) => setSettings({ ...settings, max_reschedule_suggestions: Number(e.target.value) })}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Tentativas antes de handoff humano</Label>
+                  <Input
+                    type="number"
+                    value={settings?.handoff_after_failures || 2}
+                    onChange={(e) => setSettings({ ...settings, handoff_after_failures: Number(e.target.value) })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="font-medium">Responder áudio com áudio</Label>
+                    <p className="text-xs text-muted-foreground">Quando o cliente enviar áudio, responder também em áudio (requer ElevenLabs)</p>
+                  </div>
+                  <Switch
+                    checked={settings?.respond_audio_with_audio || false}
+                    onCheckedChange={(v) => setSettings({ ...settings, respond_audio_with_audio: v })}
+                  />
+                </div>
+
+                <Button onClick={saveSettings} disabled={saving} className="w-full md:w-auto">
+                  {saving ? 'Salvando...' : 'Salvar Configurações'}
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Webhook URL */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">🔗 Webhook UAZAPI</CardTitle>
+                <CardDescription>Configure esta URL na sua UAZAPI para receber mensagens</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex gap-2">
+                  <Input value={webhookUrl} readOnly className="font-mono text-xs" />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => {
+                      navigator.clipboard.writeText(webhookUrl);
+                      toast({ title: 'URL copiada!' });
+                    }}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="bg-muted/60 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
+                  <p className="font-semibold text-foreground">Como configurar:</p>
+                  <ol className="list-decimal list-inside space-y-0.5">
+                    <li>Acesse o painel da UAZAPI</li>
+                    <li>Vá em Configurações → Webhook</li>
+                    <li>Cole a URL acima no campo de Webhook</li>
+                    <li>Ative os eventos: <code>messages</code></li>
+                    <li>Salve e teste enviando uma mensagem</li>
+                  </ol>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* KNOWLEDGE BASE TAB */}
+          <TabsContent value="knowledge" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Adicionar Informação</CardTitle>
+                <CardDescription>Adicione informações que o agente usará para responder clientes</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Categoria</Label>
+                    <select
+                      value={kbCategory}
+                      onChange={(e) => setKbCategory(e.target.value)}
+                      className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="general">Geral</option>
+                      <option value="pagamento">Formas de Pagamento</option>
+                      <option value="localizacao">Localização</option>
+                      <option value="politicas">Políticas</option>
+                      <option value="promocoes">Promoções</option>
+                      <option value="faq">FAQ</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Título</Label>
+                    <Input value={kbTitle} onChange={(e) => setKbTitle(e.target.value)} placeholder="Ex: Formas de pagamento aceitas" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Conteúdo</Label>
+                  <Textarea
+                    value={kbContent}
+                    onChange={(e) => setKbContent(e.target.value)}
+                    placeholder="Descreva detalhadamente a informação..."
+                    rows={3}
+                  />
+                </div>
+                <Button onClick={addKnowledgeItem} className="gap-1.5">
+                  <Plus className="h-4 w-4" /> Adicionar
+                </Button>
+              </CardContent>
+            </Card>
+
+            {knowledgeItems.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Itens Cadastrados ({knowledgeItems.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {knowledgeItems.map((item) => (
+                      <div key={item.id} className="flex items-start justify-between gap-3 p-3 rounded-lg bg-muted/40 border">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Badge variant="outline" className="text-[10px]">{item.category}</Badge>
+                            <span className="font-medium text-sm">{item.title}</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground line-clamp-2">{item.content}</p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive"
+                          onClick={() => deleteKnowledgeItem(item.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          {/* CONVERSATIONS TAB */}
+          <TabsContent value="conversations" className="space-y-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <Card className="lg:col-span-1">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Conversas Recentes</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <ScrollArea className="h-[500px]">
+                    {conversations.length === 0 ? (
+                      <p className="text-sm text-muted-foreground p-4">Nenhuma conversa ainda</p>
+                    ) : (
+                      conversations.map((conv) => (
+                        <button
+                          key={conv.id}
+                          onClick={() => loadConversationMessages(conv)}
+                          className={`w-full text-left px-4 py-3 border-b hover:bg-muted/40 transition-colors ${
+                            selectedConversation?.id === conv.id ? 'bg-muted/60' : ''
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium text-sm">{conv.phone}</span>
+                            {conv.handoff_requested && <Badge variant="destructive" className="text-[10px]">Humano</Badge>}
+                          </div>
+                          <div className="flex items-center justify-between mt-0.5">
+                            <span className="text-[11px] text-muted-foreground">
+                              {conv.current_intent || conv.status}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {new Date(conv.last_message_at).toLocaleDateString('pt-BR')}
+                            </span>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+
+              <Card className="lg:col-span-2">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base">
+                      {selectedConversation ? `Chat: ${selectedConversation.phone}` : 'Selecione uma conversa'}
+                    </CardTitle>
+                    {selectedConversation?.handoff_requested && (
+                      <Button size="sm" variant="outline" onClick={() => resolveHandoff(selectedConversation.id)}>
+                        Resolver Handoff
+                      </Button>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <ScrollArea className="h-[460px] px-4">
+                    {conversationMessages.length === 0 ? (
+                      <p className="text-sm text-muted-foreground py-8 text-center">
+                        {selectedConversation ? 'Sem mensagens' : 'Selecione uma conversa para ver as mensagens'}
+                      </p>
+                    ) : (
+                      <div className="space-y-2 py-3">
+                        {conversationMessages.map((msg) => (
+                          <div
+                            key={msg.id}
+                            className={`max-w-[80%] rounded-xl px-3 py-2 text-sm ${
+                              msg.direction === 'incoming'
+                                ? 'bg-muted/60 mr-auto'
+                                : 'bg-primary/10 text-primary ml-auto'
+                            }`}
+                          >
+                            <p className="whitespace-pre-wrap">{msg.content}</p>
+                            <p className="text-[10px] text-muted-foreground mt-1">
+                              {new Date(msg.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* LOGS TAB */}
+          <TabsContent value="logs">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Logs do Agente</CardTitle>
+                <CardDescription>Ações realizadas pelo agente nos agendamentos</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {agentLogs.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nenhum log registrado</p>
+                ) : (
+                  <div className="space-y-2">
+                    {agentLogs.map((log) => (
+                      <div key={log.id} className="flex items-center gap-3 p-2 rounded-lg bg-muted/30 text-sm">
+                        <Badge variant="outline" className="text-[10px] shrink-0">
+                          {log.action}
+                        </Badge>
+                        <span className="text-muted-foreground text-xs flex-1 truncate">
+                          {JSON.stringify(log.details)}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground shrink-0">
+                          {new Date(log.created_at).toLocaleString('pt-BR')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </DashboardLayout>
+  );
+}
