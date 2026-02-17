@@ -364,6 +364,7 @@ export default function Appointments() {
                                         href={apt.meet_link}
                                         target="_blank"
                                         rel="noopener noreferrer"
+                                        title={apt.meet_link}
                                         className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1 font-medium hover:underline"
                                       >
                                         <Video className="h-2.5 w-2.5" />
