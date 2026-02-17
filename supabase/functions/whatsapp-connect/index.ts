@@ -237,6 +237,46 @@ Deno.serve(async (req) => {
           "GET",
           { name: "token", value: settings.token }
         );
+
+        // Auto-configure webhook when instance becomes connected
+        const instanceStatus = data?.instance?.status || data?.status;
+        const isConnected = instanceStatus === "connected" || data?.instance?.connected === true || data?.connected === true;
+
+        if (isConnected) {
+          try {
+            const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+            const webhookUrl = `${supabaseUrl}/functions/v1/whatsapp-agent-webhook?company_id=${companyId}`;
+
+            console.log(`[whatsapp-connect] 🔗 Instance connected! Auto-configuring webhook: ${webhookUrl}`);
+
+            await callUazapi(
+              baseUrl,
+              "/webhook/set",
+              "POST",
+              { name: "token", value: settings.token },
+              {
+                url: webhookUrl,
+                enabled: true,
+                events: ["messages"],
+              }
+            );
+
+            console.log(`[whatsapp-connect] ✅ Webhook configured automatically`);
+
+            await supabase.from("audit_logs").insert({
+              company_id: companyId,
+              user_id: userId,
+              user_email: userEmail,
+              action: "WhatsApp: Webhook configurado automaticamente",
+              category: "whatsapp",
+              details: { webhookUrl },
+            });
+          } catch (webhookErr: any) {
+            // Non-fatal: log but don't fail the status check
+            console.error(`[whatsapp-connect] ⚠️ Failed to auto-configure webhook:`, JSON.stringify(webhookErr?.data || webhookErr));
+          }
+        }
+
         return jsonResponse({ success: true, data });
       } catch (e: any) {
         // If 401, token is invalid
