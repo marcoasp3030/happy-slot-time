@@ -5,14 +5,28 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Calendar, ArrowRight, Sparkles, CheckCircle } from 'lucide-react';
+import {
+  Calendar, ArrowRight, Sparkles, CheckCircle, MessageSquare,
+  BarChart3, Globe, Users, Smartphone, Zap, Shield, Clock
+} from 'lucide-react';
 import { toast } from 'sonner';
+import sloteraLogo from '@/assets/slotera-logo.png';
 
-const trialBenefits = [
-  'Página de agendamento personalizada',
-  'Notificações por WhatsApp',
-  'Painel completo de gestão',
-  'Suporte por e-mail',
+const features = [
+  { icon: Calendar, text: 'Agendamento online 24h' },
+  { icon: MessageSquare, text: 'WhatsApp automático' },
+  { icon: BarChart3, text: 'Painel inteligente' },
+  { icon: Globe, text: 'Google Calendar & Meet' },
+  { icon: Users, text: 'Multi-profissionais' },
+  { icon: Smartphone, text: 'Página personalizada' },
+  { icon: Zap, text: 'Pronto em 2 minutos' },
+  { icon: Shield, text: 'Dados criptografados' },
+];
+
+const testimonials = [
+  { name: 'Ana C.', role: 'Studio de Beleza', text: 'Reduzi 80% das faltas com os lembretes automáticos!' },
+  { name: 'Carlos M.', role: 'Barbearia', text: 'Meus clientes adoram agendar pelo link, muito prático.' },
+  { name: 'Julia S.', role: 'Clínica Estética', text: 'O painel é incrível, tenho controle total do meu negócio.' },
 ];
 
 export default function Auth() {
@@ -55,34 +69,72 @@ export default function Auth() {
   return (
     <div className="min-h-screen flex">
       {/* Left side - Branding */}
-      <div className="hidden lg:flex lg:w-1/2 gradient-primary relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-black/5 to-transparent" />
-        <div className="absolute -bottom-20 -left-20 w-96 h-96 rounded-full bg-white/5 blur-3xl" />
-        <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-white/10 blur-3xl" />
+      <div className="hidden lg:flex lg:w-[55%] relative overflow-hidden">
+        {/* Background */}
+        <div className="absolute inset-0 bg-gradient-to-br from-[hsl(222,47%,11%)] via-[hsl(217,91%,20%)] to-[hsl(222,47%,8%)]" />
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute -bottom-32 -left-32 w-[500px] h-[500px] rounded-full bg-primary/15 blur-3xl" />
+          <div className="absolute -top-20 -right-20 w-80 h-80 rounded-full bg-primary-glow/10 blur-3xl" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full bg-info/5 blur-3xl" />
+        </div>
 
-        <div className="relative flex flex-col justify-center px-12 xl:px-16 text-white w-full">
-          <div className="flex items-center gap-2.5 mb-10">
-            <img src="/slotera-logo-white.png" alt="Slotera" className="h-10 w-auto" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-            <span className="text-xl font-extrabold tracking-tight">Slotera</span>
+        <div className="relative flex flex-col justify-between px-12 xl:px-16 py-10 w-full">
+          {/* Logo */}
+          <div className="flex items-center gap-2.5">
+            <img src={sloteraLogo} alt="Slotera" className="h-10 w-auto brightness-0 invert" />
+            <span className="text-xl font-extrabold tracking-tight text-white">Slotera</span>
           </div>
 
-          <h2 className="text-3xl xl:text-4xl font-extrabold leading-tight mb-4">
-            A forma mais fácil de<br />
-            gerenciar agendamentos
-          </h2>
-          <p className="text-white/70 text-lg mb-10 max-w-md leading-relaxed">
-            Simplifique sua rotina, reduza faltas e ofereça uma experiência moderna aos seus clientes.
-          </p>
+          {/* Hero text */}
+          <div className="flex-1 flex flex-col justify-center max-w-lg">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm text-white/80 text-xs font-semibold mb-6 w-fit">
+              <Sparkles className="h-3.5 w-3.5 text-primary-glow" />
+              Plataforma #1 de agendamentos
+            </div>
 
-          <div className="space-y-4">
-            {trialBenefits.map((b) => (
-              <div key={b} className="flex items-center gap-3">
-                <div className="h-6 w-6 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
-                  <CheckCircle className="h-3.5 w-3.5 text-white" />
+            <h2 className="text-3xl xl:text-4xl font-extrabold leading-tight mb-4 text-white">
+              Transforme seu negócio com
+              <span className="block bg-gradient-to-r from-primary-glow to-info bg-clip-text text-transparent mt-1">
+                agendamentos inteligentes
+              </span>
+            </h2>
+
+            <p className="text-white/60 text-base mb-10 leading-relaxed">
+              Tudo que você precisa para gerenciar seus atendimentos em um só lugar. Simples, rápido e profissional.
+            </p>
+
+            {/* Feature grid */}
+            <div className="grid grid-cols-2 gap-3 mb-10">
+              {features.map((f) => (
+                <div key={f.text} className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/5 backdrop-blur-sm border border-white/5 hover:bg-white/10 transition-colors">
+                  <div className="h-8 w-8 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
+                    <f.icon className="h-4 w-4 text-primary-glow" />
+                  </div>
+                  <span className="text-white/80 text-sm font-medium">{f.text}</span>
                 </div>
-                <span className="text-white/90 font-medium">{b}</span>
-              </div>
-            ))}
+              ))}
+            </div>
+          </div>
+
+          {/* Testimonials */}
+          <div className="space-y-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-white/30 mb-2">O que dizem nossos clientes</p>
+            <div className="flex gap-3">
+              {testimonials.map((t) => (
+                <div key={t.name} className="flex-1 p-3 rounded-xl bg-white/5 backdrop-blur-sm border border-white/5">
+                  <p className="text-white/70 text-xs leading-relaxed mb-2">"{t.text}"</p>
+                  <div className="flex items-center gap-2">
+                    <div className="h-6 w-6 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary-glow">
+                      {t.name.charAt(0)}
+                    </div>
+                    <div>
+                      <p className="text-white/90 text-[11px] font-semibold">{t.name}</p>
+                      <p className="text-white/40 text-[10px]">{t.role}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -92,9 +144,7 @@ export default function Auth() {
         <div className="w-full max-w-[420px] page-transition">
           {/* Mobile logo */}
           <div className="flex items-center justify-center gap-2.5 mb-8 lg:hidden">
-            <div className="h-10 w-10 rounded-xl gradient-primary flex items-center justify-center animate-pulse-glow">
-              <Calendar className="h-5 w-5 text-primary-foreground" />
-            </div>
+            <img src={sloteraLogo} alt="Slotera" className="h-10 w-auto" />
             <span className="text-xl font-extrabold tracking-tight">Slotera</span>
           </div>
 
@@ -109,7 +159,7 @@ export default function Auth() {
                   : (
                     <span className="flex items-center justify-center gap-1.5">
                       <Sparkles className="h-4 w-4 text-primary" />
-                      7 dias de teste grátis
+                      7 dias de teste grátis · Sem cartão
                     </span>
                   )}
               </CardDescription>
@@ -128,7 +178,7 @@ export default function Auth() {
                         onChange={(e) => setFullName(e.target.value)}
                         required
                         placeholder="Seu nome"
-                        className="h-11"
+                        className="h-11 rounded-xl"
                       />
                     </div>
                     <div className="space-y-2">
@@ -140,8 +190,8 @@ export default function Auth() {
                         value={companyName}
                         onChange={(e) => setCompanyName(e.target.value)}
                         required
-                        placeholder="Ex: Salão da Ana"
-                        className="h-11"
+                        placeholder="Ex: Studio da Ana"
+                        className="h-11 rounded-xl"
                       />
                     </div>
                   </>
@@ -155,11 +205,18 @@ export default function Auth() {
                     onChange={(e) => setEmail(e.target.value)}
                     required
                     placeholder="seu@email.com"
-                    className="h-11"
+                    className="h-11 rounded-xl"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="password" className="text-sm font-semibold">Senha</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="password" className="text-sm font-semibold">Senha</Label>
+                    {isLogin && (
+                      <button type="button" className="text-xs text-primary font-semibold hover:underline">
+                        Esqueceu a senha?
+                      </button>
+                    )}
+                  </div>
                   <Input
                     id="password"
                     type="password"
@@ -168,12 +225,12 @@ export default function Auth() {
                     required
                     minLength={6}
                     placeholder="Mínimo 6 caracteres"
-                    className="h-11"
+                    className="h-11 rounded-xl"
                   />
                 </div>
                 <Button
                   type="submit"
-                  className="w-full h-11 gradient-primary border-0 font-semibold text-base shadow-sm hover:shadow-md transition-all"
+                  className="w-full h-12 gradient-primary border-0 font-semibold text-base shadow-sm hover:shadow-lg transition-all rounded-xl"
                   disabled={loading}
                 >
                   {loading ? (
@@ -186,10 +243,13 @@ export default function Auth() {
                       Entrar <ArrowRight className="h-4 w-4" />
                     </span>
                   ) : (
-                    'Criar conta'
+                    <span className="flex items-center gap-2">
+                      Criar conta grátis <ArrowRight className="h-4 w-4" />
+                    </span>
                   )}
                 </Button>
               </form>
+
               <div className="mt-6 text-center">
                 <button
                   onClick={() => setIsLogin(!isLogin)}
@@ -201,6 +261,19 @@ export default function Auth() {
                     <>Já tem conta? <span className="text-primary font-semibold">Entrar</span></>
                   )}
                 </button>
+              </div>
+
+              {/* Mobile features */}
+              <div className="mt-8 pt-6 border-t border-border/60 lg:hidden">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 text-center">Incluído no seu plano</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {features.slice(0, 4).map((f) => (
+                    <div key={f.text} className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <f.icon className="h-3.5 w-3.5 text-primary flex-shrink-0" />
+                      <span>{f.text}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </CardContent>
           </Card>
