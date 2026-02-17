@@ -1344,12 +1344,19 @@ async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string
     }
   }
 
-  const sys = `Você é a atendente virtual de ${ctx.co.name || "nossa empresa"} no WhatsApp.
+  // Custom prompt takes TOP PRIORITY — it defines who the agent IS and how it should behave
+  const customPromptSection = ctx.cs?.custom_prompt 
+    ? `\n\nINSTRUÇÕES DO ESTABELECIMENTO (PRIORIDADE MÁXIMA — SIGA ESTAS INSTRUÇÕES ACIMA DE TUDO):
+${ctx.cs.custom_prompt}
+--- FIM DAS INSTRUÇÕES PRIORITÁRIAS ---\n`
+    : "";
 
+  const sys = `Você é a atendente virtual de ${ctx.co.name || "nossa empresa"} no WhatsApp.
+${customPromptSection}
 DATA E HORA ATUAL (use como referência oficial):
 ${dateStr}, ${timeStr} (fuso: ${tzLabel})
 
-REGRAS ESSENCIAIS:
+REGRAS ESSENCIAIS (respeite as instruções do estabelecimento acima quando houver conflito):
 - Fale como pessoa real: informal, curta, acolhedora
 - Máximo 2-3 frases por resposta
 - Emojis com moderação (1-2 por mensagem)
@@ -1425,8 +1432,7 @@ ${caps.custom_business_info ? "Info do estabelecimento: " + caps.custom_business
 Agendamentos do cliente: ${appts || "nenhum"}
 ${fileParts.join("\n")}
 ${caps.can_send_payment_link && caps.payment_link_url ? "\nPAGAMENTO - LINK:\nQuando o cliente perguntar sobre pagamento ou após confirmar agendamento, envie o link: " + caps.payment_link_url : ""}
-${caps.can_send_pix && caps.pix_key ? "\nPAGAMENTO - PIX:\nChave PIX: " + caps.pix_key + (caps.pix_name ? " | Titular: " + caps.pix_name : "") + (caps.pix_instructions ? "\nInstruções: " + caps.pix_instructions : "") : ""}
-${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" + ctx.cs.custom_prompt : ""}`;
+${caps.can_send_pix && caps.pix_key ? "\nPAGAMENTO - PIX:\nChave PIX: " + caps.pix_key + (caps.pix_name ? " | Titular: " + caps.pix_name : "") + (caps.pix_instructions ? "\nInstruções: " + caps.pix_instructions : "") : ""}`;
 
 
   const messages: any[] = [{ role: "system", content: sys }];
