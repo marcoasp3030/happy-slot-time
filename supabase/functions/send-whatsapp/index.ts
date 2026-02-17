@@ -871,7 +871,7 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
   log("🤖 Calling AI...");
   const t2 = Date.now();
   try {
-    let reply = await callAI(sb, cid, conv, ctx, actualMsg);
+    let reply = await callAI(sb, cid, conv, ctx, actualMsg, { isAudioMsg, agentSettings: ag });
     // Normalize times in reply for natural PT-BR speech
     if (reply !== "__MENU_SENT__") reply = normalizeTimeForSpeech(reply);
     log("🤖 AI reply in", Date.now() - t2, "ms:", reply.substring(0, 150));
@@ -1081,7 +1081,7 @@ async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
   };
 }
 
-async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string): Promise<string> {
+async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string, opts?: { isAudioMsg?: boolean; agentSettings?: any }): Promise<string> {
   const key = Deno.env.get("LOVABLE_API_KEY");
   log("🧠 callAI: LOVABLE_API_KEY exists:", !!key, "length:", key?.length);
   if (!key) throw new Error("LOVABLE_API_KEY missing");
@@ -1467,6 +1467,21 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
             // Auto-send slots as interactive menu
             const { data: ws } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
             if (ws?.active && ws?.base_url && ws?.token) {
+              // Send TTS audio before menu if audio response is enabled
+              if (opts?.isAudioMsg && opts?.agentSettings?.respond_audio_with_audio && opts?.agentSettings?.elevenlabs_voice_id) {
+                try {
+                  const audioIntro = normalizeTimeForSpeech(`Aqui estão os horários disponíveis para ${dateLabel}${staffName ? " com " + staffName : ""}. Vou te enviar a lista para você escolher!`);
+                  log("🔊 Sending TTS audio before slots menu...");
+                  const audioData = await textToSpeech(audioIntro, opts.agentSettings.elevenlabs_voice_id);
+                  if (audioData) {
+                    const cleanPh = conv.phone.replace(/\D/g, "");
+                    await sendAudioViaUazapi(ws, cleanPh, audioData);
+                    log("🔊 ✅ Audio sent before slots menu!");
+                  }
+                } catch (e: any) {
+                  logErr("🔊 Audio before slots menu failed:", e.message);
+                }
+              }
               const headerText = `Horários disponíveis ${dateLabel}${staffName ? " com " + staffName : ""} 📅\n\nEscolha um horário:`;
               const topSlots = slots.slice(0, 10);
               try {
