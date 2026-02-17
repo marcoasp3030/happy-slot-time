@@ -32,6 +32,8 @@ import StaffInvite from "./pages/StaffInvite";
 import StaffDashboard from "./pages/StaffDashboard";
 import AnamnesisTemplates from "./pages/AnamnesisTemplates";
 import ClientRecords from "./pages/ClientRecords";
+import PrivacyPolicySettings from "./pages/PrivacyPolicySettings";
+import PrivacyPolicyPublic from "./pages/PrivacyPolicyPublic";
 
 const queryClient = new QueryClient();
 
@@ -104,6 +106,7 @@ function AnimatedRoutes() {
       <Route path="/login" element={<SmartLoginRedirect />} />
       <Route path="/convite/:token" element={<PageTransition><StaffInvite /></PageTransition>} />
       <Route path="/agendar/:slug" element={<PageTransition><PublicBooking /></PageTransition>} />
+      <Route path="/privacidade/:slug" element={<PageTransition><PrivacyPolicyPublic /></PageTransition>} />
       
       {/* Staff route */}
       <Route path="/staff-dashboard" element={<StaffRoute><PageTransition><StaffDashboard /></PageTransition></StaffRoute>} />
@@ -120,6 +123,7 @@ function AnimatedRoutes() {
       <Route path="/google-calendar" element={<ProtectedRoute><PageTransition><GoogleCalendarSettings /></PageTransition></ProtectedRoute>} />
       <Route path="/anamnese" element={<ProtectedRoute><PageTransition><AnamnesisTemplates /></PageTransition></ProtectedRoute>} />
       <Route path="/fichas" element={<ProtectedRoute><PageTransition><ClientRecords /></PageTransition></ProtectedRoute>} />
+      <Route path="/privacidade" element={<ProtectedRoute><PageTransition><PrivacyPolicySettings /></PageTransition></ProtectedRoute>} />
       
       {/* Super admin routes */}
       <Route path="/admin" element={<AdminRoute><PageTransition><AdminDashboard /></PageTransition></AdminRoute>} />

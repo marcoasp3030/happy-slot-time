@@ -483,6 +483,7 @@ export type Database = {
           id: string
           max_capacity_per_slot: number
           min_advance_hours: number
+          privacy_policy_text: string | null
           slot_interval: number
         }
         Insert: {
@@ -493,6 +494,7 @@ export type Database = {
           id?: string
           max_capacity_per_slot?: number
           min_advance_hours?: number
+          privacy_policy_text?: string | null
           slot_interval?: number
         }
         Update: {
@@ -503,6 +505,7 @@ export type Database = {
           id?: string
           max_capacity_per_slot?: number
           min_advance_hours?: number
+          privacy_policy_text?: string | null
           slot_interval?: number
         }
         Relationships: [
@@ -510,6 +513,50 @@ export type Database = {
             foreignKeyName: "company_settings_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      consent_logs: {
+        Row: {
+          accepted_at: string
+          client_name: string
+          client_phone: string
+          company_id: string
+          consent_type: string
+          id: string
+          ip_address: string | null
+          policy_version: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          accepted_at?: string
+          client_name: string
+          client_phone: string
+          company_id: string
+          consent_type?: string
+          id?: string
+          ip_address?: string | null
+          policy_version?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          accepted_at?: string
+          client_name?: string
+          client_phone?: string
+          company_id?: string
+          consent_type?: string
+          id?: string
+          ip_address?: string | null
+          policy_version?: string | null
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consent_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },

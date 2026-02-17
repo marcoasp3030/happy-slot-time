@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   Search, Users, ClipboardList, Layers, Plus, Camera, Trash2,
-  Phone, ChevronRight, ChevronLeft, ImageIcon, ArrowLeft, Pencil, UserPlus
+  Phone, ChevronRight, ChevronLeft, ImageIcon, ArrowLeft, Pencil, UserPlus, Shield
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Progress } from '@/components/ui/progress';
@@ -62,6 +62,8 @@ export default function ClientRecords() {
 
   // Delete confirmation state
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'anamnesis' | 'package'; id: string; name: string } | null>(null);
+  const [deleteClientOpen, setDeleteClientOpen] = useState(false);
+  const [deletingClient, setDeletingClient] = useState(false);
 
   // New client state
   const [newClientOpen, setNewClientOpen] = useState(false);
@@ -445,6 +447,41 @@ export default function ClientRecords() {
     if (selectedResponse) fetchPhotos({ responseId: selectedResponse.id });
   };
 
+  const deleteAllClientData = async () => {
+    if (!companyId || !selectedClient) return;
+    setDeletingClient(true);
+    const phone = selectedClient.client_phone;
+
+    // Delete photos linked to anamnesis responses
+    const clientResIds = responses.filter(r => r.client_phone === phone).map(r => r.id);
+    if (clientResIds.length > 0) {
+      await supabase.from('client_photos').delete().in('anamnesis_response_id', clientResIds);
+    }
+
+    // Delete photos linked to packages/sessions
+    const clientPkgIds = packages.filter(p => p.client_phone === phone).map(p => p.id);
+    if (clientPkgIds.length > 0) {
+      await supabase.from('client_photos').delete().in('package_id', clientPkgIds);
+      await supabase.from('sessions').delete().in('package_id', clientPkgIds);
+    }
+
+    // Delete anamnesis responses
+    await supabase.from('anamnesis_responses').delete().eq('company_id', companyId).eq('client_phone', phone);
+
+    // Delete session packages
+    await supabase.from('session_packages').delete().eq('company_id', companyId).eq('client_phone', phone);
+
+    // Delete consent logs
+    await supabase.from('consent_logs').delete().eq('company_id', companyId).eq('client_phone', phone);
+
+    setDeletingClient(false);
+    setDeleteClientOpen(false);
+    setSelectedClient(null);
+    toast.success('Todos os dados do cliente foram excluídos (LGPD)');
+    fetchResponses();
+    fetchPackages();
+  };
+
   const formatDate = (d: string) => new Date(d).toLocaleDateString('pt-BR');
 
   // ====== RENDER ======
@@ -657,14 +694,26 @@ export default function ClientRecords() {
             <ArrowLeft className="h-3.5 w-3.5" />Voltar para clientes
           </Button>
 
-          <div className="flex items-center gap-3">
-            <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center">
-              <span className="text-primary font-bold text-lg">{selectedClient.client_name.charAt(0).toUpperCase()}</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                <span className="text-primary font-bold text-lg">{selectedClient.client_name.charAt(0).toUpperCase()}</span>
+              </div>
+              <div>
+                <h1 className="text-lg font-bold">{selectedClient.client_name}</h1>
+                <p className="text-sm text-muted-foreground flex items-center gap-1"><Phone className="h-3 w-3" />{selectedClient.client_phone}</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-lg font-bold">{selectedClient.client_name}</h1>
-              <p className="text-sm text-muted-foreground flex items-center gap-1"><Phone className="h-3 w-3" />{selectedClient.client_phone}</p>
-            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30"
+              onClick={() => setDeleteClientOpen(true)}
+            >
+              <Shield className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Excluir dados (LGPD)</span>
+              <span className="sm:hidden">LGPD</span>
+            </Button>
           </div>
 
           {/* Summary cards */}
@@ -1076,6 +1125,34 @@ export default function ClientRecords() {
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
               <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
                 Excluir
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* LGPD DELETE ALL CLIENT DATA */}
+        <AlertDialog open={deleteClientOpen} onOpenChange={setDeleteClientOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <Shield className="h-4 w-4 text-destructive" />
+                Excluir todos os dados do cliente (LGPD)
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta ação irá excluir permanentemente <strong>todos os dados</strong> de {selectedClient?.client_name}:
+                anamneses, pacotes de sessões, sessões, fotos e registros de consentimento.
+                <br /><br />
+                <strong className="text-destructive">Esta ação não pode ser desfeita.</strong>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deletingClient}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={deleteAllClientData}
+                disabled={deletingClient}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {deletingClient ? 'Excluindo...' : 'Confirmar exclusão total'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
