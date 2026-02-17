@@ -49,6 +49,25 @@ export default function WhatsAppSettings() {
       });
       setDbHasCredentials(!!s.base_url);
       setDbHasAdminToken(!!s.admin_token);
+    } else {
+      // No settings row for this company yet — auto-create with empty defaults
+      // The whatsapp-connect edge function will use platform defaults
+      const { error: insertErr } = await supabase.from('whatsapp_settings').insert({
+        company_id: companyId,
+        active: false,
+      });
+      if (!insertErr) {
+        // Refetch to get the newly created row
+        const { data: newSettings } = await supabase
+          .from('whatsapp_settings')
+          .select('*')
+          .eq('company_id', companyId)
+          .single();
+        if (newSettings) {
+          setDbHasCredentials(!!newSettings.base_url);
+          setDbHasAdminToken(!!newSettings.admin_token);
+        }
+      }
     }
     const tpls = templatesRes.data || [];
     setTemplates(tpls);

@@ -94,11 +94,52 @@ Deno.serve(async (req) => {
 
     const companyId = profile.company_id;
 
-    const { data: settings } = await supabase
+    let { data: settings } = await supabase
       .from("whatsapp_settings")
       .select("*")
       .eq("company_id", companyId)
       .single();
+
+    // If no settings row or missing base_url/admin_token, try to copy platform defaults
+    if (!settings || !settings.base_url || !settings.admin_token) {
+      const { data: platformDefaults } = await supabase
+        .from("whatsapp_settings")
+        .select("base_url, admin_token")
+        .not("base_url", "is", null)
+        .not("admin_token", "is", null)
+        .neq("company_id", companyId)
+        .limit(1)
+        .single();
+
+      if (platformDefaults?.base_url && platformDefaults?.admin_token) {
+        if (!settings) {
+          // Create new settings row with platform defaults
+          const { data: newSettings } = await supabase
+            .from("whatsapp_settings")
+            .insert({
+              company_id: companyId,
+              base_url: platformDefaults.base_url,
+              admin_token: platformDefaults.admin_token,
+              active: true,
+            })
+            .select("*")
+            .single();
+          settings = newSettings;
+        } else {
+          // Update existing row with missing fields
+          const updates: Record<string, string> = {};
+          if (!settings.base_url) updates.base_url = platformDefaults.base_url;
+          if (!settings.admin_token) updates.admin_token = platformDefaults.admin_token;
+          const { data: updatedSettings } = await supabase
+            .from("whatsapp_settings")
+            .update(updates)
+            .eq("company_id", companyId)
+            .select("*")
+            .single();
+          settings = updatedSettings;
+        }
+      }
+    }
 
     if (!settings || !settings.base_url) {
       return jsonResponse({ error: "WhatsApp settings not configured. Please set base URL first." }, 400);
