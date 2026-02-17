@@ -473,6 +473,24 @@ export default function WhatsAppAgent() {
 
                 <Separator />
 
+                <div className="space-y-2 rounded-lg border-2 border-primary/30 bg-primary/5 p-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">🏢</span>
+                    <Label className="font-semibold text-base">Informações do Estabelecimento</Label>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Descreva seu negócio: nome, endereço, horários, serviços oferecidos, diferenciais, formas de pagamento, etc. O agente usará essas informações para responder os clientes.
+                  </p>
+                  <Textarea
+                    value={settings?.custom_business_info || ''}
+                    onChange={(e) => setSettings({ ...settings, custom_business_info: e.target.value })}
+                    rows={5}
+                    placeholder="Ex: Somos o Escritório Silva & Associados, especializado em Direito Trabalhista. Endereço: Rua X, 123. Atendemos de segunda a sexta, das 9h às 18h. Aceitamos cartão, PIX e boleto..."
+                  />
+                </div>
+
+                <Separator />
+
                 <div className="space-y-2">
                   <Label className="font-medium">Prompt Personalizado do Agente</Label>
                   <p className="text-xs text-muted-foreground">
