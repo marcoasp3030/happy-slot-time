@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
 
     async function callUazapi(endpoint: string, method: string, body?: any) {
       const uazapiUrl = `${baseUrl}${instancePath}${endpoint}`;
-      console.log(`Calling UAZAPI: ${method} ${uazapiUrl}`);
+      console.log(`[whatsapp-connect] ${method} ${uazapiUrl}`);
 
       const headers: Record<string, string> = {
         "Content-Type": "application/json",

@@ -181,6 +181,9 @@ async function sendUazapiMessage(
   const instancePath = settings.instance_id ? `/${settings.instance_id}` : "";
   const url = `${baseUrl}${instancePath}/send/text`;
 
+  console.log(`[send-whatsapp] POST ${url}`);
+  console.log(`[send-whatsapp] instance_id: ${settings.instance_id}, phone: ${phone}`);
+
   const res = await fetch(url, {
     method: "POST",
     headers: {
