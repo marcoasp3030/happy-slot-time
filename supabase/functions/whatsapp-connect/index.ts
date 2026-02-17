@@ -365,7 +365,7 @@ Deno.serve(async (req) => {
       }
 
     // ============================================================
-    // ACTION: set-webhook — Force reconfigure webhook URL
+    // ACTION: set-webhook — Force reconfigure BOTH instance AND global webhooks
     // ============================================================
     } else if (action === "set-webhook") {
       if (!settings.token) {
@@ -374,8 +374,9 @@ Deno.serve(async (req) => {
       try {
         const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
         const webhookUrl = `${supabaseUrl}/functions/v1/wa-webhook/${companyId}`;
-        console.log(`[whatsapp-connect] 🔗 Setting webhook to: ${webhookUrl}`);
+        console.log(`[whatsapp-connect] 🔗 Setting instance webhook to: ${webhookUrl}`);
 
+        // 1. Set INSTANCE webhook (per-instance)
         const data = await callUazapi(
           baseUrl,
           "/webhook",
@@ -383,31 +384,71 @@ Deno.serve(async (req) => {
           { name: "token", value: settings.token },
           { url: webhookUrl, enabled: true, events: ["Message"] }
         );
+        console.log(`[whatsapp-connect] ✅ Instance webhook set`);
 
-        // Also set presence to available (online) via UAZAPI /send/presence
-        try {
-          await callUazapi(
-            baseUrl,
-            "/send/presence",
-            "POST",
-            { name: "token", value: settings.token },
-            { phone: "", presence: "available" }
-          );
-          console.log(`[whatsapp-connect] ✅ Presence set to available (online)`);
-        } catch (presErr: any) {
-          console.log(`[whatsapp-connect] ⚠️ Could not set presence:`, presErr?.status);
+        // 2. Set GLOBAL webhook via admin token (overrides any old global webhook)
+        let globalResult: any = null;
+        if (settings.admin_token) {
+          // Try multiple possible admin webhook endpoints
+          const globalWebhookEndpoints = [
+            "/admin/setGlobalWebhook",
+            "/admin/globalWebhook", 
+            "/admin/webhook",
+          ];
+          
+          for (const endpoint of globalWebhookEndpoints) {
+            try {
+              console.log(`[whatsapp-connect] 🌐 Trying global webhook via ${endpoint}...`);
+              globalResult = await callUazapi(
+                baseUrl,
+                endpoint,
+                "POST",
+                { name: "admintoken", value: settings.admin_token },
+                { url: webhookUrl, enabled: true, events: ["Message"] }
+              );
+              console.log(`[whatsapp-connect] ✅ Global webhook set via ${endpoint}`);
+              break; // Success, stop trying
+            } catch (gErr: any) {
+              console.log(`[whatsapp-connect] ⚠️ ${endpoint} failed: ${gErr?.status}`);
+            }
+          }
+
+          // Also try to GET the current global webhook to see what's configured
+          try {
+            console.log(`[whatsapp-connect] 🔍 Checking current global webhook...`);
+            const currentGlobal = await callUazapi(
+              baseUrl,
+              "/admin/listGlobalWebhook",
+              "GET",
+              { name: "admintoken", value: settings.admin_token }
+            );
+            console.log(`[whatsapp-connect] 📋 Current global webhook:`, JSON.stringify(currentGlobal));
+          } catch (checkErr: any) {
+            // Try alternative endpoint
+            try {
+              const currentGlobal2 = await callUazapi(
+                baseUrl,
+                "/admin/globalWebhook",
+                "GET",
+                { name: "admintoken", value: settings.admin_token }
+              );
+              console.log(`[whatsapp-connect] 📋 Current global webhook (alt):`, JSON.stringify(currentGlobal2));
+            } catch {
+              console.log(`[whatsapp-connect] ⚠️ Could not read global webhook config`);
+            }
+          }
         }
 
         await supabase.from("audit_logs").insert({
           company_id: companyId,
           user_id: userId,
           user_email: userEmail,
-          action: "WhatsApp: Webhook reconfigurado e presença online",
+          action: "WhatsApp: Webhook reconfigurado (instância + global)",
           category: "whatsapp",
-          details: { webhookUrl },
+          details: { webhookUrl, globalResult },
         });
 
-        return jsonResponse({ success: true, webhookUrl, data });
+        return jsonResponse({ success: true, webhookUrl, data, globalResult });
       } catch (e: any) {
         return jsonResponse({ error: `UAZAPI error`, details: e?.data || {} }, e?.status || 500);
       }
