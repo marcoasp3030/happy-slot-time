@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import DashboardLayout from '@/components/DashboardLayout';
+import { useFormLabel } from '@/hooks/useFormLabel';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -88,6 +89,7 @@ function SortableFieldCard({ template, index, fieldTypeLabels, onToggleActive, o
 
 export default function AnamnesisTemplates() {
   const { companyId } = useAuth();
+  const formLabels = useFormLabel();
 
   // Types state
   const [types, setTypes] = useState<AnamnesisType[]>([]);
@@ -160,7 +162,7 @@ export default function AnamnesisTemplates() {
         description: typeForm.description.trim() || null,
       });
       if (error) { toast.error('Erro: ' + error.message); return; }
-      toast.success('Tipo de anamnese criado');
+      toast.success(`${formLabels.typeLabel} criado`);
     }
     setTypeOpen(false);
     fetchTypes();
@@ -171,7 +173,7 @@ export default function AnamnesisTemplates() {
     // Fields will cascade delete
     const { error } = await supabase.from('anamnesis_types').delete().eq('id', deleteTypeTarget.id);
     if (error) { toast.error('Erro: ' + error.message); return; }
-    toast.success('Tipo de anamnese excluído');
+    toast.success(`${formLabels.typeLabel} excluído`);
     if (selectedType?.id === deleteTypeTarget.id) setSelectedType(null);
     setDeleteTypeTarget(null);
     fetchTypes();
@@ -313,7 +315,7 @@ export default function AnamnesisTemplates() {
               <CardContent className="py-12 text-center">
                 <ClipboardList className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
                 <p className="text-muted-foreground font-medium text-sm">Nenhum campo configurado</p>
-                <p className="text-xs text-muted-foreground/70 mt-1">Adicione campos para montar o formulário desta anamnese</p>
+                <p className="text-xs text-muted-foreground/70 mt-1">{formLabels.emptyText}</p>
                 <Button className="mt-4 gradient-primary border-0 text-sm" onClick={openNewField}>
                   <Plus className="h-4 w-4 mr-1" />Criar primeiro campo
                 </Button>
@@ -385,7 +387,7 @@ export default function AnamnesisTemplates() {
         <Dialog open={typeOpen} onOpenChange={setTypeOpen}>
           <DialogContent className="max-w-[95vw] sm:max-w-md">
             <DialogHeader>
-              <DialogTitle className="font-bold">{editingType ? 'Editar tipo de anamnese' : 'Novo tipo de anamnese'}</DialogTitle>
+               <DialogTitle className="font-bold">{editingType ? `Editar ${formLabels.typeLabel}` : `Novo ${formLabels.typeLabel}`}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-1.5">
@@ -394,7 +396,7 @@ export default function AnamnesisTemplates() {
               </div>
               <div className="space-y-1.5">
                 <Label className="font-semibold text-sm">Descrição</Label>
-                <Textarea value={typeForm.description} onChange={(e) => setTypeForm({ ...typeForm, description: e.target.value })} placeholder="Descreva o propósito desta anamnese" rows={2} />
+                <Textarea value={typeForm.description} onChange={(e) => setTypeForm({ ...typeForm, description: e.target.value })} placeholder={`Descreva o propósito deste ${formLabels.singular.toLowerCase()}`} rows={2} />
               </div>
               <Button onClick={saveType} className="w-full gradient-primary border-0 font-semibold h-10">
                 {editingType ? 'Salvar' : 'Criar tipo'}
@@ -414,9 +416,9 @@ export default function AnamnesisTemplates() {
           <div className="section-header mb-0">
             <h1 className="section-title flex items-center gap-2">
               <ClipboardList className="h-5 w-5 text-primary" />
-              Anamnese
-            </h1>
-            <p className="section-subtitle">Crie e gerencie diferentes tipos de ficha de anamnese</p>
+               {formLabels.configLabel}
+             </h1>
+             <p className="section-subtitle">Crie e gerencie diferentes tipos de {formLabels.singular.toLowerCase()}</p>
           </div>
           <Button onClick={openNewType} className="gradient-primary border-0 font-semibold self-start sm:self-auto">
             <Plus className="h-4 w-4 mr-2" />Novo tipo
@@ -427,7 +429,7 @@ export default function AnamnesisTemplates() {
           <Card className="glass-card-static rounded-2xl">
             <CardContent className="py-12 text-center">
               <ClipboardList className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
-              <p className="text-muted-foreground font-medium">Nenhum tipo de anamnese criado</p>
+              <p className="text-muted-foreground font-medium">Nenhum {formLabels.typeLabel.toLowerCase()} criado</p>
               <p className="text-xs text-muted-foreground/70 mt-1">Crie tipos como "Avaliação Facial", "Avaliação Corporal", etc.</p>
               <Button className="mt-4 gradient-primary border-0" onClick={openNewType}>
                 <Plus className="h-4 w-4 mr-1" />Criar primeiro tipo
@@ -476,7 +478,7 @@ export default function AnamnesisTemplates() {
       <Dialog open={typeOpen} onOpenChange={setTypeOpen}>
         <DialogContent className="max-w-[95vw] sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-bold">{editingType ? 'Editar tipo de anamnese' : 'Novo tipo de anamnese'}</DialogTitle>
+            <DialogTitle className="font-bold">{editingType ? `Editar ${formLabels.typeLabel}` : `Novo ${formLabels.typeLabel}`}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
@@ -485,7 +487,7 @@ export default function AnamnesisTemplates() {
             </div>
             <div className="space-y-1.5">
               <Label className="font-semibold text-sm">Descrição</Label>
-              <Textarea value={typeForm.description} onChange={(e) => setTypeForm({ ...typeForm, description: e.target.value })} placeholder="Descreva o propósito desta anamnese" rows={2} />
+              <Textarea value={typeForm.description} onChange={(e) => setTypeForm({ ...typeForm, description: e.target.value })} placeholder={`Descreva o propósito deste ${formLabels.singular.toLowerCase()}`} rows={2} />
             </div>
             <Button onClick={saveType} className="w-full gradient-primary border-0 font-semibold h-10">
               {editingType ? 'Salvar' : 'Criar tipo'}
@@ -498,7 +500,7 @@ export default function AnamnesisTemplates() {
       <AlertDialog open={!!deleteTypeTarget} onOpenChange={() => setDeleteTypeTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir tipo de anamnese</AlertDialogTitle>
+            <AlertDialogTitle>Excluir {formLabels.typeLabel.toLowerCase()}</AlertDialogTitle>
             <AlertDialogDescription>
               Tem certeza que deseja excluir "{deleteTypeTarget?.name}"? Todos os campos associados também serão removidos. Esta ação não pode ser desfeita.
             </AlertDialogDescription>

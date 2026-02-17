@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
+import { useFormLabel } from '@/hooks/useFormLabel';
 import {
   LayoutDashboard, Users, Clock, Calendar,
   Palette, MessageSquare, CreditCard, Menu, X, LogOut,
@@ -12,14 +13,13 @@ import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import sloteraLogo from '@/assets/slotera-logo.png';
 
-const navItems = [
+const baseNavItems = [
   { title: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
   { title: 'Agendamentos', icon: Calendar, path: '/agendamentos' },
   { title: 'Serviços', icon: Clock, path: '/servicos' },
   { title: 'Profissionais', icon: Users, path: '/profissionais' },
   { title: 'Horários', icon: Clock, path: '/horarios' },
   { title: 'Fichas de Clientes', icon: ClipboardList, path: '/fichas' },
-  { title: 'Anamnese (Config)', icon: Layers, path: '/anamnese' },
 ];
 
 const settingsItems = [
@@ -39,6 +39,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const navigate = useNavigate();
   const { signOut, user } = useAuth();
   const { isSuperAdmin } = useRole();
+  const { menuLabel } = useFormLabel();
+
+  const navItems = useMemo(() => [
+    ...baseNavItems,
+    { title: menuLabel, icon: Layers, path: '/anamnese' },
+  ], [menuLabel]);
 
   const handleSignOut = async () => {
     await signOut();

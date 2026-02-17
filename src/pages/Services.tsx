@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useFormLabel } from '@/hooks/useFormLabel';
 import { supabase } from '@/integrations/supabase/client';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Card, CardContent } from '@/components/ui/card';
@@ -36,6 +37,7 @@ interface AnamnesisType {
 
 export default function Services() {
   const { companyId } = useAuth();
+  const formLabels = useFormLabel();
   const [services, setServices] = useState<Service[]>([]);
   const [anamnesisTypes, setAnamnesisTypes] = useState<AnamnesisType[]>([]);
   const [open, setOpen] = useState(false);
@@ -228,7 +230,7 @@ export default function Services() {
                       {s.requires_anamnesis && (
                         <Badge variant="secondary" className="text-[10px] h-5 gap-1">
                           <ClipboardList className="h-2.5 w-2.5" />
-                          {getTypeName(s.anamnesis_type_id) || 'Anamnese'}
+                          {getTypeName(s.anamnesis_type_id) || formLabels.shortLabel}
                         </Badge>
                       )}
                       {s.requires_sessions && (
@@ -313,16 +315,16 @@ export default function Services() {
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Recursos avançados</p>
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label className="font-semibold text-sm flex items-center gap-1.5"><ClipboardList className="h-3.5 w-3.5 text-primary" />Anamnese</Label>
+                    <Label className="font-semibold text-sm flex items-center gap-1.5"><ClipboardList className="h-3.5 w-3.5 text-primary" />{formLabels.shortLabel}</Label>
                     <p className="text-[11px] text-muted-foreground">Ficha de avaliação do cliente</p>
                   </div>
                   <Switch checked={form.requires_anamnesis} onCheckedChange={(v) => setForm({ ...form, requires_anamnesis: v, anamnesis_type_id: v ? form.anamnesis_type_id : '' })} />
                 </div>
                 {form.requires_anamnesis && (
                   <div className="space-y-1.5 pl-5 border-l-2 border-primary/20">
-                    <Label className="font-semibold text-sm">Tipo de anamnese</Label>
+                    <Label className="font-semibold text-sm">{formLabels.typeLabel}</Label>
                     {anamnesisTypes.length === 0 ? (
-                      <p className="text-[11px] text-muted-foreground">Nenhum tipo criado. Crie tipos na página de Anamnese.</p>
+                      <p className="text-[11px] text-muted-foreground">Nenhum tipo criado. Crie tipos na página de {formLabels.configLabel}.</p>
                     ) : (
                       <Select value={form.anamnesis_type_id || 'none'} onValueChange={(v) => setForm({ ...form, anamnesis_type_id: v === 'none' ? '' : v })}>
                         <SelectTrigger className="h-10"><SelectValue placeholder="Selecione o tipo" /></SelectTrigger>

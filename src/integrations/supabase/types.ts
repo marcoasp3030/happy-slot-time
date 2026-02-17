@@ -534,6 +534,7 @@ export type Database = {
         Row: {
           company_id: string
           created_at: string
+          form_label_mode: string
           generate_meet_link: boolean
           google_calendar_sync_mode: string
           id: string
@@ -545,6 +546,7 @@ export type Database = {
         Insert: {
           company_id: string
           created_at?: string
+          form_label_mode?: string
           generate_meet_link?: boolean
           google_calendar_sync_mode?: string
           id?: string
@@ -556,6 +558,7 @@ export type Database = {
         Update: {
           company_id?: string
           created_at?: string
+          form_label_mode?: string
           generate_meet_link?: boolean
           google_calendar_sync_mode?: string
           id?: string
