@@ -126,6 +126,7 @@ Deno.serve(async (req) => {
         audio_media_url: body.audio_media_url || null,
         audio_message_id: body.audio_message_id || null,
         audio_wa_msg_id: body.audio_wa_msg_id || null,
+        audio_chat_id: body.audio_chat_id || null,
       });
       return new Response(JSON.stringify(result), { headers: jsonH, status: result.error ? 500 : 200 });
     }
@@ -433,87 +434,121 @@ async function sendAudioViaUazapi(wsSettings: any, phone: string, audioData: Uin
 }
 
 // ─── Download audio from UAZAPI (try multiple endpoints) ───
-async function downloadAudioFromUazapi(wsSettings: any, messageId: string, waMessageId?: string): Promise<string | null> {
+async function downloadAudioFromUazapi(wsSettings: any, messageId: string, waMessageId?: string, chatId?: string): Promise<string | null> {
   if (!wsSettings?.base_url || !wsSettings?.token) return null;
   
   const baseUrl = wsSettings.base_url.replace(/\/$/, "");
   const token = wsSettings.token;
+  const headers = { token };
+  const headersJson = { "Content-Type": "application/json", token };
 
-  // Strategy 1: POST /chat/downloadMediaMessage with body { messageid }
+  // Helper: process response
+  async function processRes(res: Response, label: string): Promise<string | null> {
+    if (!res.ok) {
+      const errText = await res.text();
+      logErr(`🎵 ${label} error:`, res.status, errText.substring(0, 200));
+      return null;
+    }
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const data = await res.json();
+      const url = data.url || data.link || data.mediaUrl || data.data?.url || data.data?.link || data.data?.mediaUrl;
+      if (url) { log(`🎵 ${label} got URL:`, String(url).substring(0, 100)); return url; }
+      if (data.base64) { return await uploadBase64ToStorage(data.base64); }
+      if (data.data?.base64) { return await uploadBase64ToStorage(data.data.base64); }
+      log(`🎵 ${label} JSON response but no url/base64. Keys:`, Object.keys(data).join(","));
+    } else {
+      const audioData = new Uint8Array(await res.arrayBuffer());
+      if (audioData.length > 100) {
+        log(`🎵 ${label} got binary:`, audioData.length, "bytes");
+        return await uploadBinaryToStorage(audioData);
+      }
+    }
+    return null;
+  }
+
+  // Strategy 1: GET /chat/downloadMediaMessage?messageid={id}
   if (messageId) {
     try {
-      const url = baseUrl + "/chat/downloadMediaMessage";
-      log("🎵 Try POST downloadMediaMessage:", url, "messageid:", messageId);
+      const url = `${baseUrl}/chat/downloadMediaMessage?messageid=${messageId}`;
+      log("🎵 Try GET downloadMediaMessage (query):", url);
+      const res = await fetch(url, { headers });
+      const result = await processRes(res, "GET downloadMediaMessage?messageid");
+      if (result) return result;
+    } catch (e: any) { logErr("🎵 GET downloadMediaMessage query exception:", e.message); }
+  }
+
+  // Strategy 2: GET /chat/downloadMediaMessage/{id}
+  if (messageId) {
+    try {
+      const url = `${baseUrl}/chat/downloadMediaMessage/${messageId}`;
+      log("🎵 Try GET downloadMediaMessage/{id}:", url);
+      const res = await fetch(url, { headers });
+      const result = await processRes(res, "GET downloadMediaMessage/{id}");
+      if (result) return result;
+    } catch (e: any) { logErr("🎵 GET downloadMediaMessage/{id} exception:", e.message); }
+  }
+
+  // Strategy 3: GET /chat/getMediaLink?messageid={id}
+  if (messageId) {
+    try {
+      const url = `${baseUrl}/chat/getMediaLink?messageid=${messageId}`;
+      log("🎵 Try GET getMediaLink:", url);
+      const res = await fetch(url, { headers });
+      const result = await processRes(res, "GET getMediaLink");
+      if (result) return result;
+    } catch (e: any) { logErr("🎵 GET getMediaLink exception:", e.message); }
+  }
+
+  // Strategy 4: GET /chat/getLink?messageid={id}
+  if (messageId) {
+    try {
+      const url = `${baseUrl}/chat/getLink?messageid=${messageId}`;
+      log("🎵 Try GET getLink:", url);
+      const res = await fetch(url, { headers });
+      const result = await processRes(res, "GET getLink");
+      if (result) return result;
+    } catch (e: any) { logErr("🎵 GET getLink exception:", e.message); }
+  }
+
+  // Strategy 5: GET /message/downloadMedia?messageid={id}
+  if (messageId) {
+    try {
+      const url = `${baseUrl}/message/downloadMedia?messageid=${messageId}`;
+      log("🎵 Try GET message/downloadMedia:", url);
+      const res = await fetch(url, { headers });
+      const result = await processRes(res, "GET message/downloadMedia");
+      if (result) return result;
+    } catch (e: any) { logErr("🎵 GET message/downloadMedia exception:", e.message); }
+  }
+
+  // Strategy 6: POST /chat/downloadMediaMessage with chatid + messageid
+  if (messageId && chatId) {
+    try {
+      const url = `${baseUrl}/chat/downloadMediaMessage`;
+      log("🎵 Try POST downloadMediaMessage with chatid:", chatId);
       const res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json", token },
-        body: JSON.stringify({ messageid: messageId }),
+        headers: headersJson,
+        body: JSON.stringify({ messageid: messageId, chatid: chatId }),
       });
-      if (res.ok) {
-        const contentType = res.headers.get("content-type") || "";
-        if (contentType.includes("application/json")) {
-          const data = await res.json();
-          if (data.url) { log("🎵 Got media URL:", data.url.substring(0, 100)); return data.url; }
-          if (data.base64) { return await uploadBase64ToStorage(data.base64); }
-          if (data.data?.url) { log("🎵 Got media URL (nested):", data.data.url.substring(0, 100)); return data.data.url; }
-        } else {
-          // Binary response - upload directly
-          const audioData = new Uint8Array(await res.arrayBuffer());
-          if (audioData.length > 100) {
-            log("🎵 Got binary audio:", audioData.length, "bytes");
-            return await uploadBinaryToStorage(audioData);
-          }
-        }
-      } else {
-        const errText = await res.text();
-        logErr("🎵 POST downloadMediaMessage error:", res.status, errText.substring(0, 200));
-      }
-    } catch (e: any) { logErr("🎵 POST downloadMediaMessage exception:", e.message); }
+      const result = await processRes(res, "POST downloadMediaMessage+chatid");
+      if (result) return result;
+    } catch (e: any) { logErr("🎵 POST downloadMediaMessage+chatid exception:", e.message); }
   }
 
-  // Strategy 2: GET /chat/downloadMediaMessage/{messageid}
-  if (messageId) {
+  // Strategy 7: Try with WhatsApp message ID
+  if (waMessageId && waMessageId !== messageId) {
     try {
-      const url = baseUrl + "/chat/downloadMediaMessage/" + messageId;
-      log("🎵 Try GET downloadMediaMessage:", url);
-      const res = await fetch(url, { headers: { token } });
-      if (res.ok) {
-        const contentType = res.headers.get("content-type") || "";
-        if (contentType.includes("application/json")) {
-          const data = await res.json();
-          if (data.url) return data.url;
-          if (data.base64) return await uploadBase64ToStorage(data.base64);
-        } else {
-          const audioData = new Uint8Array(await res.arrayBuffer());
-          if (audioData.length > 100) return await uploadBinaryToStorage(audioData);
-        }
-      } else {
-        logErr("🎵 GET downloadMediaMessage error:", res.status);
-      }
-    } catch (e: any) { logErr("🎵 GET downloadMediaMessage exception:", e.message); }
+      const url = `${baseUrl}/chat/downloadMediaMessage?messageid=${encodeURIComponent(waMessageId)}`;
+      log("🎵 Try GET downloadMediaMessage with wa_id:", waMessageId);
+      const res = await fetch(url, { headers });
+      const result = await processRes(res, "GET downloadMediaMessage wa_id");
+      if (result) return result;
+    } catch (e: any) { logErr("🎵 GET downloadMediaMessage wa_id exception:", e.message); }
   }
 
-  // Strategy 3: POST /chat/getMediaLink with { messageid }
-  if (messageId) {
-    try {
-      const url = baseUrl + "/chat/getMediaLink";
-      log("🎵 Try POST getMediaLink:", url);
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", token },
-        body: JSON.stringify({ messageid: messageId }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const mediaUrl = data.url || data.link || data.mediaUrl || data.data?.url || data.data?.link;
-        if (mediaUrl) { log("🎵 Got media link:", String(mediaUrl).substring(0, 100)); return mediaUrl; }
-      } else {
-        logErr("🎵 POST getMediaLink error:", res.status);
-      }
-    } catch (e: any) { logErr("🎵 POST getMediaLink exception:", e.message); }
-  }
-
-  log("🎵 All download strategies failed for messageid:", messageId, "wa_id:", waMessageId);
+  log("🎵 All download strategies failed for messageid:", messageId, "wa_id:", waMessageId, "chatid:", chatId);
   return null;
 }
 
@@ -544,6 +579,7 @@ interface AudioParams {
   audio_media_url: string | null;
   audio_message_id: string | null;
   audio_wa_msg_id?: string | null;
+  audio_chat_id?: string | null;
 }
 
 async function handleAgent(sb: any, cid: string, phone: string, msg: string, audioParams: AudioParams = { is_audio: false, audio_media_url: null, audio_message_id: null }): Promise<any> {
@@ -613,7 +649,7 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
     
     // If no direct URL, try downloading from UAZAPI
     if (!audioUrl && audioParams.audio_message_id && wsForAudio) {
-      audioUrl = await downloadAudioFromUazapi(wsForAudio, audioParams.audio_message_id, audioParams.audio_wa_msg_id || undefined);
+      audioUrl = await downloadAudioFromUazapi(wsForAudio, audioParams.audio_message_id, audioParams.audio_wa_msg_id || undefined, audioParams.audio_chat_id || undefined);
     }
     
     if (audioUrl) {
