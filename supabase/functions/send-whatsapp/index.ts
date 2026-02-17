@@ -51,8 +51,9 @@ Deno.serve(async (req) => {
     }
 
     // ─── Detect UAZAPI webhook payload ───
-    const uazapiCompanyId = new URL(req.url).searchParams.get("company_id");
-    log("🔵 company_id from URL:", uazapiCompanyId);
+    const urlParams = new URL(req.url).searchParams;
+    const uazapiCompanyId = urlParams.get("company_id") || body.company_id_webhook;
+    log("🔵 company_id from URL:", urlParams.get("company_id"), "from body:", body.company_id_webhook, "final:", uazapiCompanyId);
     log("🔵 body.type:", body.type, "body.action:", body.action, "body.event:", body.event);
 
     const isUazapiWebhook = uazapiCompanyId && !body.type && !body.action && (
