@@ -388,7 +388,7 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string): Pr
 
 async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
   const cp = ph.replace(/\D/g, "");
-  const [m, a, c, s, h, k, cs, as_, st, ss] = await Promise.all([
+  const [m, a, c, s, h, k, cs, as_, st, ss, af] = await Promise.all([
     sb.from("whatsapp_messages").select("direction, content, created_at").eq("conversation_id", convId).order("created_at", { ascending: false }).limit(20),
     sb.from("appointments").select("id, client_name, appointment_date, start_time, end_time, status, services(name), staff(name)").eq("company_id", cid).or("client_phone.eq." + cp + ",client_phone.eq.+" + cp).in("status", ["pending", "confirmed"]).order("appointment_date", { ascending: true }).limit(10),
     sb.from("companies").select("name, address, phone").eq("id", cid).single(),
@@ -396,11 +396,29 @@ async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
     sb.from("business_hours").select("day_of_week, open_time, close_time, is_open").eq("company_id", cid),
     sb.from("whatsapp_knowledge_base").select("category, title, content").eq("company_id", cid).eq("active", true),
     sb.from("company_settings").select("slot_interval, max_capacity_per_slot, min_advance_hours").eq("company_id", cid).single(),
-    sb.from("whatsapp_agent_settings").select("custom_prompt, timezone").eq("company_id", cid).single(),
+    sb.from("whatsapp_agent_settings").select("custom_prompt, timezone, can_share_address, can_share_phone, can_share_business_hours, can_share_services, can_share_professionals, can_handle_anamnesis, can_send_files, can_send_images, can_send_audio, custom_business_info").eq("company_id", cid).single(),
     sb.from("staff").select("id, name").eq("company_id", cid).eq("active", true),
     sb.from("staff_services").select("staff_id, service_id").in("staff_id", (await sb.from("staff").select("id").eq("company_id", cid).eq("active", true)).data?.map((x: any) => x.id) || []),
+    sb.from("whatsapp_agent_files").select("file_name, file_url, file_type, description").eq("company_id", cid).eq("active", true),
   ]);
-  return { msgs: (m.data || []).reverse(), appts: a.data || [], co: c.data || {}, svcs: s.data || [], hrs: h.data || [], kb: k.data || [], cs: { ...(cs.data || {}), custom_prompt: as_.data?.custom_prompt, timezone: as_.data?.timezone || "America/Sao_Paulo" }, staff: st.data || [], staffServices: ss.data || [] };
+  const agentCaps = as_.data || {};
+  return {
+    msgs: (m.data || []).reverse(), appts: a.data || [], co: c.data || {}, svcs: s.data || [], hrs: h.data || [],
+    kb: k.data || [], cs: { ...(cs.data || {}), custom_prompt: agentCaps.custom_prompt, timezone: agentCaps.timezone || "America/Sao_Paulo" },
+    staff: st.data || [], staffServices: ss.data || [], agentFiles: af.data || [],
+    caps: {
+      can_share_address: agentCaps.can_share_address ?? true,
+      can_share_phone: agentCaps.can_share_phone ?? true,
+      can_share_business_hours: agentCaps.can_share_business_hours ?? true,
+      can_share_services: agentCaps.can_share_services ?? true,
+      can_share_professionals: agentCaps.can_share_professionals ?? true,
+      can_handle_anamnesis: agentCaps.can_handle_anamnesis ?? false,
+      can_send_files: agentCaps.can_send_files ?? false,
+      can_send_images: agentCaps.can_send_images ?? false,
+      can_send_audio: agentCaps.can_send_audio ?? false,
+      custom_business_info: agentCaps.custom_business_info || null,
+    },
+  };
 }
 
 async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string): Promise<string> {
@@ -421,6 +439,7 @@ async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string
   }).join("; ");
 
   const hasHistory = ctx.msgs && ctx.msgs.length > 0;
+  const caps = ctx.caps || {};
 
   // Dynamic date/time using configured timezone
   const tz = ctx.cs?.timezone || "America/Sao_Paulo";
@@ -428,6 +447,44 @@ async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string
   const dateStr = new Intl.DateTimeFormat("pt-BR", { timeZone: tz, weekday: "long", year: "numeric", month: "long", day: "numeric" }).format(now);
   const timeStr = new Intl.DateTimeFormat("pt-BR", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(now);
   const tzLabel = tz.replace(/_/g, " ").split("/").pop();
+
+  // Build data section conditionally based on capabilities
+  const dataParts: string[] = [];
+  dataParts.push(ctx.co.name || "");
+  if (caps.can_share_address && ctx.co.address) dataParts.push("End: " + ctx.co.address);
+  if (caps.can_share_phone && ctx.co.phone) dataParts.push("Tel: " + ctx.co.phone);
+  
+  const capabilityRules: string[] = [];
+  if (!caps.can_share_address) capabilityRules.push("- NÃO informe o endereço do estabelecimento em hipótese alguma");
+  if (!caps.can_share_phone) capabilityRules.push("- NÃO informe o telefone do estabelecimento");
+  if (!caps.can_share_business_hours) capabilityRules.push("- NÃO informe os horários de funcionamento. Se perguntarem, diga para entrar em contato diretamente");
+  if (!caps.can_share_services) capabilityRules.push("- NÃO liste ou detalhe os serviços disponíveis. Oriente o cliente a consultar diretamente");
+  if (!caps.can_share_professionals) capabilityRules.push("- NÃO mencione nomes de profissionais específicos");
+  if (!caps.can_handle_anamnesis) capabilityRules.push("- NÃO conduza preenchimento de fichas de anamnese");
+
+  // File sending rules
+  const fileParts: string[] = [];
+  if (caps.can_send_files || caps.can_send_images || caps.can_send_audio) {
+    const allowedTypes: string[] = [];
+    if (caps.can_send_files) allowedTypes.push("documentos/PDF");
+    if (caps.can_send_images) allowedTypes.push("imagens/fotos");
+    if (caps.can_send_audio) allowedTypes.push("áudios");
+    
+    const relevantFiles = (ctx.agentFiles || []).filter((f: any) => {
+      if (f.file_type === "document" && caps.can_send_files) return true;
+      if (f.file_type === "image" && caps.can_send_images) return true;
+      if (f.file_type === "audio" && caps.can_send_audio) return true;
+      return false;
+    });
+
+    if (relevantFiles.length > 0) {
+      fileParts.push(`\nARQUIVOS DISPONÍVEIS PARA ENVIO (${allowedTypes.join(", ")}):`);
+      fileParts.push("Quando for relevante, use a ferramenta send_file para enviar um arquivo ao cliente.");
+      for (const f of relevantFiles) {
+        fileParts.push(`- "${f.file_name}" (${f.file_type})${f.description ? ": " + f.description : ""} | url: ${f.file_url}`);
+      }
+    }
+  }
 
   const sys = `Você é a atendente virtual de ${ctx.co.name || "nossa empresa"} no WhatsApp.
 
@@ -441,6 +498,7 @@ REGRAS ESSENCIAIS:
 - SEM listas, SEM formatação markdown, SEM negrito/itálico
 - Separe assuntos com \\n\\n (enviados como mensagens separadas)
 - NÃO repita o que o cliente já sabe ou que já foi dito na conversa
+${capabilityRules.length > 0 ? "\nRESTRIÇÕES DE INFORMAÇÃO (OBEDEÇA RIGOROSAMENTE):\n" + capabilityRules.join("\n") : ""}
 
 REGRA DE NOME DO CLIENTE (IMPORTANTE):
 - Nome do cliente: ${conv.client_name || "DESCONHECIDO"}
@@ -457,21 +515,23 @@ REGRA ANTI-REPETIÇÃO (CRÍTICO):
 FLUXO DE AGENDAMENTO (IMPORTANTE):
 - Quando o cliente quiser agendar, pergunte: 1) Qual serviço? 2) Qual data/horário de preferência?
 - Use check_availability para verificar disponibilidade na data
-- ${staffInfo ? `Profissionais disponíveis: ${staffInfo}` : "Nenhum profissional cadastrado - agende sem profissional"}
-- ${(ctx.staff || []).length > 1 ? "Se houver mais de um profissional para o serviço, pergunte a preferência do cliente" : ""}
+- ${caps.can_share_professionals && staffInfo ? `Profissionais disponíveis: ${staffInfo}` : "Nenhum profissional cadastrado - agende sem profissional"}
+- ${caps.can_share_professionals && (ctx.staff || []).length > 1 ? "Se houver mais de um profissional para o serviço, pergunte a preferência do cliente" : ""}
 - ${(ctx.staff || []).length === 1 ? "Há apenas um profissional, agende diretamente com ele sem perguntar" : ""}
-- Depois de confirmar serviço, data, horário${(ctx.staff || []).length > 1 ? " e profissional" : ""}, use book_appointment para criar o agendamento
+- Depois de confirmar serviço, data, horário${(ctx.staff || []).length > 1 && caps.can_share_professionals ? " e profissional" : ""}, use book_appointment para criar o agendamento
 - Para remarcar, use check_availability no novo dia e depois reschedule_appointment
 - Para cancelar, confirme com o cliente e use cancel_appointment
 - O agendamento criado será automaticamente sincronizado com o Google Agenda
 
 DADOS (use só quando relevante, não despeje tudo de uma vez):
-${ctx.co.name || ""} | End: ${ctx.co.address || ""} | Tel: ${ctx.co.phone || ""}
-Horários: ${hrs}
-Serviços: ${svcs}
-Profissionais: ${staffInfo || "nenhum cadastrado"}
+${dataParts.join(" | ")}
+${caps.can_share_business_hours ? "Horários: " + hrs : ""}
+${caps.can_share_services ? "Serviços: " + svcs : ""}
+${caps.can_share_professionals ? "Profissionais: " + (staffInfo || "nenhum cadastrado") : ""}
 ${kbs ? "Info extra: " + kbs : ""}
+${caps.custom_business_info ? "Info do estabelecimento: " + caps.custom_business_info : ""}
 Agendamentos do cliente: ${appts || "nenhum"}
+${fileParts.join("\n")}
 ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" + ctx.cs.custom_prompt : ""}`;
 
 
@@ -481,7 +541,7 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
 
   log("🧠 AI request: model=google/gemini-2.5-flash, messages:", messages.length, "system_len:", sys.length);
 
-  const tools = [
+  const tools: any[] = [
     { type: "function", function: { name: "confirm_appointment", description: "Confirma agendamento existente", parameters: { type: "object", properties: { appointment_id: { type: "string" } }, required: ["appointment_id"] } } },
     { type: "function", function: { name: "cancel_appointment", description: "Cancela agendamento existente", parameters: { type: "object", properties: { appointment_id: { type: "string" } }, required: ["appointment_id"] } } },
     { type: "function", function: { name: "check_availability", description: "Verifica horários disponíveis em uma data. Use TAMBÉM para verificar disponibilidade de um profissional específico passando staff_id.", parameters: { type: "object", properties: { date: { type: "string", description: "Data no formato YYYY-MM-DD" }, staff_id: { type: "string", description: "ID do profissional (opcional, filtra por profissional)" }, service_id: { type: "string", description: "ID do serviço (opcional, considera duração do serviço)" } }, required: ["date"] } } },
@@ -490,6 +550,18 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
     { type: "function", function: { name: "request_handoff", description: "Transfere para atendente humano", parameters: { type: "object", properties: {} } } },
     { type: "function", function: { name: "save_client_name", description: "Salva o nome do cliente quando ele se apresenta", parameters: { type: "object", properties: { name: { type: "string", description: "Nome do cliente" } }, required: ["name"] } } },
   ];
+
+  // Add send_file tool only if file sending is enabled and there are files
+  if ((caps.can_send_files || caps.can_send_images || caps.can_send_audio) && (ctx.agentFiles || []).length > 0) {
+    tools.push({
+      type: "function",
+      function: {
+        name: "send_file",
+        description: "Envia um arquivo (PDF, imagem ou áudio) ao cliente via WhatsApp. Use quando o contexto da conversa indicar que o arquivo seria útil.",
+        parameters: { type: "object", properties: { file_url: { type: "string", description: "URL do arquivo a enviar" }, file_name: { type: "string", description: "Nome do arquivo para referência" }, file_type: { type: "string", description: "Tipo: document, image ou audio" } }, required: ["file_url", "file_name", "file_type"] },
+      },
+    });
+  }
 
   log("🧠 Sending request to AI gateway...");
   const t0 = Date.now();
@@ -639,6 +711,33 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
       } else if (fn === "save_client_name" && args.name) {
         await sb.from("whatsapp_conversations").update({ client_name: args.name }).eq("id", conv.id);
         log("🧠 Client name saved:", args.name);
+      } else if (fn === "send_file" && args.file_url) {
+        // Send file via UAZAPI
+        const { data: ws } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
+        if (ws?.active && ws?.base_url && ws?.token) {
+          try {
+            const fileType = args.file_type || "document";
+            let endpoint = "/send/document";
+            if (fileType === "image") endpoint = "/send/image";
+            else if (fileType === "audio") endpoint = "/send/audio";
+            
+            const sendUrl = ws.base_url.replace(/\/$/, "") + endpoint;
+            const sendBody: any = { number: conv.phone.replace(/\D/g, ""), url: args.file_url };
+            if (fileType === "document") sendBody.fileName = args.file_name;
+            if (fileType === "image") sendBody.caption = args.file_name;
+            
+            log("📎 Sending file:", sendUrl, args.file_name);
+            const fRes = await fetch(sendUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", token: ws.token },
+              body: JSON.stringify(sendBody),
+            });
+            log("📎 File send result:", fRes.status);
+          } catch (e: any) {
+            logErr("📎 File send error:", e.message);
+          }
+        }
+        txt = txt || `Enviei o arquivo "${args.file_name}" pra você! 📎`;
       }
       await sb.from("whatsapp_agent_logs").insert({ company_id: cid, conversation_id: conv.id, action: fn, details: args });
     }
