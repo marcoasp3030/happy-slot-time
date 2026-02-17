@@ -118,68 +118,42 @@ function extractButtonResponse(body: any): { buttonId: string; buttonText: strin
         const labelKey = labelParts.join("_");
         if (knownLabels[labelKey]) {
           btnText = knownLabels[labelKey];
+          log("🏷️ Button label resolved via exact match:", labelKey, "→", btnText);
         } else {
-          // Intelligent fallback: try to reverse the sanitize process
-          // The sanitize was: text.toLowerCase().replace(/[^a-z0-9]/g, '_')
-          // Common Portuguese accent patterns to reverse:
-          const accentMap: Record<string, string[]> = {
-            "_": ["ã", "á", "à", "â", "é", "ê", "í", "ó", "ô", "õ", "ú", "ü", "ç", " ", "-"],
-          };
-          // Try to recover each word individually from known labels first
-          const recoveredWords = labelParts.map(part => {
-            // Check if individual word is a known label
-            if (knownLabels[part]) return knownLabels[part];
-            return part;
-          });
-          
-          // Apply common accent reversal heuristics on the joined result
-          let recovered = recoveredWords.join(" ");
-          // Common suffix/prefix patterns in Portuguese
-          const accentPatterns: [RegExp, string][] = [
-            // ção / ções
-            [/\b(\w*)__o\b/g, (_m: string, p: string) => `${p}ção`],
-            [/\b(\w*)__es\b/g, (_m: string, p: string) => `${p}ções`],
-            // ã / ão
-            [/\b(\w*) o\b/g, (_m: string, p: string) => p.length <= 2 ? `${p}ão` : `${p} o`],
-            [/\b(\w*) a\b/g, (_m: string, p: string) => p.length <= 2 ? `${p}ã` : `${p} a`],
-            // é, ê
-            [/\b(\w*) rio\b/g, (_m: string, p: string) => `${p}ário`],
-            [/\b(\w*) rios\b/g, (_m: string, p: string) => `${p}ários`],
-            // í
-            [/\b(\w*) vel\b/g, (_m: string, p: string) => `${p}ível`],
-            // ç
-            [/\b(\w*) o\b/g, (_m: string, p: string) => `${p}ço`],
-            [/\b(\w*) a\b/g, (_m: string, p: string) => `${p}ça`],
-          ];
-          
-          // Simpler approach: replace isolated single-char "words" that result from accent removal
-          // e.g. "n o" → likely "não", "pr ximo" → likely "próximo"
-          // Use the sanitized→original lookup on sub-segments
+          log("⚠️ UNMAPPED BUTTON LABEL - labelKey:", labelKey, "fullId:", trimmedId, "- consider adding to knownLabels map");
+
+          // Intelligent fallback: try sub-segment matching
           const subSegments = labelKey.split("_");
           const subRecovered: string[] = [];
+          const unmatchedSegments: string[] = [];
           let i = 0;
           while (i < subSegments.length) {
-            // Try progressively longer sub-keys to match known labels
             let matched = false;
             for (let len = Math.min(subSegments.length - i, 4); len >= 1; len--) {
               const subKey = subSegments.slice(i, i + len).join("_");
               if (knownLabels[subKey]) {
                 subRecovered.push(knownLabels[subKey]);
+                log("🏷️ Sub-segment matched:", subKey, "→", knownLabels[subKey]);
                 i += len;
                 matched = true;
                 break;
               }
             }
             if (!matched) {
+              unmatchedSegments.push(subSegments[i]);
               subRecovered.push(subSegments[i]);
               i++;
             }
           }
           
+          if (unmatchedSegments.length > 0) {
+            log("⚠️ UNMATCHED SUB-SEGMENTS:", unmatchedSegments.join(", "), "from labelKey:", labelKey);
+          }
+          
           btnText = subRecovered.join(" ") || trimmedId;
-          // Remove empty segments from accent artifacts and capitalize
           btnText = btnText.replace(/\s+/g, " ").trim();
           btnText = btnText.charAt(0).toUpperCase() + btnText.slice(1);
+          log("🏷️ Fallback result:", btnText);
         }
       }
       
