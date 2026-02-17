@@ -250,18 +250,27 @@ function detectAudioMessage(body: any): { isAudio: boolean; mediaUrl: string | n
 
 function extractPhone(body: any): string | null {
   const clean = (jid: string) => jid.replace("@s.whatsapp.net", "").replace("@c.us", "").replace(/\D/g, "");
+  const isLid = (jid: string) => jid.includes("@lid") || jid.includes("@g.us");
   
   // Direct fields
   if (body.phone) return String(body.phone);
   if (body.from) return String(body.from);
 
-  // UAZAPI: message.sender or message.chatid contain the JID
+  // UAZAPI: message object - prioritize sender_pn (actual phone number) over sender/chatid (which may be LIDs)
   const msg = body.message;
   if (msg && typeof msg === "object") {
-    if (typeof msg.sender === "string" && msg.sender.includes("@")) return clean(msg.sender);
-    if (typeof msg.chatid === "string" && msg.chatid.includes("@")) return clean(msg.chatid);
-    // sender_pn (phone number directly)
-    if (typeof msg.sender_pn === "string" && msg.sender_pn.trim()) return msg.sender_pn.replace(/\D/g, "");
+    // sender_pn is the REAL phone number in UAZAPI format — always prefer this
+    if (typeof msg.sender_pn === "string" && msg.sender_pn.trim()) {
+      const pn = msg.sender_pn.replace("@s.whatsapp.net", "").replace("@c.us", "").replace(/\D/g, "");
+      if (pn) {
+        log("📱 Phone from sender_pn:", pn);
+        return pn;
+      }
+    }
+    // sender JID — skip LID-based values
+    if (typeof msg.sender === "string" && msg.sender.includes("@") && !isLid(msg.sender)) return clean(msg.sender);
+    // chatid — skip LID and group-based values
+    if (typeof msg.chatid === "string" && msg.chatid.includes("@") && !isLid(msg.chatid)) return clean(msg.chatid);
   }
 
   // UAZAPI: key.remoteJid
