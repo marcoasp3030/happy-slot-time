@@ -42,10 +42,12 @@ export default function ClientRecords() {
   // Anamnesis state
   const [responses, setResponses] = useState<any[]>([]);
   const [selectedResponse, setSelectedResponse] = useState<any>(null);
+  const [responseTemplates, setResponseTemplates] = useState<any[]>([]); // templates for viewing Q&A
   const [templates, setTemplates] = useState<any[]>([]);
   const [anamnesisOpen, setAnamnesisOpen] = useState(false);
   const [anamnesisForm, setAnamnesisForm] = useState<any>({ client_name: '', client_phone: '', service_id: '', responses: {}, notes: '' });
   const [editingAnamnesis, setEditingAnamnesis] = useState<any>(null);
+  const [selectExistingClient, setSelectExistingClient] = useState(false);
 
   // Sessions state
   const [packages, setPackages] = useState<any[]>([]);
@@ -144,7 +146,6 @@ export default function ClientRecords() {
 
   const fetchTemplatesForService = async (serviceId: string) => {
     if (!companyId) return;
-    // Find the service to get its anamnesis_type_id
     const service = services.find(s => s.id === serviceId);
     const typeId = service?.anamnesis_type_id;
     if (typeId) {
@@ -154,12 +155,39 @@ export default function ClientRecords() {
         .order('sort_order');
       setTemplates(data || []);
     } else {
-      // Fallback: load templates linked to service_id or global
       const { data } = await supabase.from('anamnesis_templates').select('*')
         .eq('company_id', companyId).eq('active', true)
         .or(`service_id.is.null,service_id.eq.${serviceId}`)
         .order('sort_order');
       setTemplates(data || []);
+    }
+  };
+
+  // Fetch templates for viewing a response's Q&A
+  const fetchTemplatesForResponse = async (response: any) => {
+    if (!companyId) return;
+    const typeId = response.anamnesis_type_id;
+    const serviceId = response.service_id;
+    if (typeId) {
+      const { data } = await supabase.from('anamnesis_templates').select('*')
+        .eq('company_id', companyId)
+        .eq('anamnesis_type_id', typeId)
+        .order('sort_order');
+      setResponseTemplates(data || []);
+    } else if (serviceId) {
+      const service = services.find(s => s.id === serviceId);
+      const sTypeId = service?.anamnesis_type_id;
+      if (sTypeId) {
+        const { data } = await supabase.from('anamnesis_templates').select('*')
+          .eq('company_id', companyId)
+          .eq('anamnesis_type_id', sTypeId)
+          .order('sort_order');
+        setResponseTemplates(data || []);
+      } else {
+        setResponseTemplates([]);
+      }
+    } else {
+      setResponseTemplates([]);
     }
   };
 
@@ -182,6 +210,7 @@ export default function ClientRecords() {
   // Anamnesis actions
   const openNewAnamnesis = () => {
     setEditingAnamnesis(null);
+    setSelectExistingClient(false);
     setAnamnesisForm({
       client_name: selectedClient?.client_name || '',
       client_phone: selectedClient?.client_phone || '',
@@ -259,6 +288,7 @@ export default function ClientRecords() {
   // Package actions
   const openNewPackage = () => {
     setEditingPackage(null);
+    setSelectExistingClient(false);
     setPackageForm({
       client_name: selectedClient?.client_name || '',
       client_phone: selectedClient?.client_phone || '',
@@ -674,10 +704,10 @@ export default function ClientRecords() {
                 {clientResponses.map(r => (
                   <Card key={r.id} className="rounded-xl hover:shadow-sm transition-all">
                     <CardContent className="p-3 flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 cursor-pointer" onClick={() => { setSelectedResponse(r); fetchPhotos({ responseId: r.id }); }}>
+                      <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 cursor-pointer" onClick={async () => { setSelectedResponse(r); fetchPhotos({ responseId: r.id }); await fetchTemplatesForResponse(r); }}>
                         <ClipboardList className="h-3.5 w-3.5 text-primary" />
                       </div>
-                      <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { setSelectedResponse(r); fetchPhotos({ responseId: r.id }); }}>
+                      <div className="flex-1 min-w-0 cursor-pointer" onClick={async () => { setSelectedResponse(r); fetchPhotos({ responseId: r.id }); await fetchTemplatesForResponse(r); }}>
                         <p className="font-semibold text-sm truncate">{r.services?.name || 'Geral'}</p>
                         <p className="text-xs text-muted-foreground">{formatDate(r.created_at)}</p>
                       </div>
@@ -688,7 +718,7 @@ export default function ClientRecords() {
                       <button onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: 'anamnesis', id: r.id, name: r.client_name }); }} className="h-7 w-7 rounded-md flex items-center justify-center hover:bg-destructive/10 transition-colors" title="Excluir">
                         <Trash2 className="h-3 w-3 text-destructive" />
                       </button>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground cursor-pointer" onClick={() => { setSelectedResponse(r); fetchPhotos({ responseId: r.id }); }} />
+                      <ChevronRight className="h-4 w-4 text-muted-foreground cursor-pointer" onClick={async () => { setSelectedResponse(r); fetchPhotos({ responseId: r.id }); await fetchTemplatesForResponse(r); }} />
                     </CardContent>
                   </Card>
                 ))}
@@ -779,13 +809,44 @@ export default function ClientRecords() {
                 </div>
                 {selectedResponse.responses && Object.keys(selectedResponse.responses).length > 0 && (
                   <div className="space-y-2">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase">Respostas</p>
-                    {Object.entries(selectedResponse.responses).map(([key, value]) => (
-                      <div key={key} className="bg-muted/50 rounded-lg px-3 py-2">
-                        <p className="text-[11px] text-muted-foreground">{key}</p>
-                        <p className="text-sm font-medium">{String(value)}</p>
-                      </div>
-                    ))}
+                    <p className="text-xs font-semibold text-muted-foreground uppercase">Perguntas e Respostas</p>
+                    {responseTemplates.length > 0 ? (
+                      // Show with template structure (question + answer)
+                      responseTemplates.map((t: any) => {
+                        const answer = selectedResponse.responses[t.field_label];
+                        return (
+                          <div key={t.id} className="bg-muted/50 rounded-lg px-3 py-2.5 space-y-1">
+                            <div className="flex items-center gap-2">
+                              <p className="text-[11px] font-semibold text-muted-foreground">{t.field_label}</p>
+                              {t.required && <Badge variant="destructive" className="text-[8px] h-3.5 px-1">Obrigatório</Badge>}
+                            </div>
+                            <p className="text-sm font-medium">
+                              {answer !== undefined && answer !== '' && answer !== null
+                                ? (Array.isArray(answer) ? answer.join(', ') : String(answer))
+                                : <span className="text-muted-foreground/50 italic text-xs">Não respondido</span>}
+                            </p>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      // Fallback: show raw key-value pairs
+                      Object.entries(selectedResponse.responses).map(([key, value]) => (
+                        <div key={key} className="bg-muted/50 rounded-lg px-3 py-2.5 space-y-1">
+                          <p className="text-[11px] font-semibold text-muted-foreground">{key}</p>
+                          <p className="text-sm font-medium">{Array.isArray(value) ? (value as string[]).join(', ') : String(value)}</p>
+                        </div>
+                      ))
+                    )}
+                    {/* Show answers not in templates */}
+                    {responseTemplates.length > 0 && Object.entries(selectedResponse.responses)
+                      .filter(([key]) => !responseTemplates.some((t: any) => t.field_label === key))
+                      .map(([key, value]) => (
+                        <div key={key} className="bg-muted/50 rounded-lg px-3 py-2.5 space-y-1">
+                          <p className="text-[11px] font-semibold text-muted-foreground">{key}</p>
+                          <p className="text-sm font-medium">{Array.isArray(value) ? (value as string[]).join(', ') : String(value)}</p>
+                        </div>
+                      ))
+                    }
                   </div>
                 )}
                 {selectedResponse.notes && (
@@ -827,6 +888,41 @@ export default function ClientRecords() {
           <DialogContent className="max-w-[95vw] sm:max-w-md max-h-[85vh] overflow-y-auto">
             <DialogHeader><DialogTitle className="font-bold">{editingAnamnesis ? 'Editar Ficha de Anamnese' : 'Nova Ficha de Anamnese'}</DialogTitle></DialogHeader>
             <div className="space-y-4">
+              {/* Existing client selector */}
+              {!editingAnamnesis && !selectedClient && (
+                <div className="space-y-1.5">
+                  <Label className="font-semibold text-sm">Cliente existente?</Label>
+                  <Select
+                    value={selectExistingClient ? 'existing' : 'new'}
+                    onValueChange={(v) => {
+                      setSelectExistingClient(v === 'existing');
+                      if (v === 'new') setAnamnesisForm({ ...anamnesisForm, client_name: '', client_phone: '' });
+                    }}
+                  >
+                    <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="new">Novo cliente</SelectItem>
+                      <SelectItem value="existing">Selecionar cliente existente</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {selectExistingClient && clients.length > 0 && (
+                    <Select
+                      value={anamnesisForm.client_phone || 'none'}
+                      onValueChange={(v) => {
+                        if (v === 'none') return;
+                        const c = clients.find(cl => cl.client_phone === v);
+                        if (c) setAnamnesisForm({ ...anamnesisForm, client_name: c.client_name, client_phone: c.client_phone });
+                      }}
+                    >
+                      <SelectTrigger className="h-10"><SelectValue placeholder="Selecione um cliente" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Selecione...</SelectItem>
+                        {clients.map(c => <SelectItem key={c.key} value={c.client_phone}>{c.client_name} - {c.client_phone}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="font-semibold text-sm">Nome *</Label>
@@ -897,6 +993,41 @@ export default function ClientRecords() {
           <DialogContent className="max-w-[95vw] sm:max-w-md">
             <DialogHeader><DialogTitle className="font-bold">{editingPackage ? 'Editar Pacote' : 'Novo Pacote de Sessões'}</DialogTitle></DialogHeader>
             <div className="space-y-4">
+              {/* Existing client selector for packages */}
+              {!editingPackage && !selectedClient && (
+                <div className="space-y-1.5">
+                  <Label className="font-semibold text-sm">Cliente existente?</Label>
+                  <Select
+                    value={selectExistingClient ? 'existing' : 'new'}
+                    onValueChange={(v) => {
+                      setSelectExistingClient(v === 'existing');
+                      if (v === 'new') setPackageForm({ ...packageForm, client_name: '', client_phone: '' });
+                    }}
+                  >
+                    <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="new">Novo cliente</SelectItem>
+                      <SelectItem value="existing">Selecionar cliente existente</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {selectExistingClient && clients.length > 0 && (
+                    <Select
+                      value={packageForm.client_phone || 'none'}
+                      onValueChange={(v) => {
+                        if (v === 'none') return;
+                        const c = clients.find(cl => cl.client_phone === v);
+                        if (c) setPackageForm({ ...packageForm, client_name: c.client_name, client_phone: c.client_phone });
+                      }}
+                    >
+                      <SelectTrigger className="h-10"><SelectValue placeholder="Selecione um cliente" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Selecione...</SelectItem>
+                        {clients.map(c => <SelectItem key={c.key} value={c.client_phone}>{c.client_name} - {c.client_phone}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="font-semibold text-sm">Nome *</Label>

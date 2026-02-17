@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import DashboardLayout from '@/components/DashboardLayout';
@@ -9,9 +9,10 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { Plus, Pencil, Trash2, ClipboardList, Layers } from 'lucide-react';
+import { Plus, Pencil, Trash2, ClipboardList, Layers, ImageIcon, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
+import { AspectRatio } from '@/components/ui/aspect-ratio';
 
 interface Service {
   id: string;
@@ -24,6 +25,7 @@ interface Service {
   requires_anamnesis: boolean;
   requires_sessions: boolean;
   anamnesis_type_id: string | null;
+  image_url: string | null;
 }
 
 interface AnamnesisType {
@@ -41,6 +43,11 @@ export default function Services() {
     name: '', duration: '30', price: '', description: '', color: '#10b981',
     requires_anamnesis: false, requires_sessions: false, anamnesis_type_id: '',
   });
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [removeImage, setRemoveImage] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const fetchServices = async () => {
     if (!companyId) return;
@@ -64,6 +71,9 @@ export default function Services() {
   const openNew = () => {
     setEditing(null);
     setForm({ name: '', duration: '30', price: '', description: '', color: '#10b981', requires_anamnesis: false, requires_sessions: false, anamnesis_type_id: '' });
+    setImageFile(null);
+    setImagePreview(null);
+    setRemoveImage(false);
     setOpen(true);
   };
 
@@ -79,11 +89,41 @@ export default function Services() {
       requires_sessions: s.requires_sessions,
       anamnesis_type_id: s.anamnesis_type_id || '',
     });
+    setImageFile(null);
+    setImagePreview(s.image_url || null);
+    setRemoveImage(false);
     setOpen(true);
+  };
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast.error('Máx. 5MB'); return; }
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+    setRemoveImage(false);
+  };
+
+  const uploadImage = async (): Promise<string | null> => {
+    if (!imageFile || !companyId) return null;
+    const path = `${companyId}/${Date.now()}-${imageFile.name}`;
+    const { error } = await supabase.storage.from('service-images').upload(path, imageFile);
+    if (error) { toast.error('Erro no upload da imagem'); return null; }
+    const { data } = supabase.storage.from('service-images').getPublicUrl(path);
+    return data.publicUrl;
   };
 
   const handleSave = async () => {
     if (!companyId || !form.name.trim()) return;
+    setUploading(true);
+
+    let image_url: string | null = editing?.image_url || null;
+    if (removeImage) {
+      image_url = null;
+    } else if (imageFile) {
+      const url = await uploadImage();
+      if (url) image_url = url;
+    }
 
     const payload = {
       company_id: companyId,
@@ -95,17 +135,19 @@ export default function Services() {
       requires_anamnesis: form.requires_anamnesis,
       requires_sessions: form.requires_sessions,
       anamnesis_type_id: form.requires_anamnesis && form.anamnesis_type_id ? form.anamnesis_type_id : null,
+      image_url,
     };
 
     if (editing) {
       const { error } = await supabase.from('services').update(payload).eq('id', editing.id);
-      if (error) { toast.error('Erro ao atualizar'); return; }
+      if (error) { toast.error('Erro ao atualizar'); setUploading(false); return; }
       toast.success('Serviço atualizado');
     } else {
       const { error } = await supabase.from('services').insert(payload);
-      if (error) { toast.error('Erro ao criar'); return; }
+      if (error) { toast.error('Erro ao criar'); setUploading(false); return; }
       toast.success('Serviço criado');
     }
+    setUploading(false);
     setOpen(false);
     fetchServices();
   };
@@ -151,7 +193,12 @@ export default function Services() {
         ) : (
           <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             {services.map((s) => (
-              <Card key={s.id} className={`glass-card rounded-2xl transition-all ${!s.active ? 'opacity-50' : ''}`}>
+              <Card key={s.id} className={`glass-card rounded-2xl transition-all overflow-hidden ${!s.active ? 'opacity-50' : ''}`}>
+                {s.image_url && (
+                  <AspectRatio ratio={16 / 9}>
+                    <img src={s.image_url} alt={s.name} className="w-full h-full object-cover" />
+                  </AspectRatio>
+                )}
                 <CardContent className="p-5">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -195,11 +242,39 @@ export default function Services() {
         )}
 
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogContent className="max-w-[95vw] sm:max-w-md">
+          <DialogContent className="max-w-[95vw] sm:max-w-md max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="font-bold">{editing ? 'Editar serviço' : 'Novo serviço'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
+              {/* Image upload */}
+              <div className="space-y-1.5">
+                <Label className="font-semibold text-sm">Imagem do serviço</Label>
+                {imagePreview && !removeImage ? (
+                  <div className="relative rounded-xl overflow-hidden bg-muted">
+                    <AspectRatio ratio={16 / 9}>
+                      <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                    </AspectRatio>
+                    <button
+                      onClick={() => { setRemoveImage(true); setImageFile(null); setImagePreview(null); }}
+                      className="absolute top-2 right-2 h-6 w-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => fileRef.current?.click()}
+                    className="border-2 border-dashed border-border rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 transition-colors"
+                  >
+                    <ImageIcon className="h-8 w-8 text-muted-foreground/40 mb-2" />
+                    <p className="text-xs text-muted-foreground">Clique para adicionar uma imagem</p>
+                    <p className="text-[10px] text-muted-foreground/60 mt-0.5">Opcional • Máx. 5MB</p>
+                  </div>
+                )}
+                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelect} />
+              </div>
+
               <div className="space-y-1.5">
                 <Label className="font-semibold text-sm">Nome *</Label>
                 <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Ex: Corte feminino" className="h-10" />
@@ -255,8 +330,8 @@ export default function Services() {
                   <Switch checked={form.requires_sessions} onCheckedChange={(v) => setForm({ ...form, requires_sessions: v })} />
                 </div>
               </div>
-              <Button onClick={handleSave} className="w-full gradient-primary border-0 font-semibold h-10">
-                {editing ? 'Salvar' : 'Criar serviço'}
+              <Button onClick={handleSave} disabled={uploading} className="w-full gradient-primary border-0 font-semibold h-10">
+                {uploading ? 'Salvando...' : editing ? 'Salvar' : 'Criar serviço'}
               </Button>
             </div>
           </DialogContent>
