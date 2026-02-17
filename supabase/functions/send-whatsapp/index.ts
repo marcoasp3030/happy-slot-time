@@ -820,7 +820,7 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
     // Auto-send services as interactive menu when scheduling intent is detected
     // and the AI didn't already send a menu (no tool calls for buttons/list)
     if (reply !== "__MENU_SENT__" && (ctx.svcs || []).length > 0) {
-      const schedulingKeywords = /\b(agendar|marcar|reservar|horário|horario|appointment|schedule|quero.*hora|quero.*serviço|quero.*servico|gostaria.*agendar|preciso.*agendar)\b/i;
+      const schedulingKeywords = /\b(agendar|marcar|reservar|horário|horario|appointment|schedule|quero.*hora|quero.*serviço|quero.*servico|gostaria.*agendar|preciso.*agendar|serviços|servicos|serviço|servico|quais.*serviço|quais.*servico|tem.*serviço|tem.*servico|cardápio|menu|opções|opcoes|o que vocês fazem|o que voces fazem|atendimento|procedimento|tratamento)\b/i;
       const isSchedulingIntent = schedulingKeywords.test(actualMsg);
       
       if (isSchedulingIntent) {
