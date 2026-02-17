@@ -16,6 +16,7 @@ import {
   Phone, ChevronRight, FileText, ImageIcon, Calendar, CheckCircle2, XCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Progress } from '@/components/ui/progress';
 
 export default function ClientRecords() {
   const { companyId } = useAuth();
@@ -31,6 +32,7 @@ export default function ClientRecords() {
 
   // Sessions state
   const [packages, setPackages] = useState<any[]>([]);
+  const [sessionCounts, setSessionCounts] = useState<Record<string, number>>({});
   const [selectedPackage, setSelectedPackage] = useState<any>(null);
   const [sessions, setSessions] = useState<any[]>([]);
   const [packageOpen, setPackageOpen] = useState(false);
@@ -67,6 +69,18 @@ export default function ClientRecords() {
     const { data } = await supabase.from('session_packages').select('*, services(name)')
       .eq('company_id', companyId).order('created_at', { ascending: false });
     setPackages(data || []);
+
+    // Fetch session counts for all packages
+    if (data && data.length > 0) {
+      const ids = data.map((p: any) => p.id);
+      const { data: sessData } = await supabase.from('sessions').select('package_id')
+        .in('package_id', ids);
+      const counts: Record<string, number> = {};
+      sessData?.forEach((s: any) => {
+        counts[s.package_id] = (counts[s.package_id] || 0) + 1;
+      });
+      setSessionCounts(counts);
+    }
   };
 
   useEffect(() => { fetchResponses(); fetchPackages(); }, [companyId]);
@@ -303,23 +317,32 @@ export default function ClientRecords() {
             ) : (
               <div className="space-y-2">
                 {filteredPackages.map(pkg => {
-                  const completed = 0; // Will show from detail
+                  const completed = sessionCounts[pkg.id] || 0;
+                  const total = pkg.total_sessions;
+                  const progressPct = total ? Math.min((completed / total) * 100, 100) : null;
                   return (
                     <Card key={pkg.id} className="rounded-xl hover:shadow-sm transition-all cursor-pointer" onClick={() => openPackageDetail(pkg)}>
-                      <CardContent className="p-3.5 flex items-center gap-3">
-                        <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                          <Layers className="h-4 w-4 text-primary" />
+                      <CardContent className="p-3.5">
+                        <div className="flex items-center gap-3">
+                          <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                            <Layers className="h-4 w-4 text-primary" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-sm truncate">{pkg.client_name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {pkg.services?.name || 'Geral'} · {total ? `${completed}/${total} sessões` : `${completed} sessões`}
+                            </p>
+                          </div>
+                          <Badge variant={pkg.status === 'active' ? 'default' : 'secondary'} className="text-[10px]">
+                            {pkg.status === 'active' ? 'Ativo' : pkg.status === 'completed' ? 'Concluído' : 'Cancelado'}
+                          </Badge>
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-sm truncate">{pkg.client_name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {pkg.services?.name || 'Geral'} · {pkg.total_sessions ? `${pkg.total_sessions} sessões` : 'Ilimitado'}
-                          </p>
-                        </div>
-                        <Badge variant={pkg.status === 'active' ? 'default' : 'secondary'} className="text-[10px]">
-                          {pkg.status === 'active' ? 'Ativo' : pkg.status === 'completed' ? 'Concluído' : 'Cancelado'}
-                        </Badge>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        {total && (
+                          <div className="mt-2.5 pl-12">
+                            <Progress value={progressPct!} className="h-1.5" />
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   );
