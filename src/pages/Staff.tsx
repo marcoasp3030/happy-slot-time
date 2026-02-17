@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Pencil, Trash2, User, Link2, Copy, CheckCircle2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, User, Link2, Copy, CheckCircle2, Calendar, Loader2, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Staff() {
@@ -19,6 +19,8 @@ export default function Staff() {
   const [editing, setEditing] = useState<any>(null);
   const [name, setName] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [connectingStaffId, setConnectingStaffId] = useState<string | null>(null);
+  const [staffCalendarStatus, setStaffCalendarStatus] = useState<Record<string, string | null>>({});
 
   const fetchStaff = async () => {
     if (!companyId) return;
@@ -26,7 +28,25 @@ export default function Staff() {
     setStaff(data || []);
   };
 
-  useEffect(() => { fetchStaff(); }, [companyId]);
+  const fetchCalendarStatuses = async () => {
+    if (!companyId) return;
+    const { data: tokens } = await supabase
+      .from('google_calendar_tokens')
+      .select('staff_id, connected_email')
+      .eq('company_id', companyId)
+      .not('staff_id', 'is', null);
+
+    const map: Record<string, string | null> = {};
+    (tokens || []).forEach(t => {
+      if (t.staff_id) map[t.staff_id] = t.connected_email;
+    });
+    setStaffCalendarStatus(map);
+  };
+
+  useEffect(() => {
+    fetchStaff();
+    fetchCalendarStatuses();
+  }, [companyId]);
 
   const openNew = () => { setEditing(null); setName(''); setOpen(true); };
   const openEdit = (s: any) => { setEditing(s); setName(s.name); setOpen(true); };
@@ -80,6 +100,36 @@ export default function Staff() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const handleValidateInvite = async (s: any) => {
+    await supabase.from('staff').update({ invite_status: 'accepted' }).eq('id', s.id);
+    toast.success('Convite validado com sucesso!');
+    fetchStaff();
+  };
+
+  const handleConnectCalendar = async (staffId: string) => {
+    setConnectingStaffId(staffId);
+    try {
+      const { data, error } = await supabase.functions.invoke('google-calendar/owner-authorize-staff', {
+        method: 'POST',
+        body: { staffId },
+      });
+      if (error) throw error;
+      if (data?.url) {
+        window.open(data.url, '_blank', 'width=600,height=700');
+        // Listen for focus to refresh status
+        const onFocus = () => {
+          fetchCalendarStatuses();
+          setConnectingStaffId(null);
+          window.removeEventListener('focus', onFocus);
+        };
+        window.addEventListener('focus', onFocus);
+      }
+    } catch (err) {
+      toast.error('Erro ao conectar Google Agenda');
+      setConnectingStaffId(null);
+    }
+  };
+
   const getInviteStatusBadge = (s: any) => {
     if (s.invite_status === 'accepted') {
       return <Badge variant="default" className="text-xs">Conectado</Badge>;
@@ -124,9 +174,15 @@ export default function Staff() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-sm truncate">{s.name}</h3>
-                      <div className="flex items-center gap-2 mt-0.5">
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                         <p className="text-xs text-muted-foreground">{s.active ? 'Ativo' : 'Inativo'}</p>
                         {getInviteStatusBadge(s)}
+                        {staffCalendarStatus[s.id] && (
+                          <Badge variant="outline" className="text-xs gap-1">
+                            <Calendar className="h-3 w-3" />
+                            Agenda
+                          </Badge>
+                        )}
                       </div>
                     </div>
                     <Switch checked={s.active} onCheckedChange={() => handleToggle(s)} />
@@ -137,18 +193,39 @@ export default function Staff() {
                     </Button>
                     {s.invite_status !== 'accepted' && (
                       s.invite_token ? (
-                        <Button size="sm" variant="outline" onClick={() => copyInviteLink(s)} className="text-xs h-8">
-                          {copiedId === s.id ? (
-                            <><CheckCircle2 className="h-3 w-3 mr-1 text-primary" />Copiado</>
-                          ) : (
-                            <><Copy className="h-3 w-3 mr-1" />Copiar link</>
-                          )}
-                        </Button>
+                        <>
+                          <Button size="sm" variant="outline" onClick={() => copyInviteLink(s)} className="text-xs h-8">
+                            {copiedId === s.id ? (
+                              <><CheckCircle2 className="h-3 w-3 mr-1 text-primary" />Copiado</>
+                            ) : (
+                              <><Copy className="h-3 w-3 mr-1" />Copiar link</>
+                            )}
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => handleValidateInvite(s)} className="text-xs h-8 text-primary hover:text-primary">
+                            <ShieldCheck className="h-3 w-3 mr-1" />Validar
+                          </Button>
+                        </>
                       ) : (
                         <Button size="sm" variant="outline" onClick={() => handleGenerateInvite(s)} className="text-xs h-8">
                           <Link2 className="h-3 w-3 mr-1" />Gerar convite
                         </Button>
                       )
+                    )}
+                    {!staffCalendarStatus[s.id] && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleConnectCalendar(s.id)}
+                        disabled={connectingStaffId === s.id}
+                        className="text-xs h-8"
+                      >
+                        {connectingStaffId === s.id ? (
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                        ) : (
+                          <Calendar className="h-3 w-3 mr-1" />
+                        )}
+                        Conectar Agenda
+                      </Button>
                     )}
                     <Button size="sm" variant="outline" onClick={() => handleDelete(s.id)} className="text-xs h-8 text-destructive hover:text-destructive">
                       <Trash2 className="h-3 w-3" />

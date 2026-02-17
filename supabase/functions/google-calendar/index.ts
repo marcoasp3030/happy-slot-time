@@ -450,6 +450,34 @@ Deno.serve(async (req) => {
       return jsonRes({ success: true });
     }
 
+    // === OWNER AUTHORIZE FOR STAFF (owner connects Google on behalf of staff) ===
+    if (action === "owner-authorize-staff" && req.method === "POST") {
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) return jsonRes({ error: "Unauthorized" }, 401);
+
+      const profile = await getUserProfile(authHeader);
+      // Only admins/owners can do this
+      if (profile.role === "staff") return jsonRes({ error: "Forbidden" }, 403);
+
+      const { staffId } = await req.json();
+      if (!staffId) return jsonRes({ error: "staffId required" }, 400);
+
+      const redirectUri = `${getEnv("SUPABASE_URL")}/functions/v1/google-calendar/callback`;
+      const state = JSON.stringify({ companyId: profile.companyId, staffId });
+
+      const params = new URLSearchParams({
+        client_id: getEnv("GOOGLE_CLIENT_ID"),
+        redirect_uri: redirectUri,
+        response_type: "code",
+        scope: "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email",
+        access_type: "offline",
+        prompt: "consent",
+        state,
+      });
+
+      return jsonRes({ url: `${GOOGLE_AUTH_URL}?${params}` });
+    }
+
     // ========== SYNC ENDPOINTS (internal) ==========
 
     // === SYNC APPOINTMENT (called by DB trigger) ===
