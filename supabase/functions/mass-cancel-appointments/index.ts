@@ -11,7 +11,8 @@ interface MassCancelRequest {
   date: string; // YYYY-MM-DD
   reason?: string;
   send_whatsapp?: boolean;
-  reschedule?: boolean; // auto-reschedule to next available date
+  reschedule?: boolean;
+  target_date?: string; // YYYY-MM-DD — if set, reschedule to this specific date instead of auto
 }
 
 function formatDate(dateStr: string): string {
@@ -107,13 +108,15 @@ async function deleteGoogleCalendarEvent(
   }
 }
 
-// Find the next available slot for a given service duration, starting from the day after canceledDate
+// Find the next available slot for a given service duration
+// If targetDate is provided, only search on that specific date; otherwise search from day after canceledDate up to 30 days
 async function findNextAvailableSlot(
   supabase: any,
   companyId: string,
   canceledDate: string,
   serviceDuration: number,
-  staffId: string | null
+  staffId: string | null,
+  targetDate?: string
 ): Promise<{ date: string; startTime: string; endTime: string } | null> {
   // Fetch business hours
   const { data: businessHours } = await supabase
@@ -135,15 +138,20 @@ async function findNextAvailableSlot(
   const maxCapacity = settings?.max_capacity_per_slot || 1;
 
   // Fetch future time blocks
+  const blockStartDate = targetDate || canceledDate;
   const { data: timeBlocks } = await supabase
     .from("time_blocks")
     .select("*")
     .eq("company_id", companyId)
-    .gte("block_date", canceledDate);
+    .gte("block_date", blockStartDate);
 
-  // Search up to 30 days ahead
-  for (let dayOffset = 1; dayOffset <= 30; dayOffset++) {
-    const d = new Date(canceledDate + "T12:00:00");
+  // If targetDate is set, only check that one date; otherwise search up to 30 days ahead
+  const startOffset = targetDate ? 0 : 1;
+  const maxOffset = targetDate ? 0 : 30;
+
+  for (let dayOffset = startOffset; dayOffset <= maxOffset; dayOffset++) {
+    const baseDate = targetDate || canceledDate;
+    const d = new Date(baseDate + "T12:00:00");
     d.setDate(d.getDate() + dayOffset);
     const dateStr = d.toISOString().split("T")[0];
     const dayOfWeek = d.getDay();
@@ -225,7 +233,7 @@ Deno.serve(async (req) => {
     );
 
     const body: MassCancelRequest = await req.json();
-    const { company_id, date, reason, send_whatsapp, reschedule } = body;
+    const { company_id, date, reason, send_whatsapp, reschedule, target_date } = body;
 
     if (!company_id || !date) {
       return new Response(
@@ -297,7 +305,7 @@ Deno.serve(async (req) => {
       // Try to reschedule if requested
       if (reschedule) {
         newSlot = await findNextAvailableSlot(
-          supabase, company_id, date, serviceDuration, apt.staff_id
+          supabase, company_id, date, serviceDuration, apt.staff_id, target_date
         );
 
         if (newSlot) {
