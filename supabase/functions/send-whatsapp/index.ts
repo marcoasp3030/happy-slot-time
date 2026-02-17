@@ -374,7 +374,7 @@ async function transcribeAudio(audioUrl: string, wsSettings: any, mediaKey?: str
   }
 
   // Transcribe using ElevenLabs STT
-  const elevenLabsKey = Deno.env.get("ELEVENLABS_API_KEY");
+  const elevenLabsKey = Deno.env.get("ELEVENLABS_API_KEY_CUSTOM") || Deno.env.get("ELEVENLABS_API_KEY");
   if (elevenLabsKey) {
     try {
       const formData = new FormData();
@@ -434,7 +434,7 @@ async function transcribeAudio(audioUrl: string, wsSettings: any, mediaKey?: str
 
 // ─── Text-to-Speech via ElevenLabs ───
 async function textToSpeech(text: string, voiceId: string): Promise<Uint8Array | null> {
-  const elevenLabsKey = Deno.env.get("ELEVENLABS_API_KEY");
+  const elevenLabsKey = Deno.env.get("ELEVENLABS_API_KEY_CUSTOM") || Deno.env.get("ELEVENLABS_API_KEY");
   if (!elevenLabsKey) return null;
 
   try {
