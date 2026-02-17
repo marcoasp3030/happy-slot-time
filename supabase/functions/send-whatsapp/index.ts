@@ -388,17 +388,19 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string): Pr
 
 async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
   const cp = ph.replace(/\D/g, "");
-  const [m, a, c, s, h, k, cs, as_] = await Promise.all([
+  const [m, a, c, s, h, k, cs, as_, st, ss] = await Promise.all([
     sb.from("whatsapp_messages").select("direction, content, created_at").eq("conversation_id", convId).order("created_at", { ascending: false }).limit(20),
     sb.from("appointments").select("id, client_name, appointment_date, start_time, end_time, status, services(name), staff(name)").eq("company_id", cid).or("client_phone.eq." + cp + ",client_phone.eq.+" + cp).in("status", ["pending", "confirmed"]).order("appointment_date", { ascending: true }).limit(10),
     sb.from("companies").select("name, address, phone").eq("id", cid).single(),
-    sb.from("services").select("name, duration, price, description").eq("company_id", cid).eq("active", true),
+    sb.from("services").select("id, name, duration, price, description").eq("company_id", cid).eq("active", true),
     sb.from("business_hours").select("day_of_week, open_time, close_time, is_open").eq("company_id", cid),
     sb.from("whatsapp_knowledge_base").select("category, title, content").eq("company_id", cid).eq("active", true),
     sb.from("company_settings").select("slot_interval, max_capacity_per_slot, min_advance_hours").eq("company_id", cid).single(),
     sb.from("whatsapp_agent_settings").select("custom_prompt, timezone").eq("company_id", cid).single(),
+    sb.from("staff").select("id, name").eq("company_id", cid).eq("active", true),
+    sb.from("staff_services").select("staff_id, service_id").in("staff_id", (await sb.from("staff").select("id").eq("company_id", cid).eq("active", true)).data?.map((x: any) => x.id) || []),
   ]);
-  return { msgs: (m.data || []).reverse(), appts: a.data || [], co: c.data || {}, svcs: s.data || [], hrs: h.data || [], kb: k.data || [], cs: { ...(cs.data || {}), custom_prompt: as_.data?.custom_prompt, timezone: as_.data?.timezone || "America/Sao_Paulo" } };
+  return { msgs: (m.data || []).reverse(), appts: a.data || [], co: c.data || {}, svcs: s.data || [], hrs: h.data || [], kb: k.data || [], cs: { ...(cs.data || {}), custom_prompt: as_.data?.custom_prompt, timezone: as_.data?.timezone || "America/Sao_Paulo" }, staff: st.data || [], staffServices: ss.data || [] };
 }
 
 async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string): Promise<string> {
@@ -407,9 +409,16 @@ async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string
   if (!key) throw new Error("LOVABLE_API_KEY missing");
 
   const hrs = (ctx.hrs || []).sort((a: any, b: any) => a.day_of_week - b.day_of_week).map((x: any) => DN[x.day_of_week] + ": " + (x.is_open ? (x.open_time || "").substring(0, 5) + "-" + (x.close_time || "").substring(0, 5) : "Fechado")).join("; ");
-  const svcs = (ctx.svcs || []).map((x: any) => x.name + " " + x.duration + "min R$" + (x.price || "?")).join("; ");
+  const svcs = (ctx.svcs || []).map((x: any) => x.name + " (id:" + x.id + ") " + x.duration + "min R$" + (x.price || "?")).join("; ");
   const kbs = (ctx.kb || []).map((x: any) => x.title + ": " + x.content).join("; ");
-  const appts = (ctx.appts || []).map((x: any, i: number) => (i + 1) + "." + (x.services?.name || "?") + " " + x.appointment_date + " " + (x.start_time || "").substring(0, 5) + " " + x.status).join("; ");
+  const appts = (ctx.appts || []).map((x: any, i: number) => (i + 1) + "." + (x.services?.name || "?") + " " + x.appointment_date + " " + (x.start_time || "").substring(0, 5) + " " + x.status + " (id:" + x.id + ")" + (x.staff?.name ? " prof:" + x.staff.name : "")).join("; ");
+
+  // Build staff info with their services
+  const staffInfo = (ctx.staff || []).map((s: any) => {
+    const svcIds = (ctx.staffServices || []).filter((ss: any) => ss.staff_id === s.id).map((ss: any) => ss.service_id);
+    const svcNames = (ctx.svcs || []).filter((sv: any) => svcIds.includes(sv.id)).map((sv: any) => sv.name);
+    return s.name + " (id:" + s.id + ")" + (svcNames.length ? " - serviços: " + svcNames.join(", ") : " - todos os serviços");
+  }).join("; ");
 
   const hasHistory = ctx.msgs && ctx.msgs.length > 0;
 
@@ -445,10 +454,22 @@ REGRA ANTI-REPETIÇÃO (CRÍTICO):
 - Se já informou horários/serviços, NÃO repita — diga "como mencionei" ou vá direto ao próximo passo
 - Analise o histórico antes de responder para não repetir informações
 
+FLUXO DE AGENDAMENTO (IMPORTANTE):
+- Quando o cliente quiser agendar, pergunte: 1) Qual serviço? 2) Qual data/horário de preferência?
+- Use check_availability para verificar disponibilidade na data
+- ${staffInfo ? `Profissionais disponíveis: ${staffInfo}` : "Nenhum profissional cadastrado - agende sem profissional"}
+- ${(ctx.staff || []).length > 1 ? "Se houver mais de um profissional para o serviço, pergunte a preferência do cliente" : ""}
+- ${(ctx.staff || []).length === 1 ? "Há apenas um profissional, agende diretamente com ele sem perguntar" : ""}
+- Depois de confirmar serviço, data, horário${(ctx.staff || []).length > 1 ? " e profissional" : ""}, use book_appointment para criar o agendamento
+- Para remarcar, use check_availability no novo dia e depois reschedule_appointment
+- Para cancelar, confirme com o cliente e use cancel_appointment
+- O agendamento criado será automaticamente sincronizado com o Google Agenda
+
 DADOS (use só quando relevante, não despeje tudo de uma vez):
 ${ctx.co.name || ""} | End: ${ctx.co.address || ""} | Tel: ${ctx.co.phone || ""}
 Horários: ${hrs}
 Serviços: ${svcs}
+Profissionais: ${staffInfo || "nenhum cadastrado"}
 ${kbs ? "Info extra: " + kbs : ""}
 Agendamentos do cliente: ${appts || "nenhum"}
 ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" + ctx.cs.custom_prompt : ""}`;
@@ -461,11 +482,12 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
   log("🧠 AI request: model=google/gemini-2.5-flash, messages:", messages.length, "system_len:", sys.length);
 
   const tools = [
-    { type: "function", function: { name: "confirm_appointment", description: "Confirma agendamento", parameters: { type: "object", properties: { appointment_id: { type: "string" } }, required: ["appointment_id"] } } },
-    { type: "function", function: { name: "cancel_appointment", description: "Cancela agendamento", parameters: { type: "object", properties: { appointment_id: { type: "string" } }, required: ["appointment_id"] } } },
-    { type: "function", function: { name: "check_availability", description: "Horarios disponiveis", parameters: { type: "object", properties: { date: { type: "string" } }, required: ["date"] } } },
-    { type: "function", function: { name: "reschedule_appointment", description: "Reagenda", parameters: { type: "object", properties: { appointment_id: { type: "string" }, new_date: { type: "string" }, new_time: { type: "string" } }, required: ["appointment_id", "new_date", "new_time"] } } },
-    { type: "function", function: { name: "request_handoff", description: "Transfere humano", parameters: { type: "object", properties: {} } } },
+    { type: "function", function: { name: "confirm_appointment", description: "Confirma agendamento existente", parameters: { type: "object", properties: { appointment_id: { type: "string" } }, required: ["appointment_id"] } } },
+    { type: "function", function: { name: "cancel_appointment", description: "Cancela agendamento existente", parameters: { type: "object", properties: { appointment_id: { type: "string" } }, required: ["appointment_id"] } } },
+    { type: "function", function: { name: "check_availability", description: "Verifica horários disponíveis em uma data. Use TAMBÉM para verificar disponibilidade de um profissional específico passando staff_id.", parameters: { type: "object", properties: { date: { type: "string", description: "Data no formato YYYY-MM-DD" }, staff_id: { type: "string", description: "ID do profissional (opcional, filtra por profissional)" }, service_id: { type: "string", description: "ID do serviço (opcional, considera duração do serviço)" } }, required: ["date"] } } },
+    { type: "function", function: { name: "book_appointment", description: "Cria um novo agendamento para o cliente", parameters: { type: "object", properties: { service_id: { type: "string", description: "ID do serviço" }, date: { type: "string", description: "Data YYYY-MM-DD" }, time: { type: "string", description: "Horário HH:MM" }, staff_id: { type: "string", description: "ID do profissional (opcional)" } }, required: ["service_id", "date", "time"] } } },
+    { type: "function", function: { name: "reschedule_appointment", description: "Reagenda um agendamento existente para nova data/hora", parameters: { type: "object", properties: { appointment_id: { type: "string" }, new_date: { type: "string" }, new_time: { type: "string" } }, required: ["appointment_id", "new_date", "new_time"] } } },
+    { type: "function", function: { name: "request_handoff", description: "Transfere para atendente humano", parameters: { type: "object", properties: {} } } },
     { type: "function", function: { name: "save_client_name", description: "Salva o nome do cliente quando ele se apresenta", parameters: { type: "object", properties: { name: { type: "string", description: "Nome do cliente" } }, required: ["name"] } } },
   ];
 
@@ -505,6 +527,37 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
         const { error: upErr } = await sb.from("appointments").update({ status: "canceled" }).eq("id", args.appointment_id).eq("company_id", cid);
         log("🧠 cancel result:", upErr ? `ERROR: ${upErr.message}` : "OK");
         txt = txt || "Agendamento cancelado.";
+      } else if (fn === "book_appointment") {
+        // Find service to get duration
+        const svc = (ctx.svcs || []).find((s: any) => s.id === args.service_id);
+        const dur = svc?.duration || 30;
+        const p = (args.time || "09:00").split(":").map(Number);
+        const em = p[0] * 60 + p[1] + dur;
+        const et = String(Math.floor(em / 60)).padStart(2, "0") + ":" + String(em % 60).padStart(2, "0");
+        const clientName = conv.client_name || "Cliente WhatsApp";
+        const clientPhone = conv.phone.replace(/\D/g, "");
+
+        const insertData: any = {
+          company_id: cid,
+          service_id: args.service_id,
+          appointment_date: args.date,
+          start_time: args.time,
+          end_time: et,
+          client_name: clientName,
+          client_phone: clientPhone,
+          status: "confirmed",
+        };
+        if (args.staff_id) insertData.staff_id = args.staff_id;
+
+        const { data: newAppt, error: bookErr } = await sb.from("appointments").insert(insertData).select("id").single();
+        log("🧠 book_appointment result:", bookErr ? `ERROR: ${bookErr.message}` : `OK id:${newAppt?.id}`);
+        
+        if (bookErr) {
+          txt = txt || "Desculpe, não consegui criar o agendamento. Tente novamente ou fale com um atendente.";
+        } else {
+          const staffName = args.staff_id ? (ctx.staff || []).find((s: any) => s.id === args.staff_id)?.name : null;
+          txt = txt || `Agendamento criado! ✅ ${svc?.name || "Serviço"} em ${formatDate(args.date)} às ${args.time}${staffName ? " com " + staffName : ""}`;
+        }
       } else if (fn === "reschedule_appointment") {
         const { data: ap } = await sb.from("appointments").select("services(duration)").eq("id", args.appointment_id).single();
         const dur = ap?.services?.duration || 30;
@@ -513,21 +566,57 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
         const et = String(Math.floor(em / 60)).padStart(2, "0") + ":" + String(em % 60).padStart(2, "0");
         const { error: upErr } = await sb.from("appointments").update({ appointment_date: args.new_date, start_time: args.new_time, end_time: et, status: "pending" }).eq("id", args.appointment_id).eq("company_id", cid);
         log("🧠 reschedule result:", upErr ? `ERROR: ${upErr.message}` : "OK");
-        txt = txt || "Remarcado para " + args.new_date + " " + args.new_time;
+        txt = txt || "Remarcado para " + formatDate(args.new_date) + " " + args.new_time;
       } else if (fn === "check_availability") {
-        log("🧠 Checking availability for:", args.date);
+        log("🧠 Checking availability for:", args.date, "staff:", args.staff_id, "service:", args.service_id);
         const dow = new Date(args.date + "T12:00:00").getDay();
         const { data: bh } = await sb.from("business_hours").select("*").eq("company_id", cid).eq("day_of_week", dow).single();
-        if (!bh?.is_open) { txt = txt || "Fechado em " + args.date; }
+        if (!bh?.is_open) { txt = txt || "Fechado em " + formatDate(args.date); }
         else {
+          // Get service duration for proper slot calculation
+          const svcDur = args.service_id ? (ctx.svcs || []).find((s: any) => s.id === args.service_id)?.duration : null;
           const iv = ctx.cs?.slot_interval || 30; const mc = ctx.cs?.max_capacity_per_slot || 1;
-          const { data: ex } = await sb.from("appointments").select("start_time, end_time").eq("company_id", cid).eq("appointment_date", args.date).in("status", ["pending", "confirmed"]);
-          const { data: bl } = await sb.from("time_blocks").select("start_time, end_time").eq("company_id", cid).eq("block_date", args.date);
+          
+          // Get existing appointments, optionally filtered by staff
+          let exQuery = sb.from("appointments").select("start_time, end_time, staff_id").eq("company_id", cid).eq("appointment_date", args.date).in("status", ["pending", "confirmed"]);
+          const { data: ex } = await exQuery;
+          
+          const { data: bl } = await sb.from("time_blocks").select("start_time, end_time, staff_id").eq("company_id", cid).eq("block_date", args.date);
           const tm = (t: string) => { if (!t) return 0; const pp = t.split(":").map(Number); return pp[0] * 60 + pp[1]; };
           let cur = tm(bh.open_time); const end = tm(bh.close_time); const slots: string[] = [];
-          while (cur < end) { const ss = String(Math.floor(cur / 60)).padStart(2, "0") + ":" + String(cur % 60).padStart(2, "0"); const blocked = (bl || []).some((x: any) => (!x.start_time && !x.end_time) || (cur >= tm(x.start_time) && cur < tm(x.end_time))); if (!blocked && (ex || []).filter((x: any) => cur >= tm(x.start_time) && cur < tm(x.end_time)).length < mc) slots.push(ss); cur += iv; }
+          const slotDur = svcDur || iv;
+          
+          while (cur + slotDur <= end) {
+            const ss = String(Math.floor(cur / 60)).padStart(2, "0") + ":" + String(cur % 60).padStart(2, "0");
+            
+            // Check time blocks (filter by staff if specified)
+            const blocked = (bl || []).some((x: any) => {
+              if (args.staff_id && x.staff_id && x.staff_id !== args.staff_id) return false;
+              if (!x.start_time && !x.end_time) return true;
+              return cur < tm(x.end_time) && (cur + slotDur) > tm(x.start_time);
+            });
+            
+            if (!blocked) {
+              // Check appointment conflicts
+              const conflicts = (ex || []).filter((x: any) => {
+                if (args.staff_id && x.staff_id && x.staff_id !== args.staff_id) return false;
+                return cur < tm(x.end_time) && (cur + slotDur) > tm(x.start_time);
+              });
+              if (conflicts.length < mc) slots.push(ss);
+            }
+            cur += iv;
+          }
+          
           log("🧠 Available slots:", slots.length);
-          txt = txt || (slots.length ? "Horarios " + args.date + ": " + slots.slice(0, 5).join(", ") : "Sem horarios em " + args.date);
+          
+          // If staff_id specified, show staff name
+          const staffName = args.staff_id ? (ctx.staff || []).find((s: any) => s.id === args.staff_id)?.name : null;
+          const dateLabel = formatDate(args.date);
+          if (slots.length) {
+            txt = txt || `Horários disponíveis ${dateLabel}${staffName ? " com " + staffName : ""}: ${slots.slice(0, 8).join(", ")}${slots.length > 8 ? " e mais..." : ""}`;
+          } else {
+            txt = txt || `Sem horários disponíveis em ${dateLabel}${staffName ? " com " + staffName : ""}`;
+          }
         }
       } else if (fn === "request_handoff") {
         await sb.from("whatsapp_conversations").update({ handoff_requested: true, status: "handoff" }).eq("id", conv.id);
