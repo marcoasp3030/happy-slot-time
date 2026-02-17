@@ -71,28 +71,23 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Use admin_token for instance management, fallback to regular token
-    const adminToken = settings.admin_token || settings.token;
-    if (!adminToken) {
-      return new Response(
-        JSON.stringify({ error: "Nenhum token configurado. Configure o Admin Token ou o Token da instância." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     const baseUrl = settings.base_url.replace(/\/$/, "");
-    const instancePath = settings.instance_id ? `/${settings.instance_id}` : "";
     const url = new URL(req.url);
     const action = url.searchParams.get("action");
-    const action = url.searchParams.get("action");
 
-    async function callUazapi(endpoint: string, method: string, body?: any) {
-      const uazapiUrl = `${baseUrl}${instancePath}${endpoint}`;
-      console.log(`[whatsapp-connect] ${method} ${uazapiUrl}`);
+    // Helper: call UAZAPI with a specific token header
+    async function callUazapi(
+      endpoint: string,
+      method: string,
+      tokenHeader: { name: string; value: string },
+      body?: any
+    ) {
+      const uazapiUrl = `${baseUrl}${endpoint}`;
+      console.log(`[whatsapp-connect] ${method} ${uazapiUrl} (auth: ${tokenHeader.name})`);
 
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        "token": adminToken,
+        [tokenHeader.name]: tokenHeader.value,
       };
 
       const options: RequestInit = { method, headers };
@@ -104,14 +99,84 @@ Deno.serve(async (req) => {
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        console.error(`UAZAPI error: ${res.status}`, JSON.stringify(data));
+        console.error(`[whatsapp-connect] UAZAPI error ${res.status}:`, JSON.stringify(data));
         throw { status: res.status, data };
       }
 
       return data;
     }
 
-    if (action === "connect") {
+    // Instance token for instance operations (connect, status, disconnect, send)
+    const instanceToken = settings.token;
+    // Admin token for admin operations (create instance)
+    const adminToken = settings.admin_token;
+
+    // ============================================================
+    // ACTION: create — Create a new instance via POST /instance/init
+    // Uses admintoken header
+    // ============================================================
+    if (action === "create") {
+      if (!adminToken) {
+        return new Response(
+          JSON.stringify({ error: "Admin Token não configurado. Configure-o nas credenciais." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      try {
+        const reqBody = await req.json().catch(() => ({}));
+        const instanceName = reqBody.name || `instance-${companyId.substring(0, 8)}`;
+
+        const data = await callUazapi(
+          "/instance/init",
+          "POST",
+          { name: "admintoken", value: adminToken },
+          { name: instanceName }
+        );
+
+        // Save the returned instance_id and token
+        if (data?.token) {
+          await supabase
+            .from("whatsapp_settings")
+            .update({
+              instance_id: data.instanceId || data.instance_id || data.name,
+              token: data.token,
+            })
+            .eq("company_id", companyId);
+        }
+
+        await supabase.from("audit_logs").insert({
+          company_id: companyId,
+          user_id: userId,
+          user_email: userEmail,
+          action: "WhatsApp: Criou instância via UAZAPI",
+          category: "whatsapp",
+          details: { instanceName, instanceId: data?.instanceId || data?.name },
+        });
+
+        return new Response(JSON.stringify({ success: true, data }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch (e: any) {
+        const errStatus = e?.status || 500;
+        return new Response(
+          JSON.stringify({ error: `UAZAPI error ${errStatus}`, details: e?.data || {} }),
+          { status: errStatus, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+    // ============================================================
+    // ACTION: connect — Connect instance via POST /instance/connect
+    // Uses instance token header
+    // ============================================================
+    } else if (action === "connect") {
+      if (!instanceToken) {
+        return new Response(
+          JSON.stringify({ error: "Token da instância não configurado. Crie uma instância primeiro." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       try {
         const reqBody = await req.json().catch(() => ({}));
         const connectBody: Record<string, string> = {};
@@ -119,7 +184,12 @@ Deno.serve(async (req) => {
           connectBody.phone = reqBody.phone.replace(/\D/g, "");
         }
 
-        const data = await callUazapi("/instance/connect", "POST", connectBody);
+        const data = await callUazapi(
+          "/instance/connect",
+          "POST",
+          { name: "token", value: instanceToken },
+          connectBody
+        );
 
         await supabase.from("audit_logs").insert({
           company_id: companyId,
@@ -140,9 +210,24 @@ Deno.serve(async (req) => {
         );
       }
 
+    // ============================================================
+    // ACTION: status — Check instance status via GET /instance/status
+    // Uses instance token header
+    // ============================================================
     } else if (action === "status") {
+      if (!instanceToken) {
+        return new Response(
+          JSON.stringify({ error: "Token da instância não configurado.", needsCreate: true }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       try {
-        const data = await callUazapi("/instance/status", "GET");
+        const data = await callUazapi(
+          "/instance/status",
+          "GET",
+          { name: "token", value: instanceToken }
+        );
         return new Response(JSON.stringify({ success: true, data }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -154,9 +239,24 @@ Deno.serve(async (req) => {
         );
       }
 
+    // ============================================================
+    // ACTION: disconnect — Disconnect instance via POST /instance/disconnect
+    // Uses instance token header
+    // ============================================================
     } else if (action === "disconnect") {
+      if (!instanceToken) {
+        return new Response(
+          JSON.stringify({ error: "Token da instância não configurado." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       try {
-        const data = await callUazapi("/instance/disconnect", "POST");
+        const data = await callUazapi(
+          "/instance/disconnect",
+          "POST",
+          { name: "token", value: instanceToken }
+        );
 
         await supabase.from("audit_logs").insert({
           company_id: companyId,
@@ -179,13 +279,13 @@ Deno.serve(async (req) => {
 
     } else {
       return new Response(
-        JSON.stringify({ error: "Invalid action. Use ?action=connect, status, or disconnect" }),
+        JSON.stringify({ error: "Invalid action. Use ?action=create, connect, status, or disconnect" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error("Edge function error:", msg);
+    console.error("[whatsapp-connect] Edge function error:", msg);
     return new Response(JSON.stringify({ error: msg }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
