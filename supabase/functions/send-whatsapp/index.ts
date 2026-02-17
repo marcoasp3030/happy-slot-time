@@ -990,7 +990,7 @@ async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string
   if (!key) throw new Error("LOVABLE_API_KEY missing");
 
   const hrs = (ctx.hrs || []).sort((a: any, b: any) => a.day_of_week - b.day_of_week).map((x: any) => DN[x.day_of_week] + ": " + (x.is_open ? (x.open_time || "").substring(0, 5) + "-" + (x.close_time || "").substring(0, 5) : "Fechado")).join("; ");
-  const svcs = (ctx.svcs || []).map((x: any) => x.name + " (id:" + x.id + ") " + x.duration + "min R$" + (x.price || "?") + (x.image_url ? " [tem imagem]" : "")).join("; ");
+  const svcs = (ctx.svcs || []).map((x: any) => x.name + " (id:" + x.id + ") " + x.duration + "min R$" + (x.price || "?") + (x.description ? " desc:" + x.description : "") + (x.image_url ? " image_url:" + x.image_url : "")).join("; ");
   const kbs = (ctx.kb || []).map((x: any) => x.title + ": " + x.content).join("; ");
   const appts = (ctx.appts || []).map((x: any, i: number) => (i + 1) + "." + (x.services?.name || "?") + " " + x.appointment_date + " " + (x.start_time || "").substring(0, 5) + " " + x.status + " (id:" + x.id + ")" + (x.staff?.name ? " prof:" + x.staff.name : "")).join("; ");
 
@@ -1093,10 +1093,12 @@ BOTÕES INTERATIVOS (OBRIGATÓRIO — SEMPRE USE QUANDO HOUVER ESCOLHA):
 - send_carousel: para mostrar serviços/produtos com IMAGEM. Cada card tem título, descrição, imagem e botões. Use quando os serviços tiverem imagens cadastradas.
 - Formato choices para buttons: ["Texto do botão|id_curto"] — ex: ["Corte de cabelo|corte", "Barba|barba"]
 - Formato choices para list: ["Título|Descrição"] — ex: ["09:00|Horário disponível", "10:00|Horário disponível"]
-- Formato cards para carousel: [{ title: "Serviço", body: "30min - R$50", image: "url", choices: ["Agendar|svc_id"] }]
+- Formato cards para carousel: [{ title: "Serviço", body: "descrição do serviço ou duração/preço", image: "URL_REAL_DO_SERVIÇO", choices: ["Agendar|svc_id"] }]
+- IMPORTANTE para carousel: Use EXATAMENTE a image_url fornecida no contexto dos serviços. NUNCA invente URLs de imagem. Se o serviço tem "image_url:https://..." no contexto, use essa URL exata no campo "image" do card.
+- IMPORTANTE para body do card: Inclua a descrição do serviço (campo "desc:" no contexto) se disponível, junto com duração e preço.
 - EXEMPLOS DE USO OBRIGATÓRIO:
-  * Cliente quer agendar e há serviços COM imagem → send_carousel com os serviços
-  * Cliente quer agendar e há serviços SEM imagem → send_buttons (≤3) ou send_list (>3)
+  * Cliente quer agendar e há serviços COM image_url no contexto → send_carousel usando as URLs reais
+  * Cliente quer agendar e há serviços SEM image_url → send_buttons (≤3) ou send_list (>3)
   * Verificou disponibilidade e há horários → send_buttons com top 3 horários (ou send_list se >3)
   * Precisa confirmar algo → send_buttons ["Sim|sim", "Não|nao"]
   * Precisa escolher profissional → send_buttons com nomes
