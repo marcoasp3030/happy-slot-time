@@ -257,7 +257,7 @@ Deno.serve(async (req) => {
               {
                 url: webhookUrl,
                 enabled: true,
-                events: ["messages"],
+                events: ["Message"],
               }
             );
 

@@ -21,7 +21,9 @@ Deno.serve(async (req) => {
 
   try {
     const startTime = Date.now();
-    const body = await req.json();
+    const rawBody = await req.text();
+    console.log(`[webhook] 📨 Incoming request: ${rawBody.substring(0, 500)}`);
+    const body = JSON.parse(rawBody);
 
     // UAZAPI sends various event formats - extract message data
     const phone = extractPhone(body);
