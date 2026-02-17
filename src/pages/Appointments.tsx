@@ -90,6 +90,69 @@ export default function Appointments() {
     const { error } = await supabase.from('appointments').update({ status }).eq('id', id);
     if (error) { toast.error('Erro ao atualizar'); return; }
     toast.success('Status atualizado');
+
+    // Auto-register session when completing an appointment with session control
+    if (status === 'completed') {
+      const apt = appointments.find(a => a.id === id);
+      if (apt?.service_id && apt.services) {
+        // Check if service requires sessions
+        const { data: svc } = await supabase.from('services').select('requires_sessions').eq('id', apt.service_id).single();
+        if (svc?.requires_sessions) {
+          // Find active package for this client + service
+          const { data: pkg } = await supabase.from('session_packages')
+            .select('id, total_sessions')
+            .eq('company_id', companyId!)
+            .eq('client_phone', apt.client_phone)
+            .eq('service_id', apt.service_id)
+            .eq('status', 'active')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          let packageId = pkg?.id;
+
+          // If no package exists, create one automatically
+          if (!packageId) {
+            const { data: newPkg } = await supabase.from('session_packages').insert({
+              company_id: companyId!,
+              client_name: apt.client_name,
+              client_phone: apt.client_phone,
+              service_id: apt.service_id,
+              notes: 'Pacote criado automaticamente',
+            }).select('id').single();
+            packageId = newPkg?.id;
+            if (packageId) toast.info('Pacote de sessões criado automaticamente');
+          }
+
+          if (packageId) {
+            // Count existing sessions
+            const { count } = await supabase.from('sessions')
+              .select('id', { count: 'exact', head: true })
+              .eq('package_id', packageId);
+            const nextNumber = (count || 0) + 1;
+
+            const { error: sessErr } = await supabase.from('sessions').insert({
+              company_id: companyId!,
+              package_id: packageId,
+              session_number: nextNumber,
+              session_date: apt.appointment_date,
+              appointment_id: apt.id,
+              notes: `Sessão registrada automaticamente do agendamento`,
+            });
+
+            if (!sessErr) {
+              toast.success(`Sessão ${nextNumber} registrada automaticamente`);
+              // Auto-complete package if total reached
+              if (pkg?.total_sessions && nextNumber >= pkg.total_sessions) {
+                await supabase.from('session_packages').update({ status: 'completed' }).eq('id', packageId);
+                toast.info('Pacote de sessões concluído!');
+              }
+            }
+          }
+        }
+      }
+    }
+
     fetchAppointments();
   };
 
