@@ -36,6 +36,7 @@ export default function PublicBooking() {
   const [loading, setLoading] = useState(true);
   const [step, setStep] = useState<Step>('service');
   const [submitting, setSubmitting] = useState(false);
+  const [dateAvailability, setDateAvailability] = useState<Record<string, boolean>>({});
 
   const [selectedService, setSelectedService] = useState<any>(null);
   const [selectedStaff, setSelectedStaff] = useState<any>(null);
@@ -126,32 +127,129 @@ export default function PublicBooking() {
       .then(({ data }) => setExistingAppointments(data || []));
   }, [selectedDate, company]);
 
-  const generateTimeSlots = () => {
-    if (!selectedDate || businessHours.length === 0) return [];
-    const dayOfWeek = new Date(selectedDate + 'T12:00:00').getDay();
+  // Pre-fetch appointments for all available dates to determine full dates
+  useEffect(() => {
+    if (!company || businessHours.length === 0 || !selectedService) return;
+    const dates = getAvailableDates();
+    if (dates.length === 0) return;
+
+    const checkDates = async () => {
+      // Fetch all appointments for the next 30 days at once
+      const minDate = dates[0];
+      const maxDate = dates[dates.length - 1];
+      const { data: allApts } = await supabase
+        .from('appointments')
+        .select('appointment_date, start_time, end_time')
+        .eq('company_id', company.id)
+        .gte('appointment_date', minDate)
+        .lte('appointment_date', maxDate)
+        .neq('status', 'canceled');
+
+      const aptsByDate: Record<string, any[]> = {};
+      (allApts || []).forEach(a => {
+        if (!aptsByDate[a.appointment_date]) aptsByDate[a.appointment_date] = [];
+        aptsByDate[a.appointment_date].push(a);
+      });
+
+      const availability: Record<string, boolean> = {};
+      const interval = companySettings.slot_interval || 30;
+      const duration = selectedService?.duration || 30;
+      const now = new Date();
+      const minAdvance = (companySettings.min_advance_hours || 2) * 60;
+      const maxCap = companySettings.max_capacity_per_slot || 1;
+
+      for (const dateStr of dates) {
+        const dayOfWeek = new Date(dateStr + 'T12:00:00').getDay();
+        const bh = businessHours.find((h) => h.day_of_week === dayOfWeek);
+        if (!bh || !bh.is_open) { availability[dateStr] = false; continue; }
+
+        const fullDayBlock = timeBlocks.find(b =>
+          b.block_date === dateStr && !b.start_time && !b.end_time && !b.staff_id
+        );
+        if (fullDayBlock) { availability[dateStr] = false; continue; }
+
+        const dateBlocks = timeBlocks.filter(b =>
+          b.block_date === dateStr && b.start_time && b.end_time &&
+          (!b.staff_id || (selectedStaff && b.staff_id === selectedStaff.id) || !selectedStaff)
+        );
+
+        const aptsForDate = aptsByDate[dateStr] || [];
+        const [openH, openM] = bh.open_time.split(':').map(Number);
+        const [closeH, closeM] = bh.close_time.split(':').map(Number);
+        let current = openH * 60 + openM;
+        const end = closeH * 60 + closeM;
+        let hasAvailable = false;
+
+        while (current + duration <= end) {
+          const hh = String(Math.floor(current / 60)).padStart(2, '0');
+          const mm = String(current % 60).padStart(2, '0');
+          const timeStr = `${hh}:${mm}`;
+          const slotDate = new Date(`${dateStr}T${timeStr}:00`);
+          const diffMin = (slotDate.getTime() - now.getTime()) / 60000;
+
+          if (diffMin >= minAdvance) {
+            const endMin = current + duration;
+            const endHH = String(Math.floor(endMin / 60)).padStart(2, '0');
+            const endMM = String(endMin % 60).padStart(2, '0');
+            const endStr = `${endHH}:${endMM}`;
+
+            const isBlocked = dateBlocks.some(b => {
+              const blockStart = b.start_time.slice(0, 5);
+              const blockEnd = b.end_time.slice(0, 5);
+              return timeStr < blockEnd && endStr > blockStart;
+            });
+
+            if (!isBlocked) {
+              const conflicts = aptsForDate.filter((a: any) => {
+                const aStart = a.start_time.slice(0, 5);
+                const aEnd = a.end_time.slice(0, 5);
+                return timeStr < aEnd && endStr > aStart;
+              });
+              if (conflicts.length < maxCap) {
+                hasAvailable = true;
+                break;
+              }
+            }
+          }
+          current += interval;
+        }
+        availability[dateStr] = hasAvailable;
+      }
+      setDateAvailability(availability);
+    };
+    checkDates();
+  }, [company, businessHours, selectedService, selectedStaff, timeBlocks, companySettings]);
+
+  const generateTimeSlotsWithAvailability = (dateOverride?: string) => {
+    const date = dateOverride || selectedDate;
+    if (!date || businessHours.length === 0) return [];
+    const dayOfWeek = new Date(date + 'T12:00:00').getDay();
     const bh = businessHours.find((h) => h.day_of_week === dayOfWeek);
     if (!bh || !bh.is_open) return [];
 
-    // Check if entire day is blocked for all staff
     const fullDayBlock = timeBlocks.find(b =>
-      b.block_date === selectedDate && !b.start_time && !b.end_time && !b.staff_id
+      b.block_date === date && !b.start_time && !b.end_time && !b.staff_id
     );
     if (fullDayBlock) return [];
 
-    // Get time-specific blocks for this date
     const dateBlocks = timeBlocks.filter(b =>
-      b.block_date === selectedDate &&
+      b.block_date === date &&
       b.start_time && b.end_time &&
       (!b.staff_id || (selectedStaff && b.staff_id === selectedStaff.id) || !selectedStaff)
     );
 
-    const slots: string[] = [];
+    const slots: { time: string; available: boolean }[] = [];
     const [openH, openM] = bh.open_time.split(':').map(Number);
     const [closeH, closeM] = bh.close_time.split(':').map(Number);
     const interval = companySettings.slot_interval || 30;
     const duration = selectedService?.duration || 30;
     const now = new Date();
     const minAdvance = (companySettings.min_advance_hours || 2) * 60;
+
+    // Use appointments for the specific date
+    const aptsForDate = dateOverride
+      ? [] // When checking dates, we need to fetch separately — handled below
+      : existingAppointments;
 
     let current = openH * 60 + openM;
     const end = closeH * 60 + closeM;
@@ -160,7 +258,7 @@ export default function PublicBooking() {
       const hh = String(Math.floor(current / 60)).padStart(2, '0');
       const mm = String(current % 60).padStart(2, '0');
       const timeStr = `${hh}:${mm}`;
-      const slotDate = new Date(`${selectedDate}T${timeStr}:00`);
+      const slotDate = new Date(`${date}T${timeStr}:00`);
       const diffMin = (slotDate.getTime() - now.getTime()) / 60000;
 
       if (diffMin >= minAdvance) {
@@ -169,27 +267,31 @@ export default function PublicBooking() {
         const endMM = String(endMin % 60).padStart(2, '0');
         const endStr = `${endHH}:${endMM}`;
 
-        // Check if slot overlaps with any time block
         const isBlocked = dateBlocks.some(b => {
           const blockStart = b.start_time.slice(0, 5);
           const blockEnd = b.end_time.slice(0, 5);
           return timeStr < blockEnd && endStr > blockStart;
         });
 
-        if (!isBlocked) {
-          const conflicts = existingAppointments.filter((a) => {
+        if (isBlocked) {
+          slots.push({ time: timeStr, available: false });
+        } else {
+          const conflicts = aptsForDate.filter((a) => {
             const aStart = a.start_time.slice(0, 5);
             const aEnd = a.end_time.slice(0, 5);
             return timeStr < aEnd && endStr > aStart;
           });
-          if (conflicts.length < (companySettings.max_capacity_per_slot || 1)) {
-            slots.push(timeStr);
-          }
+          const isFull = conflicts.length >= (companySettings.max_capacity_per_slot || 1);
+          slots.push({ time: timeStr, available: !isFull });
         }
       }
       current += interval;
     }
     return slots;
+  };
+
+  const generateTimeSlots = () => {
+    return generateTimeSlotsWithAvailability().filter(s => s.available).map(s => s.time);
   };
 
   const validateAnamnesis = () => {
@@ -613,21 +715,27 @@ export default function PublicBooking() {
                   const date = new Date(d + 'T12:00:00');
                   const isSelected = selectedDate === d;
                   const isToday = d === new Date().toISOString().split('T')[0];
+                  const isDateAvailable = dateAvailability[d] !== false;
                   return (
                     <motion.button
                       key={d}
                       initial={{ opacity: 0, scale: 0.9 }}
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ delay: i * 0.02 }}
-                      onClick={() => { setSelectedDate(d); setStep('time'); }}
-                      className="relative p-3 rounded-2xl text-center transition-all duration-300 border-2 hover:shadow-md group"
+                      onClick={() => { if (isDateAvailable) { setSelectedDate(d); setStep('time'); } }}
+                      disabled={!isDateAvailable}
+                      className={`relative p-3 rounded-2xl text-center transition-all duration-300 border-2 group ${
+                        !isDateAvailable
+                          ? 'opacity-40 cursor-not-allowed'
+                          : 'hover:shadow-md'
+                      }`}
                       style={{
                         borderColor: isSelected ? primaryColor : 'transparent',
-                        backgroundColor: isSelected ? primaryColor + '10' : 'white',
+                        backgroundColor: isSelected ? primaryColor + '10' : !isDateAvailable ? '#f1f5f9' : 'white',
                         boxShadow: isSelected ? `0 4px 14px ${primaryColor}20` : '0 1px 3px rgba(0,0,0,0.04)',
                       }}
                     >
-                      {isToday && (
+                      {isToday && isDateAvailable && (
                         <div className="absolute -top-1 left-1/2 -translate-x-1/2 px-1.5 py-0 rounded-full text-[8px] font-bold text-white"
                           style={{ backgroundColor: primaryColor }}
                         >
@@ -635,8 +743,10 @@ export default function PublicBooking() {
                         </div>
                       )}
                       <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">{dayNames[date.getDay()]}</p>
-                      <p className="text-xl font-extrabold mt-0.5" style={{ color: isSelected ? primaryColor : secondaryColor }}>{date.getDate()}</p>
-                      <p className="text-[10px] font-medium text-muted-foreground/60">{monthNames[date.getMonth()]}</p>
+                      <p className={`text-xl font-extrabold mt-0.5 ${!isDateAvailable ? 'line-through' : ''}`} style={{ color: isSelected ? primaryColor : !isDateAvailable ? '#94a3b8' : secondaryColor }}>{date.getDate()}</p>
+                      <p className="text-[10px] font-medium text-muted-foreground/60">
+                        {!isDateAvailable ? 'Lotado' : monthNames[date.getMonth()]}
+                      </p>
                     </motion.button>
                   );
                 })}
@@ -666,7 +776,10 @@ export default function PublicBooking() {
                 </div>
               </div>
 
-              {generateTimeSlots().length === 0 ? (
+              {(() => {
+                const allSlots = generateTimeSlotsWithAvailability();
+                const hasAny = allSlots.length > 0;
+                return !hasAny ? (
                 <div className="text-center py-12 bg-white rounded-2xl shadow-sm">
                   <Clock className="h-10 w-10 text-muted-foreground/20 mx-auto mb-3" />
                   <p className="font-bold text-sm" style={{ color: secondaryColor }}>Nenhum horário disponível</p>
@@ -674,29 +787,40 @@ export default function PublicBooking() {
                 </div>
               ) : (
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                  {generateTimeSlots().map((t, i) => (
+                  {allSlots.map((slot, i) => (
                     <motion.button
-                      key={t}
+                      key={slot.time}
                       initial={{ opacity: 0, scale: 0.9 }}
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ delay: i * 0.02 }}
-                      onClick={() => { setSelectedTime(t); setStep(hasAnamnesis ? 'anamnesis' : 'info'); }}
-                      className="p-3.5 rounded-xl bg-white shadow-sm hover:shadow-md border-2 border-transparent transition-all duration-200 font-bold text-sm group"
-                      style={{ color: secondaryColor }}
+                      onClick={() => { if (slot.available) { setSelectedTime(slot.time); setStep(hasAnamnesis ? 'anamnesis' : 'info'); } }}
+                      disabled={!slot.available}
+                      className={`p-3.5 rounded-xl shadow-sm border-2 border-transparent transition-all duration-200 font-bold text-sm ${
+                        !slot.available
+                          ? 'bg-muted/50 text-muted-foreground/40 cursor-not-allowed line-through'
+                          : 'bg-white hover:shadow-md group'
+                      }`}
+                      style={slot.available ? { color: secondaryColor } : {}}
                       onMouseEnter={(e) => {
-                        (e.target as HTMLElement).style.borderColor = primaryColor;
-                        (e.target as HTMLElement).style.backgroundColor = primaryColor + '08';
+                        if (slot.available) {
+                          (e.target as HTMLElement).style.borderColor = primaryColor;
+                          (e.target as HTMLElement).style.backgroundColor = primaryColor + '08';
+                        }
                       }}
                       onMouseLeave={(e) => {
-                        (e.target as HTMLElement).style.borderColor = 'transparent';
-                        (e.target as HTMLElement).style.backgroundColor = 'white';
+                        if (slot.available) {
+                          (e.target as HTMLElement).style.borderColor = 'transparent';
+                          (e.target as HTMLElement).style.backgroundColor = 'white';
+                        }
                       }}
                     >
-                      {t}
+                      {slot.time}
+                      {!slot.available && <span className="block text-[9px] font-medium mt-0.5 no-underline" style={{ textDecoration: 'none' }}>Esgotado</span>}
                     </motion.button>
                   ))}
                 </div>
-              )}
+              );
+              })()}
               <BackButton onClick={() => setStep('date')} />
             </motion.div>
           )}
