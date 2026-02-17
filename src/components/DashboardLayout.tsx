@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { useRole } from '@/hooks/useRole';
 import {
   LayoutDashboard, Scissors, Users, Clock, Calendar,
   Palette, MessageSquare, CreditCard, Menu, X, LogOut,
-  ChevronRight, Bell, Search,
+  ChevronRight, Bell, Search, Shield,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -29,6 +30,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut, user } = useAuth();
+  const { isSuperAdmin } = useRole();
 
   const handleSignOut = async () => {
     await signOut();
@@ -104,6 +106,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {settingsItems.map((item) => (
             <NavItem key={item.path} item={item} />
           ))}
+
+          {isSuperAdmin && (
+            <>
+              <Separator className="my-3 bg-sidebar-border" />
+              <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
+                Super Admin
+              </p>
+              <Link
+                to="/admin"
+                onClick={() => setSidebarOpen(false)}
+                className="group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-destructive hover:bg-destructive/10 transition-all duration-200"
+              >
+                <Shield className="h-[18px] w-[18px] flex-shrink-0" />
+                <span className="flex-1">Painel Admin</span>
+                <ChevronRight className="h-3.5 w-3.5 text-destructive/60" />
+              </Link>
+            </>
+          )}
         </nav>
 
         {/* User */}
