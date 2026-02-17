@@ -11,8 +11,9 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Calendar, Filter, Search, Clock, Phone, User, CheckCircle2, Layers,
   XCircle, AlertCircle, MoreHorizontal, ChevronLeft, ChevronRight,
-  CalendarDays, Users, RefreshCw, Video
+  CalendarDays, Users, RefreshCw, Video, Download
 } from 'lucide-react';
+import { generateGoogleCalendarLink, generateOutlookCalendarLink, downloadICSFile } from '@/lib/calendarLinks';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu';
@@ -417,6 +418,35 @@ export default function Appointments() {
                                           <Phone className="h-3.5 w-3.5 mr-2" />
                                           WhatsApp
                                         </a>
+                                      </DropdownMenuItem>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem asChild>
+                                        <a
+                                          href={generateOutlookCalendarLink({
+                                            title: `${apt.services?.name || 'Agendamento'} - ${apt.client_name}`,
+                                            description: `Cliente: ${apt.client_name}\nTelefone: ${apt.client_phone}`,
+                                            startDate: apt.appointment_date,
+                                            startTime: apt.start_time?.slice(0, 5),
+                                            endTime: apt.end_time?.slice(0, 5),
+                                          })}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                        >
+                                          <Calendar className="h-3.5 w-3.5 mr-2" />
+                                          Adicionar ao Outlook
+                                        </a>
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onClick={() => downloadICSFile({
+                                          title: `${apt.services?.name || 'Agendamento'} - ${apt.client_name}`,
+                                          description: `Cliente: ${apt.client_name}\nTelefone: ${apt.client_phone}`,
+                                          startDate: apt.appointment_date,
+                                          startTime: apt.start_time?.slice(0, 5),
+                                          endTime: apt.end_time?.slice(0, 5),
+                                        })}
+                                      >
+                                        <Download className="h-3.5 w-3.5 mr-2" />
+                                        Baixar .ics
                                       </DropdownMenuItem>
                                     </DropdownMenuContent>
                                   </DropdownMenu>

@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Calendar, Clock, CheckCircle, ArrowLeft, ArrowRight, User, Sparkles, MapPin, Phone, Star, Video, ClipboardList, Shield } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, ArrowLeft, ArrowRight, User, Sparkles, MapPin, Phone, Star, Video, ClipboardList, Shield, Download } from 'lucide-react';
+import { generateGoogleCalendarLink, generateOutlookCalendarLink, downloadICSFile } from '@/lib/calendarLinks';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -994,6 +995,65 @@ export default function PublicBooking() {
                   Entrar na reunião online (Google Meet)
                 </motion.a>
               )}
+
+              {/* Add to Calendar buttons */}
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.6 }}
+                className="flex flex-col sm:flex-row items-center gap-2"
+              >
+                <a
+                  href={generateGoogleCalendarLink({
+                    title: `${selectedService?.name} - ${company?.name}`,
+                    description: `Agendamento com ${selectedStaff?.name || company?.name}`,
+                    startDate: selectedDate,
+                    startTime: selectedTime,
+                    endTime: (() => { const [h, m] = selectedTime.split(':').map(Number); const end = h * 60 + m + (selectedService?.duration || 30); return `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`; })(),
+                    location: company?.address || '',
+                  })}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-xs border shadow-sm hover:shadow-md transition-all duration-300"
+                  style={{ borderColor: primaryColor + '40', color: primaryColor }}
+                >
+                  <Calendar className="h-3.5 w-3.5" />
+                  Adicionar ao Google Agenda
+                </a>
+                <a
+                  href={generateOutlookCalendarLink({
+                    title: `${selectedService?.name} - ${company?.name}`,
+                    description: `Agendamento com ${selectedStaff?.name || company?.name}`,
+                    startDate: selectedDate,
+                    startTime: selectedTime,
+                    endTime: (() => { const [h, m] = selectedTime.split(':').map(Number); const end = h * 60 + m + (selectedService?.duration || 30); return `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`; })(),
+                    location: company?.address || '',
+                  })}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-xs border shadow-sm hover:shadow-md transition-all duration-300"
+                  style={{ borderColor: primaryColor + '40', color: primaryColor }}
+                >
+                  <Calendar className="h-3.5 w-3.5" />
+                  Adicionar ao Outlook
+                </a>
+                <button
+                  onClick={() => downloadICSFile({
+                    title: `${selectedService?.name} - ${company?.name}`,
+                    description: `Agendamento com ${selectedStaff?.name || company?.name}`,
+                    startDate: selectedDate,
+                    startTime: selectedTime,
+                    endTime: (() => { const [h, m] = selectedTime.split(':').map(Number); const end = h * 60 + m + (selectedService?.duration || 30); return `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`; })(),
+                    location: company?.address || '',
+                  })}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-xs border shadow-sm hover:shadow-md transition-all duration-300"
+                  style={{ borderColor: primaryColor + '40', color: primaryColor }}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Baixar .ics
+                </button>
+              </motion.div>
+
               <p className="text-sm text-muted-foreground">
                 Você receberá uma confirmação por WhatsApp 📱
               </p>
