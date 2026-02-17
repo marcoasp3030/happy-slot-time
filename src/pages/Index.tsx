@@ -4,35 +4,61 @@ import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import {
   Calendar, MessageSquare, Palette, ArrowRight, CheckCircle,
-  Sparkles, Shield, Zap, Users, Star, Clock
+  Sparkles, Shield, Zap, Users, Star, Clock, Play,
+  BarChart3, Globe, Smartphone, ChevronRight
 } from 'lucide-react';
+import sloteraLogo from '@/assets/slotera-logo.png';
 
 const features = [
   {
     icon: Calendar,
     title: 'Agendamento Online 24h',
     desc: 'Seus clientes agendam a qualquer momento pelo link exclusivo. Escolhem serviço, profissional, data e horário em segundos.',
-    gradient: 'from-primary to-primary-glow',
+    highlight: 'Disponível 24/7',
   },
   {
     icon: MessageSquare,
     title: 'WhatsApp Automático',
     desc: 'Confirmação instantânea, lembretes inteligentes e avisos de cancelamento direto no WhatsApp do cliente.',
-    gradient: 'from-info to-blue-400',
+    highlight: 'Reduz faltas em 70%',
   },
   {
     icon: Palette,
     title: 'Página Personalizada',
     desc: 'Cores, logo, fontes e textos — tudo configurável para refletir a identidade visual do seu negócio.',
-    gradient: 'from-purple-500 to-pink-500',
+    highlight: 'Sua marca, seu estilo',
+  },
+  {
+    icon: BarChart3,
+    title: 'Painel Inteligente',
+    desc: 'Dashboard completo com métricas em tempo real, histórico de agendamentos e relatórios de desempenho.',
+    highlight: 'Dados em tempo real',
+  },
+  {
+    icon: Users,
+    title: 'Multi-Profissionais',
+    desc: 'Gerencie equipes, defina serviços por profissional e convide colaboradores com permissões personalizadas.',
+    highlight: 'Gerencie sua equipe',
+  },
+  {
+    icon: Globe,
+    title: 'Google Calendar & Meet',
+    desc: 'Sincronize agendamentos com Google Agenda e gere links de reunião automaticamente para atendimentos online.',
+    highlight: 'Integração nativa',
   },
 ];
 
 const benefits = [
   { icon: Zap, text: 'Pronto em menos de 2 minutos' },
   { icon: Shield, text: 'Dados seguros e criptografados' },
-  { icon: Users, text: 'Multi-profissionais e serviços' },
+  { icon: Smartphone, text: '100% responsivo e mobile' },
   { icon: Clock, text: 'Lembretes automáticos' },
+];
+
+const steps = [
+  { step: '01', title: 'Crie sua conta', desc: 'Cadastre-se gratuitamente em menos de 1 minuto.' },
+  { step: '02', title: 'Configure seus serviços', desc: 'Adicione serviços, profissionais e horários de funcionamento.' },
+  { step: '03', title: 'Compartilhe seu link', desc: 'Envie o link da sua página e comece a receber agendamentos.' },
 ];
 
 export default function Index() {
@@ -49,9 +75,7 @@ export default function Index() {
       <nav className="border-b border-border/50 bg-background/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-6xl mx-auto flex items-center justify-between px-4 sm:px-6 py-3">
           <div className="flex items-center gap-2.5">
-            <div className="h-9 w-9 rounded-xl gradient-primary flex items-center justify-center shadow-sm animate-pulse-glow">
-              <Calendar className="h-4.5 w-4.5 text-primary-foreground" />
-            </div>
+            <img src={sloteraLogo} alt="Slotera" className="h-9 w-auto" />
             <span className="text-lg font-extrabold tracking-tight">Slotera</span>
           </div>
           <div className="flex gap-2">
@@ -67,35 +91,35 @@ export default function Index() {
 
       {/* Hero */}
       <section className="relative">
-        {/* Background decoration */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full bg-primary/5 blur-3xl" />
-          <div className="absolute top-20 -left-20 w-72 h-72 rounded-full bg-info/5 blur-3xl" />
+          <div className="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full bg-primary/8 blur-3xl" />
+          <div className="absolute top-20 -left-20 w-80 h-80 rounded-full bg-info/6 blur-3xl" />
+          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] rounded-full bg-primary-glow/5 blur-3xl" />
         </div>
 
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-16 pb-20 md:pt-24 md:pb-28 text-center relative">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-20 pb-24 md:pt-28 md:pb-32 text-center relative">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-accent border border-primary/20 text-accent-foreground text-sm font-semibold mb-8 animate-fade-in">
             <Sparkles className="h-4 w-4 text-primary" />
             7 dias grátis · Sem cartão de crédito
           </div>
 
-          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold tracking-tight mb-6 animate-fade-in leading-[1.1]">
-            Agendamentos online
+          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold tracking-tight mb-6 animate-fade-in leading-[1.08]">
+            Sua agenda online,
             <br />
             <span className="bg-gradient-to-r from-primary to-primary-glow bg-clip-text text-transparent">
-              simples e profissional
+              sempre organizada
             </span>
           </h1>
 
           <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10 animate-fade-in leading-relaxed">
-            Página de agendamento personalizada, notificações automáticas por WhatsApp e painel completo para gerenciar seu negócio de beleza.
+            Plataforma completa de agendamentos com página personalizada, notificações automáticas por WhatsApp e painel inteligente para qualquer tipo de negócio.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center animate-fade-in">
             <Button
               size="lg"
               onClick={() => navigate('/login')}
-              className="gradient-primary border-0 text-base px-8 h-12 font-semibold shadow-lg hover:shadow-xl transition-all hover:scale-[1.02]"
+              className="gradient-primary border-0 text-base px-8 h-13 font-semibold shadow-lg hover:shadow-xl transition-all hover:scale-[1.02] rounded-xl"
             >
               Criar conta grátis
               <ArrowRight className="h-4 w-4 ml-2" />
@@ -104,18 +128,48 @@ export default function Index() {
               size="lg"
               variant="outline"
               onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
-              className="text-base px-8 h-12 font-semibold"
+              className="text-base px-8 h-13 font-semibold rounded-xl"
             >
-              Conheça os recursos
+              <Play className="h-4 w-4 mr-2" />
+              Ver como funciona
             </Button>
           </div>
 
           {/* Trust indicators */}
-          <div className="flex flex-wrap items-center justify-center gap-6 mt-14 animate-fade-in">
+          <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3 mt-16 animate-fade-in">
             {benefits.map((b) => (
               <div key={b.text} className="flex items-center gap-2 text-sm text-muted-foreground">
-                <b.icon className="h-4 w-4 text-primary" />
-                <span>{b.text}</span>
+                <div className="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <b.icon className="h-3.5 w-3.5 text-primary" />
+                </div>
+                <span className="font-medium">{b.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* How it works */}
+      <section className="bg-muted/40 border-y border-border/50">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-20">
+          <div className="text-center mb-14">
+            <p className="text-sm font-semibold text-primary uppercase tracking-wider mb-2">Como funciona</p>
+            <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight">
+              Comece em 3 passos simples
+            </h2>
+          </div>
+
+          <div className="grid gap-8 md:grid-cols-3">
+            {steps.map((s, i) => (
+              <div key={s.step} className="relative text-center md:text-left">
+                <div className="text-5xl font-extrabold text-primary/10 mb-3">{s.step}</div>
+                <h3 className="text-lg font-bold mb-2">{s.title}</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">{s.desc}</p>
+                {i < steps.length - 1 && (
+                  <div className="hidden md:block absolute top-8 -right-4 text-primary/20">
+                    <ChevronRight className="h-8 w-8" />
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -125,25 +179,31 @@ export default function Index() {
       {/* Features */}
       <section id="features" className="max-w-6xl mx-auto px-4 sm:px-6 py-20">
         <div className="text-center mb-14">
+          <p className="text-sm font-semibold text-primary uppercase tracking-wider mb-2">Recursos</p>
           <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight mb-3">
-            Tudo que você precisa
+            Tudo que você precisa em um só lugar
           </h2>
           <p className="text-muted-foreground text-lg max-w-xl mx-auto">
             Ferramentas poderosas para simplificar sua rotina e encantar seus clientes.
           </p>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-3">
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {features.map((f, i) => (
             <div
               key={f.title}
-              className="group glass-card rounded-2xl p-7 hover:translate-y-[-4px] transition-all duration-300"
-              style={{ animationDelay: `${i * 100}ms` }}
+              className="group glass-card rounded-2xl p-6 hover:translate-y-[-4px] transition-all duration-300 border-0 shadow-sm hover:shadow-lg"
+              style={{ animationDelay: `${i * 80}ms` }}
             >
-              <div className={`stat-icon-box bg-gradient-to-br ${f.gradient} mb-5 shadow-sm`}>
-                <f.icon className="h-5 w-5 text-white" />
+              <div className="flex items-start justify-between mb-4">
+                <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <f.icon className="h-5 w-5 text-primary" />
+                </div>
+                <span className="text-[11px] font-semibold text-primary bg-primary/8 px-2.5 py-1 rounded-full">
+                  {f.highlight}
+                </span>
               </div>
-              <h3 className="text-lg font-bold mb-2">{f.title}</h3>
+              <h3 className="text-base font-bold mb-2">{f.title}</h3>
               <p className="text-sm text-muted-foreground leading-relaxed">{f.desc}</p>
             </div>
           ))}
@@ -152,19 +212,21 @@ export default function Index() {
 
       {/* Social proof */}
       <section className="max-w-6xl mx-auto px-4 sm:px-6 py-16">
-        <div className="glass-card-static rounded-2xl p-8 md:p-12 bg-gradient-to-br from-accent/50 to-background border-primary/10">
+        <div className="rounded-2xl p-8 md:p-12 bg-gradient-to-br from-muted/60 to-background border border-border/60">
           <div className="grid md:grid-cols-3 gap-8 text-center">
             {[
-              { value: '500+', label: 'Negócios ativos' },
-              { value: '50k+', label: 'Agendamentos/mês' },
+              { value: '500+', label: 'Negócios ativos', icon: Users },
+              { value: '50k+', label: 'Agendamentos/mês', icon: Calendar },
               { value: '4.9', label: 'Avaliação média', icon: Star },
             ].map((s) => (
-              <div key={s.label}>
-                <p className="text-3xl md:text-4xl font-extrabold text-primary mb-1 flex items-center justify-center gap-1">
+              <div key={s.label} className="flex flex-col items-center">
+                <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center mb-3">
+                  <s.icon className={`h-5 w-5 text-primary ${s.icon === Star ? 'fill-primary' : ''}`} />
+                </div>
+                <p className="text-3xl md:text-4xl font-extrabold text-foreground mb-1">
                   {s.value}
-                  {s.icon && <s.icon className="h-6 w-6 fill-primary" />}
                 </p>
-                <p className="text-muted-foreground font-medium">{s.label}</p>
+                <p className="text-muted-foreground font-medium text-sm">{s.label}</p>
               </div>
             ))}
           </div>
@@ -173,35 +235,48 @@ export default function Index() {
 
       {/* CTA */}
       <section className="max-w-6xl mx-auto px-4 sm:px-6 py-16">
-        <div className="relative rounded-2xl overflow-hidden gradient-primary p-10 md:p-14 text-center text-white">
-          <div className="absolute inset-0 bg-gradient-to-r from-black/10 to-transparent pointer-events-none" />
+        <div className="relative rounded-2xl overflow-hidden gradient-primary p-10 md:p-16 text-center text-primary-foreground">
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-white/10 blur-3xl" />
+            <div className="absolute -bottom-20 -left-20 w-96 h-96 rounded-full bg-white/5 blur-3xl" />
+          </div>
           <div className="relative">
-            <h2 className="text-2xl md:text-3xl font-extrabold mb-3">
+            <h2 className="text-2xl md:text-4xl font-extrabold mb-4">
               Pronto para transformar seu negócio?
             </h2>
-            <p className="text-white/80 mb-8 text-lg max-w-lg mx-auto">
-              Comece agora e tenha sua página de agendamentos online em menos de 2 minutos.
+            <p className="text-primary-foreground/80 mb-8 text-lg max-w-lg mx-auto leading-relaxed">
+              Comece agora e tenha sua página de agendamentos online em menos de 2 minutos. Sem complicação.
             </p>
-            <Button
-              size="lg"
-              onClick={() => navigate('/login')}
-              className="bg-white text-foreground hover:bg-white/90 font-semibold px-8 h-12 text-base shadow-lg"
-            >
-              Começar grátis agora
-              <ArrowRight className="h-4 w-4 ml-2" />
-            </Button>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Button
+                size="lg"
+                onClick={() => navigate('/login')}
+                className="bg-white text-foreground hover:bg-white/90 font-semibold px-8 h-13 text-base shadow-lg rounded-xl"
+              >
+                Começar grátis agora
+                <ArrowRight className="h-4 w-4 ml-2" />
+              </Button>
+            </div>
+            <p className="text-primary-foreground/60 text-sm mt-4 font-medium">
+              ✓ 7 dias grátis &nbsp; ✓ Sem cartão de crédito &nbsp; ✓ Cancele quando quiser
+            </p>
           </div>
         </div>
       </section>
 
-      <footer className="border-t border-border/50 py-8 text-center text-sm text-muted-foreground">
-        <div className="flex items-center justify-center gap-2 mb-2">
-          <div className="h-6 w-6 rounded-lg gradient-primary flex items-center justify-center">
-            <Calendar className="h-3 w-3 text-primary-foreground" />
+      {/* Footer */}
+      <footer className="border-t border-border/50 py-10">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-2.5">
+              <img src={sloteraLogo} alt="Slotera" className="h-7 w-auto" />
+              <span className="font-bold text-foreground">Slotera</span>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              © {new Date().getFullYear()} Slotera. Todos os direitos reservados.
+            </p>
           </div>
-          <span className="font-bold text-foreground">Slotera</span>
         </div>
-        © {new Date().getFullYear()} Slotera. Todos os direitos reservados.
       </footer>
     </div>
   );
