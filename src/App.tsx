@@ -27,11 +27,13 @@ import AdminUsers from "./pages/admin/AdminUsers";
 import AdminNotifications from "./pages/admin/AdminNotifications";
 import AdminGoogleCalendar from "./pages/admin/AdminGoogleCalendar";
 import GoogleCalendarSettings from "./pages/GoogleCalendarSettings";
+import StaffInvite from "./pages/StaffInvite";
+import StaffDashboard from "./pages/StaffDashboard";
 
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading, companyId } = useAuth();
+  const { user, loading, companyId, profileRole } = useAuth();
   const { isSuperAdmin } = useRole();
   const [blocked, setBlocked] = useState(false);
   const [checkingBlock, setCheckingBlock] = useState(true);
@@ -46,6 +48,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (loading || checkingBlock) return <div className="min-h-screen flex items-center justify-center"><div className="animate-pulse text-muted-foreground">Carregando...</div></div>;
   if (!user) return <Navigate to="/login" replace />;
+  
+  // Staff users get redirected to their own dashboard
+  if (profileRole === 'staff') return <Navigate to="/staff-dashboard" replace />;
+  
   if (blocked && !isSuperAdmin) return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="text-center max-w-md">
@@ -60,6 +66,15 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function StaffRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading, profileRole } = useAuth();
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-pulse text-muted-foreground">Carregando...</div></div>;
+  if (!user) return <Navigate to="/login" replace />;
+  if (profileRole !== 'staff') return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
+
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const { user, loading: authLoading } = useAuth();
   const { isSuperAdmin, loading: roleLoading } = useRole();
@@ -70,12 +85,27 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function SmartLoginRedirect() {
+  const { user, loading, profileRole } = useAuth();
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-pulse text-muted-foreground">Carregando...</div></div>;
+  if (!user) return <PageTransition><Auth /></PageTransition>;
+  if (profileRole === 'staff') return <Navigate to="/staff-dashboard" replace />;
+  return <Navigate to="/dashboard" replace />;
+}
+
 function AnimatedRoutes() {
   return (
     <Routes>
       <Route path="/" element={<PageTransition><Index /></PageTransition>} />
-      <Route path="/login" element={<PageTransition><Auth /></PageTransition>} />
+      <Route path="/login" element={<SmartLoginRedirect />} />
+      <Route path="/convite/:token" element={<PageTransition><StaffInvite /></PageTransition>} />
       <Route path="/agendar/:slug" element={<PageTransition><PublicBooking /></PageTransition>} />
+      
+      {/* Staff route */}
+      <Route path="/staff-dashboard" element={<StaffRoute><PageTransition><StaffDashboard /></PageTransition></StaffRoute>} />
+      
+      {/* Admin/Owner routes */}
       <Route path="/dashboard" element={<ProtectedRoute><PageTransition><Dashboard /></PageTransition></ProtectedRoute>} />
       <Route path="/servicos" element={<ProtectedRoute><PageTransition><Services /></PageTransition></ProtectedRoute>} />
       <Route path="/profissionais" element={<ProtectedRoute><PageTransition><Staff /></PageTransition></ProtectedRoute>} />
@@ -86,7 +116,7 @@ function AnimatedRoutes() {
       <Route path="/plano" element={<ProtectedRoute><PageTransition><Plan /></PageTransition></ProtectedRoute>} />
       <Route path="/google-calendar" element={<ProtectedRoute><PageTransition><GoogleCalendarSettings /></PageTransition></ProtectedRoute>} />
       
-      {/* Admin routes */}
+      {/* Super admin routes */}
       <Route path="/admin" element={<AdminRoute><PageTransition><AdminDashboard /></PageTransition></AdminRoute>} />
       <Route path="/admin/empresas" element={<AdminRoute><PageTransition><AdminCompanies /></PageTransition></AdminRoute>} />
       <Route path="/admin/assinaturas" element={<AdminRoute><PageTransition><AdminSubscriptions /></PageTransition></AdminRoute>} />
