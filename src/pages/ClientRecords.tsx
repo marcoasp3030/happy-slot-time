@@ -75,7 +75,7 @@ export default function ClientRecords() {
 
   useEffect(() => {
     if (!companyId) return;
-    supabase.from('services').select('id, name, requires_anamnesis, requires_sessions')
+    supabase.from('services').select('id, name, requires_anamnesis, requires_sessions, anamnesis_type_id')
       .eq('company_id', companyId).then(({ data }) => setServices(data || []));
   }, [companyId]);
 
@@ -144,11 +144,23 @@ export default function ClientRecords() {
 
   const fetchTemplatesForService = async (serviceId: string) => {
     if (!companyId) return;
-    const { data } = await supabase.from('anamnesis_templates').select('*')
-      .eq('company_id', companyId).eq('active', true)
-      .or(`service_id.is.null,service_id.eq.${serviceId}`)
-      .order('sort_order');
-    setTemplates(data || []);
+    // Find the service to get its anamnesis_type_id
+    const service = services.find(s => s.id === serviceId);
+    const typeId = service?.anamnesis_type_id;
+    if (typeId) {
+      const { data } = await supabase.from('anamnesis_templates').select('*')
+        .eq('company_id', companyId).eq('active', true)
+        .eq('anamnesis_type_id', typeId)
+        .order('sort_order');
+      setTemplates(data || []);
+    } else {
+      // Fallback: load templates linked to service_id or global
+      const { data } = await supabase.from('anamnesis_templates').select('*')
+        .eq('company_id', companyId).eq('active', true)
+        .or(`service_id.is.null,service_id.eq.${serviceId}`)
+        .order('sort_order');
+      setTemplates(data || []);
+    }
   };
 
   const fetchSessions = async (packageId: string) => {

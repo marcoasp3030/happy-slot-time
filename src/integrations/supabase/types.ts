@@ -46,6 +46,7 @@ export type Database = {
       }
       anamnesis_responses: {
         Row: {
+          anamnesis_type_id: string | null
           appointment_id: string | null
           client_name: string
           client_phone: string
@@ -59,6 +60,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          anamnesis_type_id?: string | null
           appointment_id?: string | null
           client_name: string
           client_phone: string
@@ -72,6 +74,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          anamnesis_type_id?: string | null
           appointment_id?: string | null
           client_name?: string
           client_phone?: string
@@ -85,6 +88,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "anamnesis_responses_anamnesis_type_id_fkey"
+            columns: ["anamnesis_type_id"]
+            isOneToOne: false
+            referencedRelation: "anamnesis_types"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "anamnesis_responses_appointment_id_fkey"
             columns: ["appointment_id"]
@@ -111,6 +121,7 @@ export type Database = {
       anamnesis_templates: {
         Row: {
           active: boolean
+          anamnesis_type_id: string | null
           company_id: string
           created_at: string
           field_label: string
@@ -123,6 +134,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          anamnesis_type_id?: string | null
           company_id: string
           created_at?: string
           field_label: string
@@ -135,6 +147,7 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          anamnesis_type_id?: string | null
           company_id?: string
           created_at?: string
           field_label?: string
@@ -147,6 +160,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "anamnesis_templates_anamnesis_type_id_fkey"
+            columns: ["anamnesis_type_id"]
+            isOneToOne: false
+            referencedRelation: "anamnesis_types"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "anamnesis_templates_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
@@ -158,6 +178,41 @@ export type Database = {
             columns: ["service_id"]
             isOneToOne: false
             referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      anamnesis_types: {
+        Row: {
+          active: boolean
+          company_id: string
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          active?: boolean
+          company_id: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          active?: boolean
+          company_id?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "anamnesis_types_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
         ]
@@ -729,6 +784,7 @@ export type Database = {
       services: {
         Row: {
           active: boolean
+          anamnesis_type_id: string | null
           color: string | null
           company_id: string
           created_at: string
@@ -742,6 +798,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          anamnesis_type_id?: string | null
           color?: string | null
           company_id: string
           created_at?: string
@@ -755,6 +812,7 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          anamnesis_type_id?: string | null
           color?: string | null
           company_id?: string
           created_at?: string
@@ -767,6 +825,13 @@ export type Database = {
           requires_sessions?: boolean
         }
         Relationships: [
+          {
+            foreignKeyName: "services_anamnesis_type_id_fkey"
+            columns: ["anamnesis_type_id"]
+            isOneToOne: false
+            referencedRelation: "anamnesis_types"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "services_company_id_fkey"
             columns: ["company_id"]

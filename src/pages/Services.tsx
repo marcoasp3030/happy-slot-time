@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Plus, Pencil, Trash2, ClipboardList, Layers } from 'lucide-react';
 import { toast } from 'sonner';
@@ -22,14 +23,24 @@ interface Service {
   active: boolean;
   requires_anamnesis: boolean;
   requires_sessions: boolean;
+  anamnesis_type_id: string | null;
+}
+
+interface AnamnesisType {
+  id: string;
+  name: string;
 }
 
 export default function Services() {
   const { companyId } = useAuth();
   const [services, setServices] = useState<Service[]>([]);
+  const [anamnesisTypes, setAnamnesisTypes] = useState<AnamnesisType[]>([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Service | null>(null);
-  const [form, setForm] = useState({ name: '', duration: '30', price: '', description: '', color: '#10b981', requires_anamnesis: false, requires_sessions: false });
+  const [form, setForm] = useState({
+    name: '', duration: '30', price: '', description: '', color: '#10b981',
+    requires_anamnesis: false, requires_sessions: false, anamnesis_type_id: '',
+  });
 
   const fetchServices = async () => {
     if (!companyId) return;
@@ -41,11 +52,18 @@ export default function Services() {
     setServices((data as Service[]) || []);
   };
 
-  useEffect(() => { fetchServices(); }, [companyId]);
+  const fetchAnamnesisTypes = async () => {
+    if (!companyId) return;
+    const { data } = await supabase.from('anamnesis_types').select('id, name')
+      .eq('company_id', companyId).eq('active', true).order('name');
+    setAnamnesisTypes((data as AnamnesisType[]) || []);
+  };
+
+  useEffect(() => { fetchServices(); fetchAnamnesisTypes(); }, [companyId]);
 
   const openNew = () => {
     setEditing(null);
-    setForm({ name: '', duration: '30', price: '', description: '', color: '#10b981', requires_anamnesis: false, requires_sessions: false });
+    setForm({ name: '', duration: '30', price: '', description: '', color: '#10b981', requires_anamnesis: false, requires_sessions: false, anamnesis_type_id: '' });
     setOpen(true);
   };
 
@@ -59,6 +77,7 @@ export default function Services() {
       color: s.color || '#10b981',
       requires_anamnesis: s.requires_anamnesis,
       requires_sessions: s.requires_sessions,
+      anamnesis_type_id: s.anamnesis_type_id || '',
     });
     setOpen(true);
   };
@@ -75,6 +94,7 @@ export default function Services() {
       color: form.color,
       requires_anamnesis: form.requires_anamnesis,
       requires_sessions: form.requires_sessions,
+      anamnesis_type_id: form.requires_anamnesis && form.anamnesis_type_id ? form.anamnesis_type_id : null,
     };
 
     if (editing) {
@@ -100,6 +120,11 @@ export default function Services() {
     await supabase.from('services').delete().eq('id', id);
     toast.success('Serviço excluído');
     fetchServices();
+  };
+
+  const getTypeName = (typeId: string | null) => {
+    if (!typeId) return null;
+    return anamnesisTypes.find(t => t.id === typeId)?.name || null;
   };
 
   return (
@@ -143,7 +168,8 @@ export default function Services() {
                     <div className="flex flex-wrap gap-1.5 mb-3">
                       {s.requires_anamnesis && (
                         <Badge variant="secondary" className="text-[10px] h-5 gap-1">
-                          <ClipboardList className="h-2.5 w-2.5" />Anamnese
+                          <ClipboardList className="h-2.5 w-2.5" />
+                          {getTypeName(s.anamnesis_type_id) || 'Anamnese'}
                         </Badge>
                       )}
                       {s.requires_sessions && (
@@ -203,8 +229,24 @@ export default function Services() {
                     <Label className="font-semibold text-sm flex items-center gap-1.5"><ClipboardList className="h-3.5 w-3.5 text-primary" />Anamnese</Label>
                     <p className="text-[11px] text-muted-foreground">Ficha de avaliação do cliente</p>
                   </div>
-                  <Switch checked={form.requires_anamnesis} onCheckedChange={(v) => setForm({ ...form, requires_anamnesis: v })} />
+                  <Switch checked={form.requires_anamnesis} onCheckedChange={(v) => setForm({ ...form, requires_anamnesis: v, anamnesis_type_id: v ? form.anamnesis_type_id : '' })} />
                 </div>
+                {form.requires_anamnesis && (
+                  <div className="space-y-1.5 pl-5 border-l-2 border-primary/20">
+                    <Label className="font-semibold text-sm">Tipo de anamnese</Label>
+                    {anamnesisTypes.length === 0 ? (
+                      <p className="text-[11px] text-muted-foreground">Nenhum tipo criado. Crie tipos na página de Anamnese.</p>
+                    ) : (
+                      <Select value={form.anamnesis_type_id || 'none'} onValueChange={(v) => setForm({ ...form, anamnesis_type_id: v === 'none' ? '' : v })}>
+                        <SelectTrigger className="h-10"><SelectValue placeholder="Selecione o tipo" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Nenhum (genérica)</SelectItem>
+                          {anamnesisTypes.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="font-semibold text-sm flex items-center gap-1.5"><Layers className="h-3.5 w-3.5 text-primary" />Controle de Sessões</Label>

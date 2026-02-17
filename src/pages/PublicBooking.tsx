@@ -79,13 +79,28 @@ export default function PublicBooking() {
       return;
     }
     const fetchTemplates = async () => {
-      const { data } = await supabase
-        .from('anamnesis_templates')
-        .select('*')
-        .eq('active', true)
-        .order('sort_order')
-        .or(`service_id.eq.${selectedService.id},service_id.is.null`);
+      let data: any[] | null = null;
+      // Prefer anamnesis_type_id if available
+      if (selectedService.anamnesis_type_id) {
+        const result = await supabase
+          .from('anamnesis_templates')
+          .select('*')
+          .eq('active', true)
+          .eq('anamnesis_type_id', selectedService.anamnesis_type_id)
+          .order('sort_order');
+        data = result.data;
+      } else {
+        // Fallback to service_id or global
+        const result = await supabase
+          .from('anamnesis_templates')
+          .select('*')
+          .eq('active', true)
+          .order('sort_order')
+          .or(`service_id.eq.${selectedService.id},service_id.is.null`);
+        data = result.data;
+      }
       setAnamnesisTemplates(data || []);
+      setAnamnesisResponses({});
       setAnamnesisResponses({});
     };
     fetchTemplates();
