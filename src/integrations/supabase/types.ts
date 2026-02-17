@@ -672,6 +672,140 @@ export type Database = {
           },
         ]
       }
+      llm_model_pricing: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          input_cost_per_1k: number
+          model: string
+          output_cost_per_1k: number
+          provider: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          input_cost_per_1k?: number
+          model: string
+          output_cost_per_1k?: number
+          provider: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          input_cost_per_1k?: number
+          model?: string
+          output_cost_per_1k?: number
+          provider?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      llm_usage_limits: {
+        Row: {
+          alert_100_sent: boolean
+          alert_50_sent: boolean
+          alert_80_sent: boolean
+          company_id: string
+          created_at: string
+          current_month: string
+          id: string
+          monthly_token_limit: number
+          updated_at: string
+        }
+        Insert: {
+          alert_100_sent?: boolean
+          alert_50_sent?: boolean
+          alert_80_sent?: boolean
+          company_id: string
+          created_at?: string
+          current_month?: string
+          id?: string
+          monthly_token_limit?: number
+          updated_at?: string
+        }
+        Update: {
+          alert_100_sent?: boolean
+          alert_50_sent?: boolean
+          alert_80_sent?: boolean
+          company_id?: string
+          created_at?: string
+          current_month?: string
+          id?: string
+          monthly_token_limit?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "llm_usage_limits_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      llm_usage_logs: {
+        Row: {
+          company_id: string
+          conversation_id: string | null
+          cost_per_1k: number | null
+          created_at: string
+          id: string
+          input_tokens: number
+          model: string
+          output_tokens: number
+          provider: string
+          total_cost: number
+          total_tokens: number
+        }
+        Insert: {
+          company_id: string
+          conversation_id?: string | null
+          cost_per_1k?: number | null
+          created_at?: string
+          id?: string
+          input_tokens?: number
+          model: string
+          output_tokens?: number
+          provider: string
+          total_cost?: number
+          total_tokens?: number
+        }
+        Update: {
+          company_id?: string
+          conversation_id?: string | null
+          cost_per_1k?: number | null
+          created_at?: string
+          id?: string
+          input_tokens?: number
+          model?: string
+          output_tokens?: number
+          provider?: string
+          total_cost?: number
+          total_tokens?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "llm_usage_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "llm_usage_logs_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       message_templates: {
         Row: {
           active: boolean
