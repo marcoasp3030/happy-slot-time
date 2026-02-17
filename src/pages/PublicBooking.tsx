@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { formatPhone } from '@/lib/utils';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -9,12 +10,6 @@ import { Calendar, Clock, CheckCircle, ArrowLeft, ArrowRight, User, Sparkles, Ma
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const formatPhone = (value: string) => {
-  const digits = value.replace(/\D/g, '').slice(0, 11);
-  if (digits.length <= 2) return digits.length ? `(${digits}` : '';
-  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
-  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
-};
 import { Checkbox } from '@/components/ui/checkbox';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
