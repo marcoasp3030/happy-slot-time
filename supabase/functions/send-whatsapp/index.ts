@@ -319,6 +319,21 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string): Pr
     return { ok: true, skipped: "handoff" };
   }
 
+  // ── Deduplication: check if same message was already saved in last 15s ──
+  const fifteenSecsAgo = new Date(Date.now() - 15000).toISOString();
+  const { data: recentDups } = await sb.from("whatsapp_messages")
+    .select("id")
+    .eq("conversation_id", conv.id)
+    .eq("direction", "incoming")
+    .eq("content", msg)
+    .gte("created_at", fifteenSecsAgo)
+    .limit(1);
+  
+  if (recentDups && recentDups.length > 0) {
+    log("🤖 ⚠️ DUPLICATE detected, skipping. Existing msg:", recentDups[0].id);
+    return { ok: true, skipped: "duplicate", conversation_id: conv.id };
+  }
+
   // Save incoming message
   log("🤖 Saving incoming message...");
   const { error: msgErr } = await sb.from("whatsapp_messages").insert({ conversation_id: conv.id, company_id: cid, direction: "incoming", message_type: "text", content: msg });
