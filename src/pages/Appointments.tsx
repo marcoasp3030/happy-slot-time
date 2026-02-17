@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Calendar, Filter, Search, Clock, Phone, User, CheckCircle2,
+  Calendar, Filter, Search, Clock, Phone, User, CheckCircle2, Layers,
   XCircle, AlertCircle, MoreHorizontal, ChevronLeft, ChevronRight,
   CalendarDays, Users, RefreshCw
 } from 'lucide-react';
@@ -41,7 +41,7 @@ export default function Appointments() {
     setLoading(true);
     let query = supabase
       .from('appointments')
-      .select('*, services(name, color, duration), staff(name)')
+      .select('*, services(name, color, duration, requires_sessions), staff(name)')
       .eq('company_id', companyId)
       .order('appointment_date', { ascending: viewTab === 'upcoming' })
       .order('start_time', { ascending: true })
@@ -340,6 +340,12 @@ export default function Appointments() {
                                       <span className="text-xs text-muted-foreground flex items-center gap-1">
                                         <User className="h-2.5 w-2.5" />
                                         {apt.staff.name}
+                                      </span>
+                                    )}
+                                    {apt.services?.requires_sessions && (
+                                      <span className="text-xs text-primary/80 flex items-center gap-1 font-medium">
+                                        <Layers className="h-2.5 w-2.5" />
+                                        Sessões
                                       </span>
                                     )}
                                   </div>
