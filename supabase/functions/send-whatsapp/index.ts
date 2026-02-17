@@ -178,6 +178,104 @@ async function sendUazapiMessage(settings: { base_url: string; instance_id: stri
   try { return JSON.parse(text); } catch { return { raw: text }; }
 }
 
+// ─── Send "composing" presence to simulate typing ───
+async function sendTypingPresence(settings: { base_url: string; token: string }, phone: string): Promise<void> {
+  try {
+    const url = settings.base_url.replace(/\/$/, "") + "/send/presence";
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", token: settings.token },
+      body: JSON.stringify({ phone, presence: "composing" }),
+    });
+  } catch {
+    // Non-fatal: ignore typing indicator errors
+  }
+}
+
+// ─── Split long reply into human-like message chunks ───
+function splitIntoHumanMessages(text: string): string[] {
+  // First split by double newlines (paragraphs)
+  const paragraphs = text.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
+  
+  const chunks: string[] = [];
+  for (const para of paragraphs) {
+    // If paragraph is short enough, keep as single message
+    if (para.length <= 200) {
+      chunks.push(para);
+      continue;
+    }
+    // Split long paragraphs by single newlines
+    const lines = para.split(/\n/).map(l => l.trim()).filter(Boolean);
+    if (lines.length > 1) {
+      // Group every 2-3 lines together
+      let group = "";
+      for (const line of lines) {
+        if (group && (group + "\n" + line).length > 200) {
+          chunks.push(group);
+          group = line;
+        } else {
+          group = group ? group + "\n" + line : line;
+        }
+      }
+      if (group) chunks.push(group);
+    } else {
+      // Single long line - split by sentences
+      const sentences = para.match(/[^.!?]+[.!?]+\s*/g) || [para];
+      let group = "";
+      for (const s of sentences) {
+        if (group && (group + s).length > 200) {
+          chunks.push(group.trim());
+          group = s;
+        } else {
+          group += s;
+        }
+      }
+      if (group.trim()) chunks.push(group.trim());
+    }
+  }
+  
+  // If nothing was split, return original as single message
+  return chunks.length > 0 ? chunks : [text];
+}
+
+// ─── Calculate realistic typing delay based on message length ───
+function typingDelay(text: string): number {
+  // Average reading speed ~40 chars/sec for typing simulation
+  // Min 1.5s, max 4s
+  const base = Math.max(1500, Math.min(4000, text.length * 50));
+  // Add some randomness (±300ms)
+  return base + Math.floor(Math.random() * 600) - 300;
+}
+
+// ─── Send reply in humanized chunks with typing indicators ───
+async function sendHumanizedReply(
+  settings: { base_url: string; instance_id: string; token: string },
+  phone: string,
+  fullReply: string
+): Promise<void> {
+  const chunks = splitIntoHumanMessages(fullReply);
+  log("🗣️ Humanized send:", chunks.length, "chunks for reply of", fullReply.length, "chars");
+  
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    
+    // Send typing indicator before each message (except first which is immediate)
+    if (i > 0) {
+      await sendTypingPresence(settings, phone);
+      const delay = typingDelay(chunk);
+      log("🗣️ Typing delay:", delay, "ms for chunk", i + 1);
+      await new Promise(r => setTimeout(r, delay));
+    } else {
+      // Small initial delay to seem natural
+      await sendTypingPresence(settings, phone);
+      await new Promise(r => setTimeout(r, 800 + Math.floor(Math.random() * 500)));
+    }
+    
+    await sendUazapiMessage(settings, phone, chunk);
+    log("🗣️ Chunk", i + 1, "/", chunks.length, "sent");
+  }
+}
+
 function formatDate(dateStr: string): string { const [y, m, d] = dateStr.split("-"); return `${d}/${m}/${y}`; }
 
 // ─── AI Agent Logic ───
@@ -245,16 +343,20 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string): Pr
     const { error: outErr } = await sb.from("whatsapp_messages").insert({ conversation_id: conv.id, company_id: cid, direction: "outgoing", message_type: "text", content: reply });
     log("🤖 Outgoing msg saved:", outErr ? `ERROR: ${outErr.message}` : "OK");
 
-    // Send via UAZAPI
+    // Send via UAZAPI (humanized: split into chunks with typing delays)
     log("🤖 Fetching WhatsApp settings to send reply...");
-    const { data: ws, error: wsErr } = await sb.from("whatsapp_settings").select("base_url, token, active").eq("company_id", cid).single();
+    const { data: ws, error: wsErr } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
     log("🤖 WS settings:", ws ? `active=${ws.active} base_url=${ws.base_url}` : "NOT FOUND", "error:", wsErr?.message);
 
     if (ws?.active && ws?.base_url && ws?.token) {
       try {
-        log("🤖 Sending reply via UAZAPI...");
-        await sendUazapiMessage({ base_url: ws.base_url, instance_id: "", token: ws.token }, phone.replace(/\D/g, ""), reply);
-        log("🤖 ✅ Reply sent successfully!");
+        log("🤖 Sending humanized reply via UAZAPI...");
+        await sendHumanizedReply(
+          { base_url: ws.base_url, instance_id: ws.instance_id || "", token: ws.token },
+          phone.replace(/\D/g, ""),
+          reply
+        );
+        log("🤖 ✅ Humanized reply sent successfully!");
       } catch (e: any) {
         logErr("🤖 ❌ Send error:", e.message);
       }
@@ -293,7 +395,28 @@ async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string
   const kbs = (ctx.kb || []).map((x: any) => x.title + ": " + x.content).join("; ");
   const appts = (ctx.appts || []).map((x: any, i: number) => (i + 1) + "." + (x.services?.name || "?") + " " + x.appointment_date + " " + (x.start_time || "").substring(0, 5) + " " + x.status).join("; ");
 
-  const sys = "Assistente virtual de " + (ctx.co.name || "empresa") + ". Portugues BR, curto, objetivo. Empresa: " + (ctx.co.name || "") + " End: " + (ctx.co.address || "") + " Tel: " + (ctx.co.phone || "") + ". Horarios: " + hrs + ". Servicos: " + svcs + ". Info: " + kbs + ". Agendamentos cliente: " + appts + ". Use tools para confirmar/cancelar/reagendar. Max 3 frases. Emojis moderados.";
+  const sys = `Você é uma assistente virtual simpática e natural de ${ctx.co.name || "nossa empresa"}. 
+REGRAS DE COMUNICAÇÃO:
+- Fale como uma pessoa REAL no WhatsApp: use linguagem informal, curta e acolhedora
+- NUNCA envie textos longos. Cada resposta deve ter no máximo 2-3 frases curtas
+- Separe assuntos diferentes em parágrafos (use \\n\\n entre eles) para que sejam enviados como mensagens separadas
+- Use emojis com moderação (1-2 por mensagem, não mais)
+- NÃO use listas com marcadores ou formatação de texto
+- NÃO repita informações que o cliente já sabe
+- Seja direta mas amigável, como uma recepcionista atenciosa
+- Se precisar dar várias informações, quebre em mensagens curtas separadas por \\n\\n
+
+DADOS DA EMPRESA:
+${ctx.co.name || ""} | End: ${ctx.co.address || ""} | Tel: ${ctx.co.phone || ""}
+Horários: ${hrs}
+Serviços: ${svcs}
+${kbs ? "Info adicional: " + kbs : ""}
+Agendamentos do cliente: ${appts || "nenhum"}
+
+EXEMPLOS DE TOM CORRETO:
+❌ "Olá! Bem-vindo à nossa clínica. Temos os seguintes serviços disponíveis: 1. Corte de cabelo (30min, R$50) 2. Barba (20min, R$30). Nosso horário de funcionamento é de segunda a sexta das 9h às 18h e sábado das 9h às 13h."
+✅ "Oi! Tudo bem? 😊\\n\\nComo posso te ajudar hoje?"`;
+
 
   const messages: any[] = [{ role: "system", content: sys }];
   for (const m of ctx.msgs) messages.push({ role: m.direction === "incoming" ? "user" : "assistant", content: m.content || "" });
