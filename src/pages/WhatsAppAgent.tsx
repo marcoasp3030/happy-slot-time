@@ -3,6 +3,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,8 +13,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { toast } from '@/hooks/use-toast';
-import { Bot, Settings, MessageSquare, Plus, Trash2, BookOpen, History, Copy, ExternalLink } from 'lucide-react';
+import { Bot, Settings, MessageSquare, Plus, Trash2, BookOpen, History, Copy, ExternalLink, BarChart3, Clock, PhoneForwarded, Mic, Zap } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
+import { useMemo } from 'react';
 
 export default function WhatsAppAgent() {
   const { companyId } = useAuth();
@@ -174,6 +177,9 @@ export default function WhatsAppAgent() {
             <TabsTrigger value="logs" className="gap-1.5">
               <History className="h-3.5 w-3.5" /> Logs
             </TabsTrigger>
+            <TabsTrigger value="metrics" className="gap-1.5">
+              <BarChart3 className="h-3.5 w-3.5" /> Métricas
+            </TabsTrigger>
           </TabsList>
 
           {/* SETTINGS TAB */}
@@ -269,7 +275,7 @@ export default function WhatsAppAgent() {
                 <div className="bg-muted/60 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
                   <p className="font-semibold text-foreground">🎙️ Suporte a Áudio</p>
                   <ul className="list-disc list-inside space-y-0.5">
-                    <li><strong>Transcrição:</strong> Áudios recebidos são transcritos automaticamente via ElevenLabs STT</li>
+                    <li><strong>Transcrição:</strong> Áudios recebidos são transcritos automaticamente via OpenAI Whisper</li>
                     <li><strong>Resposta em áudio:</strong> Quando ativo, o agente responde com áudio gerado via ElevenLabs TTS</li>
                     <li>Se a geração de áudio falhar, o agente envia a resposta em texto como fallback</li>
                   </ul>
@@ -504,8 +510,160 @@ export default function WhatsAppAgent() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* METRICS TAB */}
+          <TabsContent value="metrics" className="space-y-4">
+            <AgentMetrics agentLogs={agentLogs} conversations={conversations} />
+          </TabsContent>
         </Tabs>
       </div>
     </DashboardLayout>
   );
+}
+
+function AgentMetrics({ agentLogs, conversations }: { agentLogs: any[]; conversations: any[] }) {
+  const metrics = useMemo(() => {
+    const totalConversations = conversations.length;
+    const handoffCount = conversations.filter(c => c.handoff_requested).length;
+    const handoffRate = totalConversations > 0 ? ((handoffCount / totalConversations) * 100).toFixed(1) : '0';
+
+    const audioLogs = agentLogs.filter(l => l.action === 'audio_processed');
+    const audioCount = audioLogs.length;
+
+    const responseLogs = agentLogs.filter(l => l.action === 'response_sent' && l.details?.response_time_ms);
+    const avgResponseTime = responseLogs.length > 0
+      ? Math.round(responseLogs.reduce((sum: number, l: any) => sum + (l.details.response_time_ms || 0), 0) / responseLogs.length)
+      : 0;
+
+    const actionCounts: Record<string, number> = {};
+    agentLogs.forEach(l => {
+      actionCounts[l.action] = (actionCounts[l.action] || 0) + 1;
+    });
+
+    const actionChartData = Object.entries(actionCounts)
+      .map(([action, count]) => ({ action: formatAction(action), count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+
+    // Daily conversations (last 7 days)
+    const dailyMap: Record<string, number> = {};
+    const now = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      dailyMap[d.toISOString().slice(0, 10)] = 0;
+    }
+    conversations.forEach(c => {
+      const day = c.created_at?.slice(0, 10);
+      if (day && day in dailyMap) dailyMap[day]++;
+    });
+    const dailyChartData = Object.entries(dailyMap).map(([date, count]) => ({
+      date: new Date(date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+      count,
+    }));
+
+    return { totalConversations, handoffCount, handoffRate, audioCount, avgResponseTime, actionChartData, dailyChartData, totalActions: agentLogs.length };
+  }, [agentLogs, conversations]);
+
+  const chartConfig = {
+    count: { label: 'Quantidade', color: 'hsl(var(--primary))' },
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="rounded-lg bg-primary/10 p-2"><MessageSquare className="h-4 w-4 text-primary" /></div>
+            <div>
+              <p className="text-2xl font-bold">{metrics.totalConversations}</p>
+              <p className="text-xs text-muted-foreground">Conversas</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="rounded-lg bg-destructive/10 p-2"><PhoneForwarded className="h-4 w-4 text-destructive" /></div>
+            <div>
+              <p className="text-2xl font-bold">{metrics.handoffRate}%</p>
+              <p className="text-xs text-muted-foreground">Taxa Handoff</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="rounded-lg bg-accent p-2"><Mic className="h-4 w-4 text-accent-foreground" /></div>
+            <div>
+              <p className="text-2xl font-bold">{metrics.audioCount}</p>
+              <p className="text-xs text-muted-foreground">Áudios Processados</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="rounded-lg bg-info/10 p-2"><Clock className="h-4 w-4 text-info" /></div>
+            <div>
+              <p className="text-2xl font-bold">{metrics.avgResponseTime > 0 ? `${(metrics.avgResponseTime / 1000).toFixed(1)}s` : '—'}</p>
+              <p className="text-xs text-muted-foreground">Tempo Médio</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Conversas por Dia (7 dias)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={chartConfig} className="h-[250px] w-full">
+              <BarChart data={metrics.dailyChartData}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                <XAxis dataKey="date" className="text-xs" />
+                <YAxis allowDecimals={false} className="text-xs" />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Bar dataKey="count" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Ações do Agente ({metrics.totalActions})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {metrics.actionChartData.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">Nenhuma ação registrada</p>
+            ) : (
+              <ChartContainer config={chartConfig} className="h-[250px] w-full">
+                <BarChart data={metrics.actionChartData} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                  <XAxis type="number" allowDecimals={false} className="text-xs" />
+                  <YAxis type="category" dataKey="action" width={120} className="text-xs" />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="count" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function formatAction(action: string) {
+  const map: Record<string, string> = {
+    response_sent: 'Resposta Enviada',
+    audio_processed: 'Áudio Processado',
+    confirm: 'Confirmação',
+    cancel: 'Cancelamento',
+    reschedule: 'Reagendamento',
+    handoff: 'Handoff',
+    greeting: 'Saudação',
+  };
+  return map[action] || action;
 }

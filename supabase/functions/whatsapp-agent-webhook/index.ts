@@ -20,6 +20,7 @@ Deno.serve(async (req) => {
   );
 
   try {
+    const startTime = Date.now();
     const body = await req.json();
 
     // UAZAPI sends various event formats - extract message data
@@ -188,6 +189,15 @@ Deno.serve(async (req) => {
         },
       });
     }
+
+    // Log response time
+    const responseTimeMs = Date.now() - startTime;
+    await supabase.from("whatsapp_agent_logs").insert({
+      company_id: companyId,
+      conversation_id: conversation.id,
+      action: "response_sent",
+      details: { response_time_ms: responseTimeMs, is_audio: isAudio },
+    });
 
     return new Response(JSON.stringify({ ok: true, response: responseText }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
