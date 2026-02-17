@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
-import { MapPin, Phone, Clock, Scissors, Users, FileText, Image, Mic, Upload, Trash2, Info, ShieldCheck, UserCheck, Mail, Building2, Globe, MapPinned, Briefcase, CreditCard, QrCode, Link } from 'lucide-react';
+import { MapPin, Phone, Clock, Scissors, Users, FileText, Image, Mic, Upload, Trash2, Info, ShieldCheck, UserCheck, Mail, Building2, Globe, MapPinned, Briefcase, CreditCard, QrCode, Link, Sparkles, Loader2 } from 'lucide-react';
 
 interface AgentCapabilitiesProps {
   settings: any;
@@ -23,6 +23,7 @@ export default function AgentCapabilities({ settings, onSettingsChange, onSave, 
   const { companyId } = useAuth();
   const [files, setFiles] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [generatingAI, setGeneratingAI] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -96,6 +97,23 @@ export default function AgentCapabilities({ settings, onSettingsChange, onSave, 
     await supabase.from('whatsapp_agent_files').update({ description }).eq('id', id);
   }
 
+  async function generateWithAI() {
+    setGeneratingAI(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-business-info');
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      if (data?.text) {
+        onSettingsChange({ ...settings, custom_business_info: data.text });
+        toast({ title: 'Texto gerado com IA!', description: 'Revise e ajuste conforme necessário.' });
+      }
+    } catch (err: any) {
+      toast({ title: 'Erro ao gerar', description: err.message || 'Tente novamente', variant: 'destructive' });
+    } finally {
+      setGeneratingAI(false);
+    }
+  }
+
   const u = (field: string, value: any) => onSettingsChange({ ...settings, [field]: value });
 
   const fileTypeIcon = (type: string) => {
@@ -159,8 +177,22 @@ export default function AgentCapabilities({ settings, onSettingsChange, onSave, 
           <Separator />
 
           <div className="space-y-2">
-            <Label className="font-medium text-sm">Informações adicionais do estabelecimento</Label>
-            <p className="text-xs text-muted-foreground">Texto livre com informações extras que o agente pode usar (ex: estacionamento, formas de pagamento, etc.)</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="font-medium text-sm">Informações adicionais do estabelecimento</Label>
+                <p className="text-xs text-muted-foreground">Texto livre com informações extras que o agente pode usar (ex: estacionamento, formas de pagamento, etc.)</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={generateWithAI}
+                disabled={generatingAI}
+                className="flex-shrink-0 gap-1.5"
+              >
+                {generatingAI ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                {generatingAI ? 'Gerando...' : 'Gerar com IA'}
+              </Button>
+            </div>
             <Textarea
               value={settings?.custom_business_info || ''}
               onChange={(e) => u('custom_business_info', e.target.value)}
