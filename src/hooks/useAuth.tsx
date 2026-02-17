@@ -1,5 +1,6 @@
 import { useState, useEffect, createContext, useContext } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { logAudit } from '@/lib/auditLog';
 import type { User, Session } from '@supabase/supabase-js';
 
 interface AuthContextType {
@@ -89,6 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = async () => {
+    logAudit({ companyId, action: 'Logout realizado', category: 'auth', details: { email: user?.email } });
     await supabase.auth.signOut();
   };
 
