@@ -249,31 +249,31 @@ function detectAudioMessage(body: any): { isAudio: boolean; mediaUrl: string | n
 }
 
 function extractPhone(body: any): string | null {
+  const clean = (jid: string) => jid.replace("@s.whatsapp.net", "").replace("@c.us", "").replace(/\D/g, "");
+  
   // Direct fields
   if (body.phone) return String(body.phone);
   if (body.from) return String(body.from);
 
-  // UAZAPI: chat.id contains the remote JID like "rcabfb84df806a4"
-  // but the actual phone might be in key.remoteJid
-  if (body.key?.remoteJid) {
-    return body.key.remoteJid.replace("@s.whatsapp.net", "").replace("@c.us", "");
+  // UAZAPI: message.sender or message.chatid contain the JID
+  const msg = body.message;
+  if (msg && typeof msg === "object") {
+    if (typeof msg.sender === "string" && msg.sender.includes("@")) return clean(msg.sender);
+    if (typeof msg.chatid === "string" && msg.chatid.includes("@")) return clean(msg.chatid);
+    // sender_pn (phone number directly)
+    if (typeof msg.sender_pn === "string" && msg.sender_pn.trim()) return msg.sender_pn.replace(/\D/g, "");
   }
 
-  // UAZAPI: data.key.remoteJid
-  if (body.data?.key?.remoteJid) {
-    return body.data.key.remoteJid.replace("@s.whatsapp.net", "").replace("@c.us", "");
-  }
+  // UAZAPI: key.remoteJid
+  if (body.key?.remoteJid) return clean(body.key.remoteJid);
+  if (body.data?.key?.remoteJid) return clean(body.data.key.remoteJid);
 
-  // UAZAPI: chat.id might be internal, but chat.jid or chat.phone
+  // UAZAPI: chat.phone or chat.jid
   if (body.chat?.phone) return String(body.chat.phone);
-  if (body.chat?.jid) {
-    return body.chat.jid.replace("@s.whatsapp.net", "").replace("@c.us", "");
-  }
+  if (body.chat?.jid) return clean(body.chat.jid);
 
   // UAZAPI: remoteJid at top level
-  if (body.remoteJid) {
-    return body.remoteJid.replace("@s.whatsapp.net", "").replace("@c.us", "");
-  }
+  if (body.remoteJid) return clean(body.remoteJid);
 
   // data.from
   if (body.data?.from) return String(body.data.from);
@@ -340,8 +340,11 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Extract event type from UAZAPI payload
+    const eventType = body.EventType || body.event_type || body.type || null;
+
     // Log the EventType and key structure for debugging
-    log("🔵 EventType:", body.EventType, "keys:", Object.keys(body).join(","));
+    log("🔵 EventType:", eventType, "keys:", Object.keys(body).join(","));
     if (body.key) log("🔵 key:", JSON.stringify(body.key));
     if (body.message) log("🔵 message type:", typeof body.message, "keys:", body.message && typeof body.message === "object" ? Object.keys(body.message).join(",") : "N/A");
 
