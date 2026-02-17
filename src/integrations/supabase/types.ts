@@ -1472,6 +1472,7 @@ export type Database = {
       whatsapp_agent_settings: {
         Row: {
           ai_model: string | null
+          auto_react_enabled: boolean | null
           can_handle_anamnesis: boolean | null
           can_send_audio: boolean | null
           can_send_files: boolean | null
@@ -1510,12 +1511,19 @@ export type Database = {
           pix_key: string | null
           pix_name: string | null
           preferred_provider: string | null
+          react_on_booking: string | null
+          react_on_cancel: string | null
+          react_on_confirm: string | null
+          react_on_greeting: string | null
+          react_on_thanks: string | null
+          reaction_triggers: Json | null
           respond_audio_with_audio: boolean | null
           timezone: string | null
           updated_at: string
         }
         Insert: {
           ai_model?: string | null
+          auto_react_enabled?: boolean | null
           can_handle_anamnesis?: boolean | null
           can_send_audio?: boolean | null
           can_send_files?: boolean | null
@@ -1554,12 +1562,19 @@ export type Database = {
           pix_key?: string | null
           pix_name?: string | null
           preferred_provider?: string | null
+          react_on_booking?: string | null
+          react_on_cancel?: string | null
+          react_on_confirm?: string | null
+          react_on_greeting?: string | null
+          react_on_thanks?: string | null
+          reaction_triggers?: Json | null
           respond_audio_with_audio?: boolean | null
           timezone?: string | null
           updated_at?: string
         }
         Update: {
           ai_model?: string | null
+          auto_react_enabled?: boolean | null
           can_handle_anamnesis?: boolean | null
           can_send_audio?: boolean | null
           can_send_files?: boolean | null
@@ -1598,6 +1613,12 @@ export type Database = {
           pix_key?: string | null
           pix_name?: string | null
           preferred_provider?: string | null
+          react_on_booking?: string | null
+          react_on_cancel?: string | null
+          react_on_confirm?: string | null
+          react_on_greeting?: string | null
+          react_on_thanks?: string | null
+          reaction_triggers?: Json | null
           respond_audio_with_audio?: boolean | null
           timezone?: string | null
           updated_at?: string
@@ -1767,33 +1788,39 @@ export type Database = {
           content: string | null
           conversation_id: string
           created_at: string
+          delivery_status: string | null
           direction: string
           id: string
           media_url: string | null
           message_type: string
           metadata: Json | null
+          wa_message_id: string | null
         }
         Insert: {
           company_id: string
           content?: string | null
           conversation_id: string
           created_at?: string
+          delivery_status?: string | null
           direction?: string
           id?: string
           media_url?: string | null
           message_type?: string
           metadata?: Json | null
+          wa_message_id?: string | null
         }
         Update: {
           company_id?: string
           content?: string | null
           conversation_id?: string
           created_at?: string
+          delivery_status?: string | null
           direction?: string
           id?: string
           media_url?: string | null
           message_type?: string
           metadata?: Json | null
+          wa_message_id?: string | null
         }
         Relationships: [
           {
