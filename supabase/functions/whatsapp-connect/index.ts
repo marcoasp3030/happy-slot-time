@@ -251,13 +251,11 @@ Deno.serve(async (req) => {
 
             await callUazapi(
               baseUrl,
-              "/webhook/set",
+              "/webhook",
               "POST",
               { name: "token", value: settings.token },
               {
-                url: webhookUrl,
-                enabled: true,
-                events: ["messages"],
+                webhookURL: webhookUrl,
               }
             );
 
