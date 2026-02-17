@@ -5,7 +5,7 @@ import { useRole } from '@/hooks/useRole';
 import {
   LayoutDashboard, Users, Clock, Calendar,
   Palette, MessageSquare, CreditCard, Menu, X, LogOut,
-  ChevronRight, Bell, Shield, Search, ClipboardList, Layers, ScrollText,
+  ChevronRight, Bell, Shield, Search, ClipboardList, Layers, ScrollText, Bot,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -25,6 +25,7 @@ const navItems = [
 const settingsItems = [
   { title: 'Aparência', icon: Palette, path: '/aparencia' },
   { title: 'WhatsApp', icon: MessageSquare, path: '/whatsapp' },
+  { title: 'Agente IA', icon: Bot, path: '/agente-ia' },
   { title: 'Google Agenda', icon: Calendar, path: '/google-calendar' },
   { title: 'LGPD & Privacidade', icon: Shield, path: '/privacidade' },
   { title: 'Logs & Auditoria', icon: ScrollText, path: '/logs' },
