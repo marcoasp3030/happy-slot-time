@@ -23,21 +23,49 @@ function extractButtonResponse(body: any): { buttonId: string; buttonText: strin
       let btnText = rawTextStr;
       if (!rawTextStr || rawTextStr === trimmedId) {
         // Extract last meaningful segment from semantic ID as the display text
-        // e.g. "notif_canceled_sim" → "sim", "svc_corte_masc" → "corte masc"
+        // IDs are generated with: text.toLowerCase().replace(/[^a-z0-9]/g, '_')
+        // So "Não" becomes "n_o", "Sim" becomes "sim"
+        // We maintain a map of common button labels for accurate recovery
+        const knownLabels: Record<string, string> = {
+          "sim": "Sim",
+          "n_o": "Não",
+          "cancelar": "Cancelar",
+          "confirmar": "Confirmar",
+          "remarcar": "Remarcar",
+          "reagendar": "Reagendar",
+          "ok": "Ok",
+          "voltar": "Voltar",
+          "pr_ximo": "Próximo",
+          "hor_rio": "Horário",
+          "hor_rios": "Horários",
+          "servi_os": "Serviços",
+          "servi_o": "Serviço",
+          "informa__es": "Informações",
+          "endere_o": "Endereço",
+          "obrigado": "Obrigado",
+          "obrigada": "Obrigada",
+        };
+
         const parts = trimmedId.split("_");
-        // Skip known prefixes (notif, svc, slot, btn)
         const prefixes = ["notif", "svc", "slot", "btn"];
-        let labelParts = parts;
+        let labelParts = [...parts];
         // Remove prefix
-        if (prefixes.includes(parts[0])) labelParts = parts.slice(1);
-        // For notif_ IDs, also skip the status (canceled, confirmed, etc.)
+        if (prefixes.includes(parts[0])) labelParts = labelParts.slice(1);
+        // For notif_ IDs, also skip the status
         if (parts[0] === "notif" && labelParts.length > 1) {
           const statuses = ["canceled", "confirmed", "pending", "rescheduled", "completed"];
           if (statuses.includes(labelParts[0])) labelParts = labelParts.slice(1);
         }
-        btnText = labelParts.join(" ") || trimmedId;
-        // Capitalize first letter
-        btnText = btnText.charAt(0).toUpperCase() + btnText.slice(1);
+        
+        // Try to match the remaining part against known labels
+        const labelKey = labelParts.join("_");
+        if (knownLabels[labelKey]) {
+          btnText = knownLabels[labelKey];
+        } else {
+          // Fallback: join parts with spaces and capitalize
+          btnText = labelParts.join(" ") || trimmedId;
+          btnText = btnText.charAt(0).toUpperCase() + btnText.slice(1);
+        }
       }
       
       log("🔘 Button/List response detected! id:", trimmedId, "text:", btnText);
