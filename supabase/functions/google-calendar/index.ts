@@ -333,6 +333,121 @@ Deno.serve(async (req) => {
       });
     }
 
+    // === SYNC APPOINTMENT (internal, called by DB trigger) ===
+    if (action === "sync-appointment" && req.method === "POST") {
+      const body = await req.json();
+      const { appointmentId, companyId } = body;
+
+      if (!appointmentId || !companyId) {
+        return new Response(JSON.stringify({ error: "appointmentId and companyId required" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const supabase = getSupabaseAdmin();
+
+      // Check if company has Google Calendar connected
+      const { data: tokenRow } = await supabase
+        .from("google_calendar_tokens")
+        .select("id")
+        .eq("company_id", companyId)
+        .single();
+
+      if (!tokenRow) {
+        return new Response(JSON.stringify({ skipped: true, reason: "Google Calendar not connected" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Fetch appointment with service name
+      const { data: appointment } = await supabase
+        .from("appointments")
+        .select("*, services(name)")
+        .eq("id", appointmentId)
+        .single();
+
+      if (!appointment) {
+        return new Response(JSON.stringify({ error: "Appointment not found" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (appointment.google_calendar_event_id) {
+        return new Response(JSON.stringify({ skipped: true, reason: "Already synced" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const accessToken = await getValidAccessToken(companyId);
+      const serviceName = (appointment as any).services?.name || "Agendamento";
+      const summary = `${serviceName} - ${appointment.client_name}`;
+      const description = `Cliente: ${appointment.client_name}\nTelefone: ${appointment.client_phone}${appointment.notes ? `\nObs: ${appointment.notes}` : ""}`;
+
+      const startDateTime = `${appointment.appointment_date}T${appointment.start_time}`;
+      const endDateTime = `${appointment.appointment_date}T${appointment.end_time}`;
+
+      const eventRes = await fetch(`${GOOGLE_CALENDAR_API}/calendars/primary/events`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          summary,
+          description,
+          start: { dateTime: startDateTime, timeZone: "America/Sao_Paulo" },
+          end: { dateTime: endDateTime, timeZone: "America/Sao_Paulo" },
+        }),
+      });
+
+      const event = await eventRes.json();
+      if (!eventRes.ok) {
+        console.error("Failed to create event:", event);
+        throw new Error(`Google Calendar API error: ${eventRes.status}`);
+      }
+
+      // Save event ID
+      await supabase
+        .from("appointments")
+        .update({ google_calendar_event_id: event.id })
+        .eq("id", appointmentId);
+
+      return new Response(JSON.stringify({ eventId: event.id }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // === DELETE EVENT INTERNAL (called by DB trigger on cancel) ===
+    if (action === "delete-event-internal" && req.method === "POST") {
+      const body = await req.json();
+      const { eventId, companyId } = body;
+
+      if (!eventId || !companyId) {
+        return new Response(JSON.stringify({ error: "eventId and companyId required" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      try {
+        const accessToken = await getValidAccessToken(companyId);
+        const res = await fetch(`${GOOGLE_CALENDAR_API}/calendars/primary/events/${eventId}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+
+        if (!res.ok && res.status !== 404) {
+          const errBody = await res.text();
+          console.error("Failed to delete event:", errBody);
+        }
+      } catch (err) {
+        console.error("Error deleting calendar event:", err);
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     return new Response(JSON.stringify({ error: "Not found" }), {
       status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
