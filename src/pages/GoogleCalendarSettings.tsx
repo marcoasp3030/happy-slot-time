@@ -6,7 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
-import { Calendar, CheckCircle2, Loader2, Unlink, ExternalLink, Users, Building2 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Calendar, CheckCircle2, Loader2, Unlink, ExternalLink, Users, Building2, Video } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
@@ -37,6 +38,8 @@ export default function GoogleCalendarSettings() {
   const [savingCalendar, setSavingCalendar] = useState(false);
   const [syncMode, setSyncMode] = useState<string>('company');
   const [savingSyncMode, setSavingSyncMode] = useState(false);
+  const [generateMeetLink, setGenerateMeetLink] = useState(false);
+  const [savingMeetLink, setSavingMeetLink] = useState(false);
   const [staffStatuses, setStaffStatuses] = useState<StaffCalendarStatus[]>([]);
   const [loadingStaff, setLoadingStaff] = useState(false);
 
@@ -66,14 +69,15 @@ export default function GoogleCalendarSettings() {
     }
   };
 
-  const fetchSyncMode = async () => {
+  const fetchSettings = async () => {
     if (!companyId) return;
     const { data } = await supabase
       .from('company_settings')
-      .select('google_calendar_sync_mode')
+      .select('google_calendar_sync_mode, generate_meet_link')
       .eq('company_id', companyId)
       .single();
     setSyncMode(data?.google_calendar_sync_mode || 'company');
+    setGenerateMeetLink(data?.generate_meet_link || false);
   };
 
   const fetchStaffStatuses = async () => {
@@ -113,7 +117,7 @@ export default function GoogleCalendarSettings() {
   useEffect(() => {
     if (session) {
       fetchStatus();
-      fetchSyncMode();
+      fetchSettings();
     }
   }, [session, companyId]);
 
@@ -195,6 +199,22 @@ export default function GoogleCalendarSettings() {
     }
   };
 
+  const handleMeetLinkToggle = async (enabled: boolean) => {
+    setSavingMeetLink(true);
+    try {
+      await supabase
+        .from('company_settings')
+        .update({ generate_meet_link: enabled })
+        .eq('company_id', companyId);
+      setGenerateMeetLink(enabled);
+      toast({ title: 'Salvo', description: enabled ? 'Link do Google Meet será gerado nos agendamentos.' : 'Link do Google Meet desativado.' });
+    } catch (err) {
+      toast({ title: 'Erro', description: 'Não foi possível salvar.', variant: 'destructive' });
+    } finally {
+      setSavingMeetLink(false);
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="max-w-2xl mx-auto space-y-6">
@@ -239,6 +259,35 @@ export default function GoogleCalendarSettings() {
                 </Label>
               </div>
             </RadioGroup>
+          </CardContent>
+        </Card>
+
+        {/* Google Meet Card */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <Video className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">Google Meet</CardTitle>
+                  <CardDescription>Gere links de reunião online automaticamente</CardDescription>
+                </div>
+              </div>
+              <Switch
+                checked={generateMeetLink}
+                onCheckedChange={handleMeetLinkToggle}
+                disabled={savingMeetLink}
+              />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              {generateMeetLink
+                ? 'Um link do Google Meet será criado automaticamente para cada agendamento e enviado ao cliente na confirmação.'
+                : 'Ative para gerar links de videoconferência automaticamente nos agendamentos. Ideal para consultas e atendimentos online.'}
+            </p>
           </CardContent>
         </Card>
 

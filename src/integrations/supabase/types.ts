@@ -54,6 +54,7 @@ export type Database = {
           end_time: string
           google_calendar_event_id: string | null
           id: string
+          meet_link: string | null
           notes: string | null
           service_id: string | null
           staff_id: string | null
@@ -70,6 +71,7 @@ export type Database = {
           end_time: string
           google_calendar_event_id?: string | null
           id?: string
+          meet_link?: string | null
           notes?: string | null
           service_id?: string | null
           staff_id?: string | null
@@ -86,6 +88,7 @@ export type Database = {
           end_time?: string
           google_calendar_event_id?: string | null
           id?: string
+          meet_link?: string | null
           notes?: string | null
           service_id?: string | null
           staff_id?: string | null
@@ -237,6 +240,7 @@ export type Database = {
         Row: {
           company_id: string
           created_at: string
+          generate_meet_link: boolean
           google_calendar_sync_mode: string
           id: string
           max_capacity_per_slot: number
@@ -246,6 +250,7 @@ export type Database = {
         Insert: {
           company_id: string
           created_at?: string
+          generate_meet_link?: boolean
           google_calendar_sync_mode?: string
           id?: string
           max_capacity_per_slot?: number
@@ -255,6 +260,7 @@ export type Database = {
         Update: {
           company_id?: string
           created_at?: string
+          generate_meet_link?: boolean
           google_calendar_sync_mode?: string
           id?: string
           max_capacity_per_slot?: number
