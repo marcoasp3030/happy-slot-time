@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
     // Fetch message template
     const { data: tpl } = await supabase
       .from("message_templates")
-      .select("template")
+      .select("template, buttons, send_notification")
       .eq("company_id", apt.company_id)
       .eq("type", templateType)
       .eq("active", true)
@@ -93,6 +93,14 @@ Deno.serve(async (req) => {
     if (!tpl?.template) {
       return new Response(
         JSON.stringify({ success: true, sent: false, reason: "No active template found for " + templateType }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Check if merchant wants to send this notification
+    if (tpl.send_notification === false) {
+      return new Response(
+        JSON.stringify({ success: true, sent: false, reason: "Notification disabled by merchant for " + templateType }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -115,15 +123,39 @@ Deno.serve(async (req) => {
 
     // Send via UAZAPI
     const targetPhone = apt.client_phone.replace(/\D/g, "");
-    const url = `${whatsappSettings.base_url.replace(/\/$/, "")}/send/text`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        token: whatsappSettings.token,
-      },
-      body: JSON.stringify({ number: targetPhone, text: message }),
-    });
+    const baseUrl = whatsappSettings.base_url.replace(/\/$/, "");
+    const buttons: Array<{ id: string; text: string }> = Array.isArray(tpl.buttons) ? tpl.buttons.filter((b: any) => b?.text) : [];
+
+    let res: Response;
+
+    if (buttons.length > 0) {
+      // Send with interactive buttons via /send/menu
+      const menuBody = {
+        number: targetPhone,
+        menu: {
+          header: "",
+          body: message,
+          footer: "",
+          buttons: buttons.map((b: any) => ({
+            type: "REPLY",
+            id: b.id || `btn_${b.text.replace(/\s/g, '_')}`,
+            title: b.text.substring(0, 20),
+          })),
+        },
+      };
+      res = await fetch(`${baseUrl}/send/menu`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", token: whatsappSettings.token },
+        body: JSON.stringify(menuBody),
+      });
+    } else {
+      // Send plain text
+      res = await fetch(`${baseUrl}/send/text`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", token: whatsappSettings.token },
+        body: JSON.stringify({ number: targetPhone, text: message }),
+      });
+    }
 
     const logType = new_status === "confirmed" ? "confirmation" : new_status === "canceled" ? "cancellation" : "reschedule";
 
