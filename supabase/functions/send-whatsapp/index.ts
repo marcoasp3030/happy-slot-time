@@ -23,9 +23,46 @@ Deno.serve(async (req) => {
 
   try {
     const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const body = await req.json();
+    const raw = await req.text();
+    let body: any;
+    try { body = JSON.parse(raw); } catch { return new Response(JSON.stringify({ ok: true, skipped: "bad_json" }), { headers: jsonH }); }
 
-    // ─── Agent processing route ───
+    // ─── Detect UAZAPI webhook payload (no "action" or "type" field, has event/data/message structure) ───
+    const uazapiCompanyId = new URL(req.url).searchParams.get("company_id");
+    const isUazapiWebhook = uazapiCompanyId && !body.type && !body.action && (
+      body.event || body.data || (body.phone && body.message && !body.appointment_id)
+    );
+
+    if (isUazapiWebhook) {
+      console.log("[send-whatsapp] 📩 UAZAPI webhook detected, cid:", uazapiCompanyId);
+      console.log("[send-whatsapp] payload:", raw.substring(0, 400));
+
+      // Extract phone and message from various UAZAPI payload formats
+      const phone = body.phone || body.from || body.data?.from || 
+        body.data?.key?.remoteJid?.replace("@s.whatsapp.net", "") || null;
+      const msg = body.message || body.text || body.data?.message?.conversation || 
+        body.data?.message?.extendedTextMessage?.text || null;
+
+      if (!phone || !msg) {
+        console.log("[send-whatsapp] no phone/msg, skipping");
+        return new Response(JSON.stringify({ ok: true, skipped: "no_msg" }), { headers: jsonH });
+      }
+
+      console.log("[send-whatsapp] phone:", phone, "msg:", msg.substring(0, 80));
+      const t0 = Date.now();
+      const result = await handleAgent(supabase, uazapiCompanyId, phone, msg);
+      
+      await supabase.from("whatsapp_agent_logs").insert({
+        company_id: uazapiCompanyId,
+        conversation_id: result.conversation_id || null,
+        action: "response_sent",
+        details: { response_time_ms: Date.now() - t0, is_audio: false },
+      }).then(() => {}).catch(() => {});
+
+      return new Response(JSON.stringify({ ok: true, ...result }), { headers: jsonH });
+    }
+
+    // ─── Agent processing route (internal call) ───
     if (body.action === "agent-process") {
       const result = await handleAgent(supabase, body.company_id, body.phone, body.message);
       return new Response(JSON.stringify(result), { headers: jsonH, status: result.error ? 500 : 200 });
