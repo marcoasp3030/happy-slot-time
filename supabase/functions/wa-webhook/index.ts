@@ -27,23 +27,80 @@ function extractButtonResponse(body: any): { buttonId: string; buttonText: strin
         // So "Não" becomes "n_o", "Sim" becomes "sim"
         // We maintain a map of common button labels for accurate recovery
         const knownLabels: Record<string, string> = {
+          // Respostas básicas
           "sim": "Sim",
           "n_o": "Não",
+          "ok": "Ok",
+          "talvez": "Talvez",
+          // Ações de agendamento
+          "agendar": "Agendar",
           "cancelar": "Cancelar",
           "confirmar": "Confirmar",
           "remarcar": "Remarcar",
           "reagendar": "Reagendar",
-          "ok": "Ok",
+          "desmarcar": "Desmarcar",
+          // Navegação
           "voltar": "Voltar",
           "pr_ximo": "Próximo",
+          "anterior": "Anterior",
+          "ver_mais": "Ver mais",
+          "menu": "Menu",
+          "inicio": "Início",
+          "in_cio": "Início",
+          "sair": "Sair",
+          "fechar": "Fechar",
+          // Status
+          "dispon_vel": "Disponível",
+          "indispon_vel": "Indisponível",
+          "aberto": "Aberto",
+          "fechado": "Fechado",
+          "ativo": "Ativo",
+          "inativo": "Inativo",
+          // Termos de serviço/negócio
           "hor_rio": "Horário",
           "hor_rios": "Horários",
           "servi_os": "Serviços",
           "servi_o": "Serviço",
           "informa__es": "Informações",
+          "informa__o": "Informação",
           "endere_o": "Endereço",
+          "pre_o": "Preço",
+          "pre_os": "Preços",
+          "promo__o": "Promoção",
+          "promo__es": "Promoções",
+          "pagamento": "Pagamento",
+          "pix": "Pix",
+          "cart_o": "Cartão",
+          "dinheiro": "Dinheiro",
+          // Profissionais
+          "profissional": "Profissional",
+          "profissionais": "Profissionais",
+          "qualquer_um": "Qualquer um",
+          "sem_prefer_ncia": "Sem preferência",
+          // Cortesias
           "obrigado": "Obrigado",
           "obrigada": "Obrigada",
+          // Dias da semana
+          "segunda": "Segunda",
+          "ter_a": "Terça",
+          "quarta": "Quarta",
+          "quinta": "Quinta",
+          "sexta": "Sexta",
+          "s_bado": "Sábado",
+          "domingo": "Domingo",
+          // Períodos
+          "manh_": "Manhã",
+          "tarde": "Tarde",
+          "noite": "Noite",
+          // Outros
+          "ajuda": "Ajuda",
+          "atendente": "Atendente",
+          "humano": "Humano",
+          "falar_com_humano": "Falar com humano",
+          "outro": "Outro",
+          "outros": "Outros",
+          "outra_data": "Outra data",
+          "outro_hor_rio": "Outro horário",
         };
 
         const parts = trimmedId.split("_");
