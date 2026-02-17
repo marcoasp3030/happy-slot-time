@@ -8,7 +8,28 @@ function log(...args: any[]) {
   console.log("[wa-webhook]", new Date().toISOString(), ...args);
 }
 
+function extractButtonResponse(body: any): { buttonId: string; buttonText: string } | null {
+  const msg = body.message;
+  if (msg && typeof msg === "object") {
+    // UAZAPI: buttonOrListid contains the ID from the button/list choice
+    const btnId = msg.buttonOrListid || msg.buttonId || msg.listResponseId || msg.selectedButtonId;
+    if (btnId && typeof btnId === "string" && btnId.trim()) {
+      // The text of the selected option may be in msg.text, msg.content.text, or msg.body
+      const btnText = msg.text || (typeof msg.content === "object" ? msg.content?.text : (typeof msg.content === "string" ? msg.content : null)) || msg.body || btnId;
+      log("🔘 Button/List response detected! id:", btnId, "text:", btnText);
+      return { buttonId: btnId.trim(), buttonText: typeof btnText === "string" ? btnText.trim() : btnId.trim() };
+    }
+  }
+  return null;
+}
+
 function extractMessageText(body: any): string | null {
+  // Check for button/list response first — use the button text as the message
+  const btnResponse = extractButtonResponse(body);
+  if (btnResponse) {
+    return btnResponse.buttonText;
+  }
+
   // Direct string fields
   if (typeof body.message === "string") return body.message;
   if (typeof body.text === "string") return body.text;
@@ -240,6 +261,14 @@ Deno.serve(async (req) => {
       phone,
       message: msg || "[áudio]",
     };
+
+    // Include button/list response context if present
+    const btnResponse = extractButtonResponse(body);
+    if (btnResponse) {
+      forwardBody.button_response_id = btnResponse.buttonId;
+      forwardBody.button_response_text = btnResponse.buttonText;
+      log("🔘 Forwarding button response: id:", btnResponse.buttonId, "text:", btnResponse.buttonText);
+    }
 
     if (audioInfo.isAudio) {
       forwardBody.is_audio = true;
