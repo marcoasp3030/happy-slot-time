@@ -340,11 +340,11 @@ Deno.serve(async (req) => {
     // Extract company_id from PATH: /wa-webhook/{company_id}
     const pathParts = url.pathname.split("/").filter(Boolean);
     const lastPart = pathParts[pathParts.length - 1];
-    const companyId = (lastPart && lastPart !== "wa-webhook") 
+    let companyId = (lastPart && lastPart !== "wa-webhook") 
       ? lastPart 
       : url.searchParams.get("company_id");
 
-    log("🔵 company_id:", companyId, "path:", url.pathname);
+    log("🔵 company_id (from URL):", companyId, "path:", url.pathname);
 
     if (!companyId) {
       return new Response(
@@ -362,6 +362,48 @@ Deno.serve(async (req) => {
         JSON.stringify({ ok: true, skipped: "bad_json" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // ── Resolve correct company_id from UAZAPI instanceName/token ──
+    // The global webhook may route all messages to a single URL, but the payload
+    // contains the instanceName which maps to the actual owning company.
+    const payloadInstanceName = body.instanceName || body.instance_name || null;
+    const payloadToken = body.token || null;
+    if (payloadInstanceName || payloadToken) {
+      try {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
+        const sb = createClient(supabaseUrl, serviceKey);
+        
+        let resolvedCompanyId: string | null = null;
+        
+        // Try by instance_id first (most reliable)
+        if (payloadInstanceName) {
+          const { data } = await sb.from("whatsapp_settings")
+            .select("company_id")
+            .eq("instance_id", payloadInstanceName)
+            .single();
+          if (data?.company_id) resolvedCompanyId = data.company_id;
+        }
+        
+        // Fallback: try by token
+        if (!resolvedCompanyId && payloadToken) {
+          const { data } = await sb.from("whatsapp_settings")
+            .select("company_id")
+            .eq("token", payloadToken)
+            .single();
+          if (data?.company_id) resolvedCompanyId = data.company_id;
+        }
+        
+        if (resolvedCompanyId && resolvedCompanyId !== companyId) {
+          log("🔄 Company ID resolved from instance:", payloadInstanceName, "URL:", companyId, "→ Actual:", resolvedCompanyId);
+          companyId = resolvedCompanyId;
+        }
+      } catch (resolveErr) {
+        log("⚠️ Could not resolve company from instance:", resolveErr);
+        // Continue with URL-based company_id as fallback
+      }
     }
 
     // Extract event type from UAZAPI payload
