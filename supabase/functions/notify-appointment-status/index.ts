@@ -126,23 +126,23 @@ Deno.serve(async (req) => {
     const baseUrl = whatsappSettings.base_url.replace(/\/$/, "");
     const buttons: Array<{ id: string; text: string }> = Array.isArray(tpl.buttons) ? tpl.buttons.filter((b: any) => b?.text) : [];
 
+    console.log("[notify] Sending to:", targetPhone, "status:", new_status, "buttons:", buttons.length);
+
     let res: Response;
 
     if (buttons.length > 0) {
-      // Send with interactive buttons via /send/menu
+      // Send with interactive buttons via /send/menu (UAZAPI v2 format)
       const menuBody = {
         number: targetPhone,
-        menu: {
-          header: "",
-          body: message,
-          footer: "",
-          buttons: buttons.map((b: any) => ({
-            type: "REPLY",
-            id: b.id || `btn_${b.text.replace(/\s/g, '_')}`,
-            title: b.text.substring(0, 20),
-          })),
-        },
+        type: "button",
+        text: message,
+        choices: buttons.map((b: any) => ({
+          buttonId: b.id || `btn_${b.text.replace(/\s/g, '_')}`,
+          buttonText: { displayText: b.text.substring(0, 20) },
+          type: 1,
+        })),
       };
+      console.log("[notify] Menu body:", JSON.stringify(menuBody));
       res = await fetch(`${baseUrl}/send/menu`, {
         method: "POST",
         headers: { "Content-Type": "application/json", token: whatsappSettings.token },
@@ -150,6 +150,7 @@ Deno.serve(async (req) => {
       });
     } else {
       // Send plain text
+      console.log("[notify] Text body:", JSON.stringify({ number: targetPhone, text: message }));
       res = await fetch(`${baseUrl}/send/text`, {
         method: "POST",
         headers: { "Content-Type": "application/json", token: whatsappSettings.token },
@@ -157,10 +158,12 @@ Deno.serve(async (req) => {
       });
     }
 
+    const resText = await res.text();
+    console.log("[notify] UAZAPI response:", res.status, resText.substring(0, 300));
+
     const logType = new_status === "confirmed" ? "confirmation" : new_status === "canceled" ? "cancellation" : "reschedule";
 
     if (!res.ok) {
-      const errText = await res.text();
       // Log error
       await supabase.from("whatsapp_logs").insert({
         company_id: apt.company_id,
@@ -168,10 +171,10 @@ Deno.serve(async (req) => {
         phone: targetPhone,
         type: logType,
         status: "error",
-        error: `UAZAPI ${res.status}: ${errText}`,
+        error: `UAZAPI ${res.status}: ${resText.substring(0, 200)}`,
       });
       return new Response(
-        JSON.stringify({ success: false, error: `UAZAPI error: ${res.status}` }),
+        JSON.stringify({ success: false, error: `UAZAPI error: ${res.status}`, details: resText.substring(0, 200) }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
