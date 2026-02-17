@@ -1,0 +1,1 @@
+ALTER TABLE public.whatsapp_agent_settings ADD COLUMN timezone text DEFAULT 'America/Sao_Paulo';

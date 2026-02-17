@@ -1297,6 +1297,7 @@ export type Database = {
           max_reschedule_suggestions: number | null
           openai_api_key: string | null
           respond_audio_with_audio: boolean | null
+          timezone: string | null
           updated_at: string
         }
         Insert: {
@@ -1313,6 +1314,7 @@ export type Database = {
           max_reschedule_suggestions?: number | null
           openai_api_key?: string | null
           respond_audio_with_audio?: boolean | null
+          timezone?: string | null
           updated_at?: string
         }
         Update: {
@@ -1329,6 +1331,7 @@ export type Database = {
           max_reschedule_suggestions?: number | null
           openai_api_key?: string | null
           respond_audio_with_audio?: boolean | null
+          timezone?: string | null
           updated_at?: string
         }
         Relationships: [
