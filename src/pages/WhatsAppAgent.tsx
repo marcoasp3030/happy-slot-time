@@ -318,19 +318,46 @@ export default function WhatsAppAgent() {
                   </div>
 
                   {settings?.respond_audio_with_audio && (
-                    <div className="space-y-2 pl-4 border-l-2 border-primary/20">
-                      <Label>Voice ID (ElevenLabs)</Label>
-                      <Input
-                        value={settings?.elevenlabs_voice_id || ''}
-                        onChange={(e) => setSettings({ ...settings, elevenlabs_voice_id: e.target.value })}
-                        placeholder="Ex: EXAVITQu4vr4xnSDxMaL (Sarah - padrão)"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Encontre vozes em{' '}
-                        <a href="https://elevenlabs.io/voice-library" target="_blank" rel="noopener noreferrer" className="text-primary underline">
-                          elevenlabs.io/voice-library
-                        </a>
-                      </p>
+                    <div className="space-y-3 pl-4 border-l-2 border-primary/20">
+                      <div className="space-y-2">
+                        <Label>Voz do Agente (ElevenLabs)</Label>
+                        <select
+                          value={settings?.elevenlabs_voice_id || 'EXAVITQu4vr4xnSDxMaL'}
+                          onChange={(e) => setSettings({ ...settings, elevenlabs_voice_id: e.target.value })}
+                          className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        >
+                          <optgroup label="🇧🇷 Recomendadas para Português">
+                            <option value="EXAVITQu4vr4xnSDxMaL">Sarah (Feminina - Padrão)</option>
+                            <option value="FGY2WhTYpPnrIDTdsKH5">Laura (Feminina - Suave)</option>
+                            <option value="XrExE9yKIg1WjnnlVkGX">Matilda (Feminina - Calorosa)</option>
+                            <option value="pFZP5JQG7iQjIQuC4Bku">Lily (Feminina - Jovem)</option>
+                            <option value="Xb7hH8MSUJpSbSDYk0k2">Alice (Feminina - Confiante)</option>
+                            <option value="cgSgspJ2msm6clMCkdW9">Jessica (Feminina - Expressiva)</option>
+                          </optgroup>
+                          <optgroup label="🎙️ Vozes Masculinas">
+                            <option value="CwhRBWXzGAHq8TQ4Fs17">Roger (Masculina - Profissional)</option>
+                            <option value="IKne3meq5aSn9XLyUdCD">Charlie (Masculina - Casual)</option>
+                            <option value="JBFqnCBsd6RMkjVDRZzb">George (Masculina - Britânica)</option>
+                            <option value="N2lVS1w4EtoT3dr4eOWO">Callum (Masculina - Intensa)</option>
+                            <option value="TX3LPaxmHKxFdv7VOQHJ">Liam (Masculina - Articulada)</option>
+                            <option value="onwK4e9ZLuTAKqWW03F9">Daniel (Masculina - Autoritária)</option>
+                            <option value="nPczCjzI2devNBz1zQrb">Brian (Masculina - Narrador)</option>
+                            <option value="cjVigY5qzO86Huf0OWal">Eric (Masculina - Amigável)</option>
+                            <option value="pqHfZKP75CvOlQylNhV4">Bill (Masculina - Documentário)</option>
+                            <option value="iP95p4xoKVk53GoZ742B">Chris (Masculina - Casual)</option>
+                            <option value="bIHbv24MWmeRgasZH58o">Will (Masculina - Amigável)</option>
+                          </optgroup>
+                          <optgroup label="✨ Vozes Especiais">
+                            <option value="SAz9YHcvj6GT2YYXdXww">River (Não-binária)</option>
+                          </optgroup>
+                        </select>
+                        <p className="text-xs text-muted-foreground">
+                          Todas as vozes suportam português via modelo multilingual.{' '}
+                          <a href="https://elevenlabs.io/voice-library" target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                            Explorar mais vozes
+                          </a>
+                        </p>
+                      </div>
                     </div>
                   )}
                 </div>
