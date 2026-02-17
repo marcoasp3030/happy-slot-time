@@ -330,9 +330,28 @@ Deno.serve(async (req) => {
         );
       }
 
+    // ============================================================
+    // ACTION: check-webhook — Check current webhook config via GET /webhook
+    // ============================================================
+    } else if (action === "check-webhook") {
+      if (!settings.token) {
+        return jsonResponse({ error: "Token não configurado." }, 400);
+      }
+      try {
+        const data = await callUazapi(
+          baseUrl,
+          "/webhook",
+          "GET",
+          { name: "token", value: settings.token }
+        );
+        return jsonResponse({ success: true, webhook: data });
+      } catch (e: any) {
+        return jsonResponse({ error: `UAZAPI error`, details: e?.data || {} }, e?.status || 500);
+      }
+
     } else {
       return jsonResponse(
-        { error: "Invalid action. Use ?action=connect, status, or disconnect" },
+        { error: "Invalid action. Use ?action=connect, status, disconnect, or check-webhook" },
         400
       );
     }
