@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import {
   LayoutDashboard, Building2, Users, CreditCard, BarChart3, Bell, Calendar,
-  Menu, X, LogOut, ChevronRight, Shield, ArrowLeft,
+  Menu, X, LogOut, ChevronRight, Shield, ArrowLeft, Settings,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -16,6 +16,7 @@ const adminNavItems = [
   { title: 'Usuários', icon: Users, path: '/admin/usuarios' },
   { title: 'Notificações', icon: Bell, path: '/admin/notificacoes' },
   { title: 'Google Calendar', icon: Calendar, path: '/admin/google-calendar' },
+  { title: 'Plataforma', icon: Settings, path: '/admin/plataforma' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
