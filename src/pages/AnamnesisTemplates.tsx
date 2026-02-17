@@ -17,6 +17,9 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Plus, Trash2, GripVertical, ClipboardList, Pencil, FileText, ArrowLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface AnamnesisType {
   id: string;
@@ -36,6 +39,51 @@ interface Template {
   sort_order: number;
   required: boolean;
   active: boolean;
+}
+
+// Sortable field card component
+function SortableFieldCard({ template, index, fieldTypeLabels, onToggleActive, onEdit, onDelete }: {
+  template: Template; index: number; fieldTypeLabels: Record<string, string>;
+  onToggleActive: (t: Template) => void; onEdit: (t: Template) => void; onDelete: (id: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: template.id });
+  const style = { transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 50 : undefined, opacity: isDragging ? 0.5 : undefined };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <Card className={`rounded-xl transition-all ${!template.active ? 'opacity-50' : ''}`}>
+        <CardContent className="p-3.5 flex items-center gap-3">
+          <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing touch-none p-1 -ml-1 text-muted-foreground hover:text-foreground transition-colors">
+            <GripVertical className="h-4 w-4" />
+          </button>
+          <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+            <span className="text-xs font-bold text-primary">{index + 1}</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="font-semibold text-sm truncate">{template.field_label}</p>
+              {template.required && <Badge variant="destructive" className="text-[9px] h-4 px-1">Obrigatório</Badge>}
+            </div>
+            <div className="flex items-center gap-2 mt-0.5">
+              <Badge variant="secondary" className="text-[10px] h-4">{fieldTypeLabels[template.field_type] || template.field_type}</Badge>
+              {template.field_options && (
+                <span className="text-[10px] text-muted-foreground truncate">
+                  {(template.field_options as string[]).join(', ')}
+                </span>
+              )}
+            </div>
+          </div>
+          <Switch checked={template.active} onCheckedChange={() => onToggleActive(template)} />
+          <button onClick={() => onEdit(template)} className="h-7 w-7 rounded-md flex items-center justify-center hover:bg-accent transition-colors">
+            <Pencil className="h-3 w-3 text-muted-foreground" />
+          </button>
+          <button onClick={() => onDelete(template.id)} className="h-7 w-7 rounded-md flex items-center justify-center hover:bg-destructive/10 transition-colors">
+            <Trash2 className="h-3 w-3 text-destructive" />
+          </button>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 export default function AnamnesisTemplates() {
@@ -197,6 +245,23 @@ export default function AnamnesisTemplates() {
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString('pt-BR');
 
+  // Drag and drop
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id || !selectedType) return;
+    const oldIndex = templates.findIndex(t => t.id === active.id);
+    const newIndex = templates.findIndex(t => t.id === over.id);
+    const reordered = arrayMove(templates, oldIndex, newIndex);
+    setTemplates(reordered);
+    // Persist new sort_order
+    const updates = reordered.map((t, i) =>
+      supabase.from('anamnesis_templates').update({ sort_order: i }).eq('id', t.id)
+    );
+    await Promise.all(updates);
+  };
+
   // ====== TYPE DETAIL VIEW ======
   if (selectedType) {
     return (
@@ -255,38 +320,23 @@ export default function AnamnesisTemplates() {
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-2">
-              {templates.map((t, i) => (
-                <Card key={t.id} className={`rounded-xl transition-all ${!t.active ? 'opacity-50' : ''}`}>
-                  <CardContent className="p-3.5 flex items-center gap-3">
-                    <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <span className="text-xs font-bold text-primary">{i + 1}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-sm truncate">{t.field_label}</p>
-                        {t.required && <Badge variant="destructive" className="text-[9px] h-4 px-1">Obrigatório</Badge>}
-                      </div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <Badge variant="secondary" className="text-[10px] h-4">{fieldTypeLabels[t.field_type] || t.field_type}</Badge>
-                        {t.field_options && (
-                          <span className="text-[10px] text-muted-foreground truncate">
-                            {(t.field_options as string[]).join(', ')}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <Switch checked={t.active} onCheckedChange={() => toggleFieldActive(t)} />
-                    <button onClick={() => openEditField(t)} className="h-7 w-7 rounded-md flex items-center justify-center hover:bg-accent transition-colors">
-                      <Pencil className="h-3 w-3 text-muted-foreground" />
-                    </button>
-                    <button onClick={() => deleteField(t.id)} className="h-7 w-7 rounded-md flex items-center justify-center hover:bg-destructive/10 transition-colors">
-                      <Trash2 className="h-3 w-3 text-destructive" />
-                    </button>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={templates.map(t => t.id)} strategy={verticalListSortingStrategy}>
+                <div className="space-y-2">
+                  {templates.map((t, i) => (
+                    <SortableFieldCard
+                      key={t.id}
+                      template={t}
+                      index={i}
+                      fieldTypeLabels={fieldTypeLabels}
+                      onToggleActive={toggleFieldActive}
+                      onEdit={openEditField}
+                      onDelete={deleteField}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
           )}
         </div>
 
