@@ -456,7 +456,6 @@ Deno.serve(async (req) => {
       if (!authHeader) return jsonRes({ error: "Unauthorized" }, 401);
 
       const profile = await getUserProfile(authHeader);
-      // Only admins/owners can do this
       if (profile.role === "staff") return jsonRes({ error: "Forbidden" }, 403);
 
       const { staffId } = await req.json();
@@ -476,6 +475,27 @@ Deno.serve(async (req) => {
       });
 
       return jsonRes({ url: `${GOOGLE_AUTH_URL}?${params}` });
+    }
+
+    // === OWNER DISCONNECT STAFF CALENDAR ===
+    if (action === "owner-disconnect-staff" && req.method === "POST") {
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) return jsonRes({ error: "Unauthorized" }, 401);
+
+      const profile = await getUserProfile(authHeader);
+      if (profile.role === "staff") return jsonRes({ error: "Forbidden" }, 403);
+
+      const { staffId } = await req.json();
+      if (!staffId) return jsonRes({ error: "staffId required" }, 400);
+
+      const supabase = getSupabaseAdmin();
+      await supabase
+        .from("google_calendar_tokens")
+        .delete()
+        .eq("company_id", profile.companyId)
+        .eq("staff_id", staffId);
+
+      return jsonRes({ success: true });
     }
 
     // ========== SYNC ENDPOINTS (internal) ==========
