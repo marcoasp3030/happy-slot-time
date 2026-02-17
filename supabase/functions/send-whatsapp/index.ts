@@ -1233,7 +1233,40 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
           const staffName = args.staff_id ? (ctx.staff || []).find((s: any) => s.id === args.staff_id)?.name : null;
           const dateLabel = formatDate(args.date);
           if (slots.length) {
-            txt = txt || `Horários disponíveis ${dateLabel}${staffName ? " com " + staffName : ""}: ${slots.slice(0, 8).join(", ")}${slots.length > 8 ? " e mais..." : ""}`;
+            // Auto-send slots as interactive menu
+            const { data: ws } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
+            if (ws?.active && ws?.base_url && ws?.token) {
+              const headerText = `Horários disponíveis ${dateLabel}${staffName ? " com " + staffName : ""} 📅\n\nEscolha um horário:`;
+              const topSlots = slots.slice(0, 10);
+              try {
+                if (topSlots.length <= 3) {
+                  // Use buttons for 1-3 options
+                  const choices = topSlots.map(s => `${s}|slot_${s.replace(":", "")}`);
+                  await sendMenuViaUazapi(
+                    { base_url: ws.base_url, token: ws.token },
+                    conv.phone.replace(/\D/g, ""),
+                    { type: "button", text: headerText, choices, footerText: slots.length > 3 ? `+${slots.length - 3} horários disponíveis` : undefined }
+                  );
+                  log("🔘 ✅ Slots sent as buttons:", topSlots.length);
+                } else {
+                  // Use list for 4+ options
+                  const choices = topSlots.map(s => `${s}|Horário disponível`);
+                  await sendMenuViaUazapi(
+                    { base_url: ws.base_url, token: ws.token },
+                    conv.phone.replace(/\D/g, ""),
+                    { type: "list", text: headerText, choices, title: "Ver horários", footerText: slots.length > 10 ? `Mostrando 10 de ${slots.length} horários` : undefined }
+                  );
+                  log("🔘 ✅ Slots sent as list:", topSlots.length);
+                }
+                txt = "__MENU_SENT__";
+              } catch (e: any) {
+                logErr("🔘 ❌ Auto-menu for slots failed:", e.message);
+                // Fallback to text
+                txt = txt || `Horários disponíveis ${dateLabel}${staffName ? " com " + staffName : ""}:\n\n${topSlots.map((s, i) => `${i + 1}. ${s}`).join("\n")}${slots.length > 10 ? `\n\n...e mais ${slots.length - 10} horários` : ""}`;
+              }
+            } else {
+              txt = txt || `Horários disponíveis ${dateLabel}${staffName ? " com " + staffName : ""}: ${slots.slice(0, 8).join(", ")}${slots.length > 8 ? " e mais..." : ""}`;
+            }
           } else {
             txt = txt || `Sem horários disponíveis em ${dateLabel}${staffName ? " com " + staffName : ""}`;
           }
