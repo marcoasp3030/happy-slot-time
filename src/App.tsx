@@ -25,6 +25,7 @@ import AdminCompanies from "./pages/admin/AdminCompanies";
 import AdminSubscriptions from "./pages/admin/AdminSubscriptions";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminNotifications from "./pages/admin/AdminNotifications";
+import AdminGoogleCalendar from "./pages/admin/AdminGoogleCalendar";
 
 const queryClient = new QueryClient();
 
@@ -89,6 +90,7 @@ function AnimatedRoutes() {
       <Route path="/admin/assinaturas" element={<AdminRoute><PageTransition><AdminSubscriptions /></PageTransition></AdminRoute>} />
       <Route path="/admin/usuarios" element={<AdminRoute><PageTransition><AdminUsers /></PageTransition></AdminRoute>} />
       <Route path="/admin/notificacoes" element={<AdminRoute><PageTransition><AdminNotifications /></PageTransition></AdminRoute>} />
+      <Route path="/admin/google-calendar" element={<AdminRoute><PageTransition><AdminGoogleCalendar /></PageTransition></AdminRoute>} />
       
       <Route path="*" element={<PageTransition><NotFound /></PageTransition>} />
     </Routes>
