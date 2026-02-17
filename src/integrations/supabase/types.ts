@@ -1490,6 +1490,7 @@ export type Database = {
           elevenlabs_api_key: string | null
           elevenlabs_voice_id: string | null
           enabled: boolean
+          gemini_api_key: string | null
           greeting_message: string | null
           handoff_after_failures: number | null
           id: string
@@ -1499,6 +1500,7 @@ export type Database = {
           pix_instructions: string | null
           pix_key: string | null
           pix_name: string | null
+          preferred_provider: string | null
           respond_audio_with_audio: boolean | null
           timezone: string | null
           updated_at: string
@@ -1532,6 +1534,7 @@ export type Database = {
           elevenlabs_api_key?: string | null
           elevenlabs_voice_id?: string | null
           enabled?: boolean
+          gemini_api_key?: string | null
           greeting_message?: string | null
           handoff_after_failures?: number | null
           id?: string
@@ -1541,6 +1544,7 @@ export type Database = {
           pix_instructions?: string | null
           pix_key?: string | null
           pix_name?: string | null
+          preferred_provider?: string | null
           respond_audio_with_audio?: boolean | null
           timezone?: string | null
           updated_at?: string
@@ -1574,6 +1578,7 @@ export type Database = {
           elevenlabs_api_key?: string | null
           elevenlabs_voice_id?: string | null
           enabled?: boolean
+          gemini_api_key?: string | null
           greeting_message?: string | null
           handoff_after_failures?: number | null
           id?: string
@@ -1583,6 +1588,7 @@ export type Database = {
           pix_instructions?: string | null
           pix_key?: string | null
           pix_name?: string | null
+          preferred_provider?: string | null
           respond_audio_with_audio?: boolean | null
           timezone?: string | null
           updated_at?: string

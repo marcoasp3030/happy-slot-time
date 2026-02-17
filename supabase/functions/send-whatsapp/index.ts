@@ -1100,9 +1100,30 @@ async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
 }
 
 async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string, opts?: { isAudioMsg?: boolean; agentSettings?: any }): Promise<string> {
-  const key = Deno.env.get("LOVABLE_API_KEY");
-  log("🧠 callAI: LOVABLE_API_KEY exists:", !!key, "length:", key?.length);
-  if (!key) throw new Error("LOVABLE_API_KEY missing");
+  const ag = opts?.agentSettings;
+  const preferredProvider = ag?.preferred_provider || "lovable";
+  
+  // Determine API endpoint and key based on preferred provider
+  let apiUrl = "https://ai.gateway.lovable.dev/v1/chat/completions";
+  let apiKey = Deno.env.get("LOVABLE_API_KEY");
+  let providerLabel = "lovable";
+  
+  if (preferredProvider === "openai" && ag?.openai_api_key) {
+    apiUrl = "https://api.openai.com/v1/chat/completions";
+    apiKey = ag.openai_api_key;
+    providerLabel = "openai";
+    log("🧠 Using tenant's OWN OpenAI key");
+  } else if (preferredProvider === "gemini" && ag?.gemini_api_key) {
+    // Use Gemini via OpenAI-compatible endpoint
+    apiUrl = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+    apiKey = ag.gemini_api_key;
+    providerLabel = "gemini";
+    log("🧠 Using tenant's OWN Gemini key");
+  } else {
+    log("🧠 Using platform LOVABLE_API_KEY");
+  }
+  
+  if (!apiKey) throw new Error("No API key available for provider: " + preferredProvider);
 
   const hrs = (ctx.hrs || []).sort((a: any, b: any) => a.day_of_week - b.day_of_week).map((x: any) => DN[x.day_of_week] + ": " + (x.is_open ? (x.open_time || "").substring(0, 5) + "-" + (x.close_time || "").substring(0, 5) : "Fechado")).join("; ");
   const svcs = (ctx.svcs || []).map((x: any) => x.name + " (id:" + x.id + ") " + x.duration + "min R$" + (x.price || "?") + (x.description ? " desc:" + x.description : "") + (x.image_url ? " image_url:" + x.image_url : "")).join("; ");
@@ -1345,12 +1366,29 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
     });
   }
 
-  log("🧠 Sending request to AI gateway...");
+  // Map model name for direct API providers
+  let requestModel = aiModel;
+  if (providerLabel === "openai" && aiModel.startsWith("openai/")) {
+    requestModel = aiModel.replace("openai/", "");
+  } else if (providerLabel === "gemini") {
+    // Map lovable model names to Gemini model names
+    const geminiMap: Record<string, string> = {
+      "google/gemini-2.5-flash": "gemini-2.5-flash",
+      "google/gemini-2.5-pro": "gemini-2.5-pro",
+      "google/gemini-2.5-flash-lite": "gemini-2.5-flash-lite",
+      "google/gemini-2.0-flash": "gemini-2.0-flash",
+      "google/gemini-3-flash-preview": "gemini-3-flash-preview",
+      "google/gemini-3-pro-preview": "gemini-3-pro-preview",
+    };
+    requestModel = geminiMap[aiModel] || aiModel.replace("google/", "");
+  }
+
+  log("🧠 Sending request to", providerLabel, "provider, model:", requestModel);
   const t0 = Date.now();
-  const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  const r = await fetch(apiUrl, {
     method: "POST",
-    headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: aiModel, messages, tools }),
+    headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: requestModel, messages, tools: tools.length > 0 ? tools : undefined }),
   });
   log("🧠 AI response status:", r.status, "in", Date.now() - t0, "ms");
 
@@ -1370,7 +1408,7 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
     const inputTokens = usage.prompt_tokens || 0;
     const outputTokens = usage.completion_tokens || 0;
     const totalTokens = usage.total_tokens || inputTokens + outputTokens;
-    const provider = aiModel.includes("/") ? aiModel.split("/")[0] : (aiModel.startsWith("gpt") ? "openai" : "google");
+    const provider = providerLabel;
     
     // Fetch pricing
     let inputCostPer1k = 0, outputCostPer1k = 0;

@@ -105,7 +105,10 @@ export default function WhatsAppAgent() {
         pix_key: settings.pix_key,
         pix_name: settings.pix_name,
         pix_instructions: settings.pix_instructions,
-      })
+        openai_api_key: settings.openai_api_key,
+        gemini_api_key: (settings as any).gemini_api_key,
+        preferred_provider: (settings as any).preferred_provider,
+      } as any)
       .eq('id', settings.id);
     setSaving(false);
     if (error) {
@@ -273,6 +276,48 @@ export default function WhatsAppAgent() {
                     </optgroup>
                   </select>
                   <p className="text-xs text-muted-foreground">Modelos mais inteligentes entendem melhor as respostas dos clientes, mas são mais lentos e custam mais</p>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="font-medium text-sm flex items-center gap-2">🔑 Suas API Keys (opcional)</h4>
+                    <p className="text-xs text-muted-foreground mt-1">Se você tem chaves próprias da OpenAI ou Google Gemini, insira aqui para usar seus próprios tokens. Caso contrário, usaremos os tokens da plataforma.</p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>OpenAI API Key</Label>
+                      <Input
+                        type="password"
+                        placeholder="sk-..."
+                        value={settings?.openai_api_key || ''}
+                        onChange={(e) => setSettings({ ...settings, openai_api_key: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Google Gemini API Key</Label>
+                      <Input
+                        type="password"
+                        placeholder="AIza..."
+                        value={(settings as any)?.gemini_api_key || ''}
+                        onChange={(e) => setSettings({ ...settings, gemini_api_key: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Provedor Preferido</Label>
+                    <select
+                      value={(settings as any)?.preferred_provider || 'lovable'}
+                      onChange={(e) => setSettings({ ...settings, preferred_provider: e.target.value })}
+                      className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="lovable">Plataforma (padrão)</option>
+                      <option value="openai">Minha chave OpenAI</option>
+                      <option value="gemini">Minha chave Google Gemini</option>
+                    </select>
+                    <p className="text-xs text-muted-foreground">Escolha se deseja usar os tokens da plataforma ou suas próprias chaves de API</p>
+                  </div>
                 </div>
 
                 <div className="space-y-2">

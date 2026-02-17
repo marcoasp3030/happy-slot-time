@@ -38,6 +38,7 @@ import PrivacyPolicyPublic from "./pages/PrivacyPolicyPublic";
 import AuditLogs from "./pages/AuditLogs";
 import WhatsAppAgent from "./pages/WhatsAppAgent";
 import AdminTokenUsage from "./pages/admin/AdminTokenUsage";
+import TokenUsage from "./pages/TokenUsage";
 
 const queryClient = new QueryClient();
 
@@ -130,6 +131,7 @@ function AnimatedRoutes() {
       <Route path="/privacidade" element={<ProtectedRoute><PageTransition><PrivacyPolicySettings /></PageTransition></ProtectedRoute>} />
       <Route path="/logs" element={<ProtectedRoute><PageTransition><AuditLogs /></PageTransition></ProtectedRoute>} />
       <Route path="/agente-ia" element={<ProtectedRoute><PageTransition><WhatsAppAgent /></PageTransition></ProtectedRoute>} />
+      <Route path="/consumo-tokens" element={<ProtectedRoute><PageTransition><TokenUsage /></PageTransition></ProtectedRoute>} />
       
       {/* Super admin routes */}
       <Route path="/admin" element={<AdminRoute><PageTransition><AdminDashboard /></PageTransition></AdminRoute>} />
