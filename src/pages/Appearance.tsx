@@ -9,23 +9,27 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ExternalLink, Link2, Palette, Type } from 'lucide-react';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { ExternalLink, Link2, Palette, Type, ClipboardList } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Appearance() {
   const { companyId } = useAuth();
   const [settings, setSettings] = useState<any>({});
   const [slug, setSlug] = useState('');
+  const [formLabelMode, setFormLabelMode] = useState<string>('anamnesis');
 
   useEffect(() => {
     if (!companyId) return;
     const fetch = async () => {
-      const [pageRes, companyRes] = await Promise.all([
+      const [pageRes, companyRes, settingsRes] = await Promise.all([
         supabase.from('public_page_settings').select('*').eq('company_id', companyId).single(),
         supabase.from('companies').select('slug').eq('id', companyId).single(),
+        supabase.from('company_settings').select('form_label_mode').eq('company_id', companyId).single(),
       ]);
       if (pageRes.data) setSettings(pageRes.data);
       if (companyRes.data) setSlug(companyRes.data.slug);
+      if (settingsRes.data) setFormLabelMode(settingsRes.data.form_label_mode || 'anamnesis');
     };
     fetch();
   }, [companyId]);
@@ -177,6 +181,51 @@ export default function Appearance() {
               </div>
             </div>
             <Button onClick={save} className="gradient-primary border-0 font-semibold">Salvar aparência</Button>
+          </CardContent>
+        </Card>
+
+        {/* Form Label Mode */}
+        <Card className="glass-card-static rounded-2xl">
+          <CardHeader className="px-4 sm:px-6">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <ClipboardList className="h-4.5 w-4.5 text-primary" />
+              Formulário de Avaliação
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 sm:px-6 space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Escolha como o formulário de avaliação será chamado em todo o sistema, conforme o segmento do seu negócio.
+            </p>
+            <RadioGroup value={formLabelMode} onValueChange={setFormLabelMode} className="space-y-3">
+              <div className="flex items-start gap-3 p-3 rounded-xl border border-border hover:border-primary/30 transition-colors">
+                <RadioGroupItem value="anamnesis" id="mode-anamnesis" className="mt-0.5" />
+                <div>
+                  <Label htmlFor="mode-anamnesis" className="font-semibold text-sm cursor-pointer">Ficha de Anamnese</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Ideal para clínicas médicas, odontológicas, estética, manicure, fisioterapia e terapias
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3 p-3 rounded-xl border border-border hover:border-primary/30 transition-colors">
+                <RadioGroupItem value="questionnaire" id="mode-questionnaire" className="mt-0.5" />
+                <div>
+                  <Label htmlFor="mode-questionnaire" className="font-semibold text-sm cursor-pointer">Questionário de Pré-agendamento</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Ideal para demais segmentos: consultoria, advocacia, tecnologia, educação, etc.
+                  </p>
+                </div>
+              </div>
+            </RadioGroup>
+            <Button
+              onClick={async () => {
+                if (!companyId) return;
+                await supabase.from('company_settings').update({ form_label_mode: formLabelMode }).eq('company_id', companyId);
+                toast.success('Modo do formulário atualizado');
+              }}
+              className="gradient-primary border-0 font-semibold"
+            >
+              Salvar modo do formulário
+            </Button>
           </CardContent>
         </Card>
       </div>

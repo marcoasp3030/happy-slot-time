@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { formatPhone } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
+import { useFormLabel } from '@/hooks/useFormLabel';
 import { supabase } from '@/integrations/supabase/client';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Card, CardContent } from '@/components/ui/card';
@@ -35,6 +36,7 @@ interface ClientGroup {
 
 export default function ClientRecords() {
   const { companyId } = useAuth();
+  const formLabels = useFormLabel();
   const [searchQuery, setSearchQuery] = useState('');
 
   // Selected client
@@ -258,7 +260,7 @@ export default function ClientRecords() {
         notes: anamnesisForm.notes || null,
       }).eq('id', editingAnamnesis.id);
       if (error) { toast.error('Erro: ' + error.message); return; }
-      toast.success('Anamnese atualizada');
+      toast.success(`${formLabels.fichaLabel} atualizada`);
     } else {
       const { error } = await supabase.from('anamnesis_responses').insert({
         company_id: companyId,
@@ -270,7 +272,7 @@ export default function ClientRecords() {
         filled_by: 'professional',
       });
       if (error) { toast.error('Erro: ' + error.message); return; }
-      toast.success('Anamnese salva');
+      toast.success(`${formLabels.fichaLabel} salva`);
     }
     setAnamnesisOpen(false);
     setEditingAnamnesis(null);
@@ -283,7 +285,7 @@ export default function ClientRecords() {
     await supabase.from('client_photos').delete().eq('anamnesis_response_id', id);
     const { error } = await supabase.from('anamnesis_responses').delete().eq('id', id);
     if (error) { toast.error('Erro: ' + error.message); return; }
-    toast.success('Ficha de anamnese excluída');
+    toast.success(`${formLabels.fichaLabel} excluída`);
     setSelectedResponse(null);
     fetchResponses();
   };
@@ -676,7 +678,7 @@ export default function ClientRecords() {
                 <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
                 <AlertDialogDescription>
                   {deleteTarget?.type === 'anamnesis'
-                    ? 'Tem certeza que deseja excluir esta ficha de anamnese? Todas as fotos associadas também serão removidas. Esta ação não pode ser desfeita.'
+                    ? `Tem certeza que deseja excluir esta ${formLabels.fichaLabel.toLowerCase()}? Todas as fotos associadas também serão removidas. Esta ação não pode ser desfeita.`
                     : 'Tem certeza que deseja excluir este pacote? Todas as sessões e fotos associadas também serão removidas. Esta ação não pode ser desfeita.'}
                 </AlertDialogDescription>
               </AlertDialogHeader>
@@ -727,7 +729,7 @@ export default function ClientRecords() {
           {/* Summary cards */}
           <div className="grid grid-cols-3 gap-3">
             <Card className="rounded-xl"><CardContent className="p-3 text-center">
-              <p className="text-[10px] text-muted-foreground uppercase font-semibold">Anamneses</p>
+              <p className="text-[10px] text-muted-foreground uppercase font-semibold">{formLabels.shortLabel}</p>
               <p className="text-lg font-bold">{selectedClient.anamnesisCount}</p>
             </CardContent></Card>
             <Card className="rounded-xl"><CardContent className="p-3 text-center">
@@ -749,13 +751,13 @@ export default function ClientRecords() {
           {/* Anamnesis section */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-bold flex items-center gap-1.5"><ClipboardList className="h-4 w-4 text-primary" />Anamneses</h2>
+              <h2 className="text-sm font-bold flex items-center gap-1.5"><ClipboardList className="h-4 w-4 text-primary" />{formLabels.shortLabel}</h2>
               <Button variant="outline" size="sm" className="h-7 text-[11px]" onClick={openNewAnamnesis}>
                 <Plus className="h-3 w-3 mr-1" />Nova ficha
               </Button>
             </div>
             {clientResponses.length === 0 ? (
-              <p className="text-xs text-muted-foreground mb-4">Nenhuma ficha de anamnese</p>
+              <p className="text-xs text-muted-foreground mb-4">Nenhuma {formLabels.fichaLabel.toLowerCase()}</p>
             ) : (
               <div className="space-y-2 mb-4">
                 {clientResponses.map(r => (
@@ -943,7 +945,7 @@ export default function ClientRecords() {
         {/* NEW/EDIT ANAMNESIS DIALOG */}
         <Dialog open={anamnesisOpen} onOpenChange={setAnamnesisOpen}>
           <DialogContent className="max-w-[95vw] sm:max-w-md max-h-[85vh] overflow-y-auto">
-            <DialogHeader><DialogTitle className="font-bold">{editingAnamnesis ? 'Editar Ficha de Anamnese' : 'Nova Ficha de Anamnese'}</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle className="font-bold">{editingAnamnesis ? `Editar ${formLabels.fichaLabel}` : `Nova ${formLabels.fichaLabel}`}</DialogTitle></DialogHeader>
             <div className="space-y-4">
               {/* Existing client selector */}
               {!editingAnamnesis && !selectedClient && (
@@ -1002,7 +1004,7 @@ export default function ClientRecords() {
               </div>
               {templates.length > 0 && (
                 <div className="border-t pt-3 space-y-3">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase">Campos da anamnese</p>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase">Campos do {formLabels.singular.toLowerCase()}</p>
                   {templates.map(t => (
                     <div key={t.id} className="space-y-1.5">
                       <Label className="font-semibold text-sm">
@@ -1125,7 +1127,7 @@ export default function ClientRecords() {
               <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
               <AlertDialogDescription>
                 {deleteTarget?.type === 'anamnesis'
-                  ? 'Tem certeza que deseja excluir esta ficha de anamnese? Todas as fotos associadas também serão removidas. Esta ação não pode ser desfeita.'
+                  ? `Tem certeza que deseja excluir esta ${formLabels.fichaLabel.toLowerCase()}? Todas as fotos associadas também serão removidas. Esta ação não pode ser desfeita.`
                   : 'Tem certeza que deseja excluir este pacote? Todas as sessões e fotos associadas também serão removidas. Esta ação não pode ser desfeita.'}
               </AlertDialogDescription>
             </AlertDialogHeader>
@@ -1180,7 +1182,7 @@ export default function ClientRecords() {
                 <Users className="h-5 w-5 text-primary" />
                 Fichas de Clientes
               </h1>
-              <p className="section-subtitle">Prontuário unificado: anamnese, sessões e fotos</p>
+              <p className="section-subtitle">Prontuário unificado: {formLabels.singular.toLowerCase()}, sessões e fotos</p>
             </div>
             <Button size="sm" className="gradient-primary border-0 font-semibold gap-1.5" onClick={() => { setNewClientForm({ client_name: '', client_phone: '' }); setNewClientOpen(true); }}>
               <UserPlus className="h-4 w-4" />Novo cliente
@@ -1198,7 +1200,7 @@ export default function ClientRecords() {
             <CardContent className="py-12 text-center">
               <Users className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
               <p className="text-muted-foreground font-medium text-sm">Nenhum cliente encontrado</p>
-              <p className="text-xs text-muted-foreground mt-1">Fichas aparecerão aqui quando anamneses ou pacotes forem criados</p>
+              <p className="text-xs text-muted-foreground mt-1">Fichas aparecerão aqui quando {formLabels.singular.toLowerCase()}s ou pacotes forem criados</p>
             </CardContent>
           </Card>
         ) : (

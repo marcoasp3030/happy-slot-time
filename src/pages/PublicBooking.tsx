@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Calendar, Clock, CheckCircle, ArrowLeft, ArrowRight, User, Sparkles, MapPin, Phone, Star, Video, ClipboardList, Shield, Download } from 'lucide-react';
 import { generateGoogleCalendarLink, generateOutlookCalendarLink, downloadICSFile } from '@/lib/calendarLinks';
+import { useFormLabelPublic } from '@/hooks/useFormLabel';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -390,12 +391,14 @@ export default function PublicBooking() {
   const steps: Step[] = ['service', ...(staffList.length > 0 ? ['staff'] as Step[] : []), 'date', 'time', ...(hasAnamnesis ? ['anamnesis'] as Step[] : []), 'info'];
   const currentStepIndex = steps.indexOf(step);
 
+  const formLabels = useFormLabelPublic(company?.id || null);
+
   const stepLabels: Record<string, string> = {
     service: 'Serviço',
     staff: 'Profissional',
     date: 'Data',
     time: 'Horário',
-    anamnesis: 'Anamnese',
+    anamnesis: formLabels.shortLabel,
     info: 'Dados',
   };
 
