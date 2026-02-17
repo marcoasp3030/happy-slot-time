@@ -801,8 +801,58 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
   log("🤖 Calling AI...");
   const t2 = Date.now();
   try {
-    const reply = await callAI(sb, cid, conv, ctx, actualMsg);
+    let reply = await callAI(sb, cid, conv, ctx, actualMsg);
     log("🤖 AI reply in", Date.now() - t2, "ms:", reply.substring(0, 150));
+
+    // Auto-send services as interactive menu when scheduling intent is detected
+    // and the AI didn't already send a menu (no tool calls for buttons/list)
+    if (reply !== "__MENU_SENT__" && (ctx.svcs || []).length > 0) {
+      const schedulingKeywords = /\b(agendar|marcar|reservar|horário|horario|appointment|schedule|quero.*hora|quero.*serviço|quero.*servico|gostaria.*agendar|preciso.*agendar)\b/i;
+      const isSchedulingIntent = schedulingKeywords.test(actualMsg);
+      
+      if (isSchedulingIntent) {
+        log("🔘 Scheduling intent detected, auto-sending services menu...");
+        const { data: ws } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
+        if (ws?.active && ws?.base_url && ws?.token) {
+          try {
+            const svcs = ctx.svcs;
+            // First send the AI text reply, then follow up with the services menu
+            // Send the text reply first
+            const cleanPhone = phone.replace(/\D/g, "");
+            await sendHumanizedReply(
+              { base_url: ws.base_url, instance_id: ws.instance_id || "", token: ws.token },
+              cleanPhone, reply
+            );
+            log("🔘 Text reply sent before services menu");
+
+            // Now send the services menu
+            const headerText = "Escolha o serviço que deseja agendar: 👇";
+            if (svcs.length <= 3) {
+              const choices = svcs.map((s: any) => `${s.name}|svc_${s.id.substring(0, 8)}`);
+              await sendMenuViaUazapi(
+                { base_url: ws.base_url, token: ws.token },
+                cleanPhone,
+                { type: "button", text: headerText, choices, footerText: svcs.some((s: any) => s.price) ? svcs.map((s: any) => `${s.name}: R$${s.price || '?'}`).join(" | ") : undefined }
+              );
+              log("🔘 ✅ Services sent as buttons:", svcs.length);
+            } else {
+              const choices = svcs.map((s: any) => `${s.name}|${s.duration}min${s.price ? ' - R$' + s.price : ''}`);
+              await sendMenuViaUazapi(
+                { base_url: ws.base_url, token: ws.token },
+                cleanPhone,
+                { type: "list", text: headerText, choices, title: "Ver serviços", footerText: `${svcs.length} serviços disponíveis` }
+              );
+              log("🔘 ✅ Services sent as list:", svcs.length);
+            }
+            // Mark as menu sent — text was already sent above, skip double send
+            reply = "__MENU_SENT__";
+          } catch (e: any) {
+            logErr("🔘 ❌ Auto services menu failed:", e.message);
+            // Don't change reply — let it send as normal text
+          }
+        }
+      }
+    }
 
     // Check if reply is a menu marker (buttons/list already sent via /send/menu)
     const menuAlreadySent = reply === "__MENU_SENT__";
