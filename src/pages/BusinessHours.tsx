@@ -10,6 +10,8 @@ import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import { logAudit } from '@/lib/auditLog';
 import { Clock, Settings } from 'lucide-react';
+import TimeBlocks from '@/components/TimeBlocks';
+import MassCancelDialog from '@/components/MassCancelDialog';
 
 const dayNames = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
@@ -52,9 +54,12 @@ export default function BusinessHours() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="section-header">
-          <h1 className="section-title">Horários</h1>
-          <p className="section-subtitle">Configure horários de funcionamento e regras</p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="section-header mb-0">
+            <h1 className="section-title">Horários</h1>
+            <p className="section-subtitle">Configure horários de funcionamento, bloqueios e regras</p>
+          </div>
+          <MassCancelDialog />
         </div>
 
         <Card className="glass-card-static rounded-2xl">
@@ -84,6 +89,8 @@ export default function BusinessHours() {
             ))}
           </CardContent>
         </Card>
+
+        <TimeBlocks />
 
         <Card className="glass-card-static rounded-2xl">
           <CardHeader className="px-4 sm:px-6">
