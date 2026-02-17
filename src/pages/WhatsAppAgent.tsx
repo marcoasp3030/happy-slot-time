@@ -74,6 +74,7 @@ export default function WhatsAppAgent() {
         max_reschedule_suggestions: settings.max_reschedule_suggestions,
         respond_audio_with_audio: settings.respond_audio_with_audio,
         handoff_after_failures: settings.handoff_after_failures,
+        elevenlabs_voice_id: settings.elevenlabs_voice_id,
       })
       .eq('id', settings.id);
     setSaving(false);
@@ -233,15 +234,45 @@ export default function WhatsAppAgent() {
                   />
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label className="font-medium">Responder áudio com áudio</Label>
-                    <p className="text-xs text-muted-foreground">Quando o cliente enviar áudio, responder também em áudio (requer ElevenLabs)</p>
+                <Separator />
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="font-medium">Responder áudio com áudio</Label>
+                      <p className="text-xs text-muted-foreground">Quando o cliente enviar áudio, responder também em áudio (requer ElevenLabs)</p>
+                    </div>
+                    <Switch
+                      checked={settings?.respond_audio_with_audio || false}
+                      onCheckedChange={(v) => setSettings({ ...settings, respond_audio_with_audio: v })}
+                    />
                   </div>
-                  <Switch
-                    checked={settings?.respond_audio_with_audio || false}
-                    onCheckedChange={(v) => setSettings({ ...settings, respond_audio_with_audio: v })}
-                  />
+
+                  {settings?.respond_audio_with_audio && (
+                    <div className="space-y-2 pl-4 border-l-2 border-primary/20">
+                      <Label>Voice ID (ElevenLabs)</Label>
+                      <Input
+                        value={settings?.elevenlabs_voice_id || ''}
+                        onChange={(e) => setSettings({ ...settings, elevenlabs_voice_id: e.target.value })}
+                        placeholder="Ex: EXAVITQu4vr4xnSDxMaL (Sarah - padrão)"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Encontre vozes em{' '}
+                        <a href="https://elevenlabs.io/voice-library" target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                          elevenlabs.io/voice-library
+                        </a>
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-muted/60 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
+                  <p className="font-semibold text-foreground">🎙️ Suporte a Áudio</p>
+                  <ul className="list-disc list-inside space-y-0.5">
+                    <li><strong>Transcrição:</strong> Áudios recebidos são transcritos automaticamente via ElevenLabs STT</li>
+                    <li><strong>Resposta em áudio:</strong> Quando ativo, o agente responde com áudio gerado via ElevenLabs TTS</li>
+                    <li>Se a geração de áudio falhar, o agente envia a resposta em texto como fallback</li>
+                  </ul>
                 </div>
 
                 <Button onClick={saveSettings} disabled={saving} className="w-full md:w-auto">

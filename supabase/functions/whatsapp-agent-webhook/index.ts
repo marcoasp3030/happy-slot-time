@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -23,17 +24,11 @@ Deno.serve(async (req) => {
 
     // UAZAPI sends various event formats - extract message data
     const phone = extractPhone(body);
-    const messageText = extractText(body);
     const messageType = extractType(body);
+    const audioUrl = extractAudioUrl(body);
+    let messageText = extractText(body);
 
-    if (!phone || !messageText) {
-      return new Response(JSON.stringify({ ok: true, skipped: "no_message" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Find company by matching whatsapp_settings (the webhook URL contains the company context)
-    // We'll use a query param ?company_id= on the webhook URL
+    // Find company
     const url = new URL(req.url);
     const companyId = url.searchParams.get("company_id");
     if (!companyId) {
@@ -52,6 +47,30 @@ Deno.serve(async (req) => {
 
     if (!agentSettings?.enabled) {
       return new Response(JSON.stringify({ ok: true, skipped: "agent_disabled" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Handle audio transcription
+    const isAudio = messageType === "audio" && audioUrl;
+    if (isAudio) {
+      const ELEVENLABS_API_KEY = Deno.env.get("ELEVENLABS_API_KEY");
+      if (ELEVENLABS_API_KEY) {
+        try {
+          const transcription = await transcribeAudio(audioUrl, ELEVENLABS_API_KEY);
+          if (transcription) {
+            messageText = transcription;
+          }
+        } catch (e) {
+          console.error("Audio transcription error:", e);
+        }
+      } else {
+        console.warn("ELEVENLABS_API_KEY not set, cannot transcribe audio");
+      }
+    }
+
+    if (!phone || !messageText) {
+      return new Response(JSON.stringify({ ok: true, skipped: "no_message" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -92,8 +111,10 @@ Deno.serve(async (req) => {
       conversation_id: conversation.id,
       company_id: companyId,
       direction: "incoming",
-      message_type: messageType,
+      message_type: isAudio ? "audio" : messageType,
       content: messageText,
+      media_url: isAudio ? audioUrl : null,
+      metadata: isAudio ? { transcribed: true, original_type: "audio" } : {},
     });
 
     // Update last_message_at
@@ -114,16 +135,34 @@ Deno.serve(async (req) => {
     );
 
     // Save outgoing message
+    const outgoingMessageType = (isAudio && agentSettings.respond_audio_with_audio) ? "audio" : "text";
     await supabase.from("whatsapp_messages").insert({
       conversation_id: conversation.id,
       company_id: companyId,
       direction: "outgoing",
-      message_type: "text",
+      message_type: outgoingMessageType,
       content: responseText,
     });
 
-    // Send via UAZAPI
-    await sendWhatsAppResponse(supabase, companyId, phone, responseText);
+    // Send response - audio or text
+    if (isAudio && agentSettings.respond_audio_with_audio) {
+      const ELEVENLABS_API_KEY = Deno.env.get("ELEVENLABS_API_KEY");
+      if (ELEVENLABS_API_KEY) {
+        try {
+          const voiceId = agentSettings.elevenlabs_voice_id || "EXAVITQu4vr4xnSDxMaL"; // Sarah default
+          const audioBase64 = await generateTTS(responseText, voiceId, ELEVENLABS_API_KEY);
+          await sendWhatsAppAudio(supabase, companyId, phone, audioBase64);
+        } catch (e) {
+          console.error("TTS/send audio error:", e);
+          // Fallback to text
+          await sendWhatsAppResponse(supabase, companyId, phone, responseText);
+        }
+      } else {
+        await sendWhatsAppResponse(supabase, companyId, phone, responseText);
+      }
+    } else {
+      await sendWhatsAppResponse(supabase, companyId, phone, responseText);
+    }
 
     // Log agent action
     if (actions.length > 0) {
@@ -135,6 +174,19 @@ Deno.serve(async (req) => {
           details: action.details,
         });
       }
+    }
+
+    // Log audio processing if applicable
+    if (isAudio) {
+      await supabase.from("whatsapp_agent_logs").insert({
+        company_id: companyId,
+        conversation_id: conversation.id,
+        action: "audio_processed",
+        details: {
+          transcribed: true,
+          responded_with_audio: isAudio && agentSettings.respond_audio_with_audio,
+        },
+      });
     }
 
     return new Response(JSON.stringify({ ok: true, response: responseText }), {
@@ -149,10 +201,71 @@ Deno.serve(async (req) => {
   }
 });
 
+// ========== AUDIO FUNCTIONS ==========
+
+async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string | null> {
+  // Download the audio file
+  const audioResponse = await fetch(audioUrl);
+  if (!audioResponse.ok) {
+    throw new Error(`Failed to download audio: ${audioResponse.status}`);
+  }
+  const audioBlob = await audioResponse.blob();
+
+  // Send to ElevenLabs Speech-to-Text
+  const formData = new FormData();
+  formData.append("file", audioBlob, "audio.ogg");
+  formData.append("model_id", "scribe_v2");
+  formData.append("language_code", "por"); // Portuguese
+
+  const response = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
+    method: "POST",
+    headers: {
+      "xi-api-key": apiKey,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`ElevenLabs STT error ${response.status}: ${errText}`);
+  }
+
+  const result = await response.json();
+  return result.text || null;
+}
+
+async function generateTTS(text: string, voiceId: string, apiKey: string): Promise<string> {
+  const response = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
+    {
+      method: "POST",
+      headers: {
+        "xi-api-key": apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        text,
+        model_id: "eleven_multilingual_v2",
+        voice_settings: {
+          stability: 0.5,
+          similarity_boost: 0.75,
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`ElevenLabs TTS error ${response.status}: ${errText}`);
+  }
+
+  const audioBuffer = await response.arrayBuffer();
+  return base64Encode(audioBuffer);
+}
+
 // ========== HELPER FUNCTIONS ==========
 
 function extractPhone(body: any): string | null {
-  // UAZAPI formats
   return body?.phone || body?.from || body?.data?.from || body?.data?.key?.remoteJid?.replace("@s.whatsapp.net", "") || null;
 }
 
@@ -161,14 +274,18 @@ function extractText(body: any): string | null {
 }
 
 function extractType(body: any): string {
-  if (body?.data?.message?.audioMessage) return "audio";
+  if (body?.data?.message?.audioMessage || body?.type === "audio") return "audio";
   if (body?.data?.message?.documentMessage) return "pdf";
   if (body?.data?.message?.imageMessage) return "image";
   return "text";
 }
 
+function extractAudioUrl(body: any): string | null {
+  // UAZAPI typically provides media URL in various formats
+  return body?.mediaUrl || body?.media_url || body?.data?.mediaUrl || body?.data?.media_url || body?.data?.message?.audioMessage?.url || null;
+}
+
 async function gatherContext(supabase: any, companyId: string, phone: string, conversationId: string) {
-  // Fetch last 20 messages for context
   const { data: messages } = await supabase
     .from("whatsapp_messages")
     .select("direction, content, message_type, created_at")
@@ -176,7 +293,6 @@ async function gatherContext(supabase: any, companyId: string, phone: string, co
     .order("created_at", { ascending: false })
     .limit(20);
 
-  // Fetch client appointments
   const cleanPhone = phone.replace(/\D/g, "");
   const { data: appointments } = await supabase
     .from("appointments")
@@ -187,34 +303,29 @@ async function gatherContext(supabase: any, companyId: string, phone: string, co
     .order("appointment_date", { ascending: true })
     .limit(10);
 
-  // Fetch company info
   const { data: company } = await supabase
     .from("companies")
     .select("name, address, phone")
     .eq("id", companyId)
     .single();
 
-  // Fetch services
   const { data: services } = await supabase
     .from("services")
     .select("name, duration, price, description")
     .eq("company_id", companyId)
     .eq("active", true);
 
-  // Fetch business hours
   const { data: hours } = await supabase
     .from("business_hours")
     .select("day_of_week, open_time, close_time, is_open")
     .eq("company_id", companyId);
 
-  // Fetch knowledge base
   const { data: knowledge } = await supabase
     .from("whatsapp_knowledge_base")
     .select("category, title, content")
     .eq("company_id", companyId)
     .eq("active", true);
 
-  // Fetch company settings
   const { data: companySettings } = await supabase
     .from("company_settings")
     .select("slot_interval, max_capacity_per_slot, min_advance_hours")
@@ -286,7 +397,8 @@ REGRAS:
 5. Se houver mais de um agendamento ativo, pergunte qual deseja alterar antes de agir.
 6. Nunca invente informações. Use apenas os dados fornecidos.
 7. Mantenha as respostas curtas (máx 3 frases) quando possível.
-8. Use emojis moderadamente para ser amigável.`;
+8. Use emojis moderadamente para ser amigável.
+9. Se a mensagem foi transcrita de áudio, trate normalmente como texto, mas responda de forma natural e conversacional.`;
 }
 
 async function callAI(supabase: any, companyId: string, context: any, userMessage: string, agentSettings: any) {
@@ -295,7 +407,6 @@ async function callAI(supabase: any, companyId: string, context: any, userMessag
 
   const systemPrompt = buildSystemPrompt(context, agentSettings);
 
-  // Build conversation history
   const chatMessages: any[] = [
     { role: "system", content: systemPrompt },
   ];
@@ -307,7 +418,6 @@ async function callAI(supabase: any, companyId: string, context: any, userMessag
       chatMessages.push({ role: "assistant", content: msg.content || "" });
     }
   }
-  // Add current message
   chatMessages.push({ role: "user", content: userMessage });
 
   const tools = [
@@ -409,7 +519,6 @@ async function processAIResponse(
   const actions: { type: string; details: any }[] = [];
   let responseText = choice?.message?.content || "";
 
-  // Handle tool calls
   if (choice?.message?.tool_calls) {
     for (const toolCall of choice.message.tool_calls) {
       const fn = toolCall.function.name;
@@ -441,7 +550,6 @@ async function processAIResponse(
           responseText = responseText || "Desculpe, não consegui cancelar o agendamento. Tente novamente.";
         }
       } else if (fn === "reschedule_appointment") {
-        // Calculate end_time based on service duration
         const { data: appt } = await supabase
           .from("appointments")
           .select("service_id, services(duration)")
@@ -499,7 +607,6 @@ async function getAvailableSlots(supabase: any, companyId: string, dateStr: stri
   const date = new Date(dateStr + "T00:00:00");
   const dayOfWeek = date.getDay();
 
-  // Business hours
   const { data: bh } = await supabase
     .from("business_hours")
     .select("*")
@@ -509,7 +616,6 @@ async function getAvailableSlots(supabase: any, companyId: string, dateStr: stri
 
   if (!bh || !bh.is_open) return [];
 
-  // Settings
   const { data: settings } = await supabase
     .from("company_settings")
     .select("slot_interval, max_capacity_per_slot")
@@ -519,7 +625,6 @@ async function getAvailableSlots(supabase: any, companyId: string, dateStr: stri
   const interval = settings?.slot_interval || 30;
   const maxCapacity = settings?.max_capacity_per_slot || 1;
 
-  // Existing appointments
   const { data: existing } = await supabase
     .from("appointments")
     .select("start_time, end_time")
@@ -527,7 +632,6 @@ async function getAvailableSlots(supabase: any, companyId: string, dateStr: stri
     .eq("appointment_date", dateStr)
     .in("status", ["pending", "confirmed"]);
 
-  // Time blocks
   const { data: blocks } = await supabase
     .from("time_blocks")
     .select("start_time, end_time")
@@ -543,16 +647,14 @@ async function getAvailableSlots(supabase: any, companyId: string, dateStr: stri
   while (current < end) {
     const slotTime = `${String(Math.floor(current / 60)).padStart(2, "0")}:${String(current % 60).padStart(2, "0")}`;
 
-    // Check blocks
     const isBlocked = (blocks || []).some((b: any) => {
-      if (!b.start_time && !b.end_time) return true; // full day block
+      if (!b.start_time && !b.end_time) return true;
       const bStart = timeToMin(b.start_time);
       const bEnd = timeToMin(b.end_time);
       return current >= bStart && current < bEnd;
     });
 
     if (!isBlocked) {
-      // Check capacity
       const conflicts = (existing || []).filter((a: any) => {
         const aStart = timeToMin(a.start_time);
         const aEnd = timeToMin(a.end_time);
@@ -600,6 +702,39 @@ async function sendWhatsAppResponse(supabase: any, companyId: string, phone: str
   if (!res.ok) {
     const text = await res.text();
     console.error("UAZAPI send error:", res.status, text);
+  }
+}
+
+async function sendWhatsAppAudio(supabase: any, companyId: string, phone: string, audioBase64: string) {
+  const { data: settings } = await supabase
+    .from("whatsapp_settings")
+    .select("*")
+    .eq("company_id", companyId)
+    .single();
+
+  if (!settings || !settings.active || !settings.base_url || !settings.instance_id || !settings.token) {
+    console.error("WhatsApp settings not configured for company:", companyId);
+    return;
+  }
+
+  const url = `${settings.base_url.replace(/\/$/, "")}/sendAudio/${settings.instance_id}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${settings.token}`,
+    },
+    body: JSON.stringify({
+      phone: phone.replace(/\D/g, ""),
+      audio: `data:audio/mp3;base64,${audioBase64}`,
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error("UAZAPI sendAudio error:", res.status, text);
+    // Fallback: send as text
+    await sendWhatsAppResponse(supabase, companyId, phone, "[Áudio não pôde ser enviado] " + audioBase64.substring(0, 20) + "...");
   }
 }
 
