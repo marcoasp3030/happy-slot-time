@@ -1651,12 +1651,17 @@ ${caps.can_send_pix && caps.pix_key ? "\nPAGAMENTO - PIX:\nChave PIX: " + caps.p
 
   let txt = ch?.message?.content || "";
 
+  // Track tool results for follow-up AI call
+  const toolResults: { tool_call_id: string; name: string; result: string }[] = [];
+  let needsFollowUp = false;
+
   if (ch?.message?.tool_calls) {
     log("🧠 Processing", ch.message.tool_calls.length, "tool calls...");
     for (const tc of ch.message.tool_calls) {
       let args: any = {}; try { args = JSON.parse(tc.function.arguments); } catch {}
       const fn = tc.function.name;
       log("🧠 Tool call:", fn, "args:", JSON.stringify(args));
+      let toolResult = "OK";
 
       if (fn === "confirm_appointment") {
         const { error: upErr } = await sb.from("appointments").update({ status: "confirmed" }).eq("id", args.appointment_id).eq("company_id", cid);
@@ -1811,6 +1816,8 @@ ${caps.can_send_pix && caps.pix_key ? "\nPAGAMENTO - PIX:\nChave PIX: " + caps.p
       } else if (fn === "save_client_name" && args.name) {
         await sb.from("whatsapp_conversations").update({ client_name: args.name }).eq("id", conv.id);
         log("🧠 Client name saved:", args.name);
+        toolResult = `Nome "${args.name}" salvo com sucesso.`;
+        needsFollowUp = true; // Need AI to continue the conversation after saving name
       } else if (fn === "send_file" && args.file_url) {
         // Send file via UAZAPI
         const { data: ws } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
@@ -1877,7 +1884,54 @@ ${caps.can_send_pix && caps.pix_key ? "\nPAGAMENTO - PIX:\nChave PIX: " + caps.p
         }
         if (!menuSentOk && !txt) txt = args.text || "";
       }
+      toolResults.push({ tool_call_id: tc.id, name: fn, result: toolResult });
       await sb.from("whatsapp_agent_logs").insert({ company_id: cid, conversation_id: conv.id, action: fn, details: args });
+    }
+  }
+
+  // Follow-up AI call: when tool calls were made but txt is empty (e.g., save_client_name)
+  // The AI needs to continue the conversation with the tool results
+  if (needsFollowUp && !txt && toolResults.length > 0) {
+    log("🧠 Follow-up AI call needed (tool calls produced no text reply)");
+    try {
+      const followUpMessages = [
+        ...messages,
+        ch.message, // assistant message with tool_calls
+        ...toolResults.map(tr => ({
+          role: "tool" as const,
+          tool_call_id: tr.tool_call_id,
+          content: tr.result,
+        })),
+      ];
+      
+      const followUpRes = await fetch(apiUrl, {
+        method: "POST",
+        headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: requestModel, messages: followUpMessages }),
+      });
+      
+      if (followUpRes.ok) {
+        const followUpAi = await followUpRes.json();
+        const followUpTxt = followUpAi.choices?.[0]?.message?.content || "";
+        log("🧠 Follow-up reply:", followUpTxt.substring(0, 150));
+        if (followUpTxt) txt = followUpTxt;
+        
+        // Log follow-up token usage
+        const fu = followUpAi.usage;
+        if (fu) {
+          try {
+            let inputCostPer1k2 = 0, outputCostPer1k2 = 0;
+            try {
+              const { data: pricing2 } = await sb.from("llm_model_pricing").select("input_cost_per_1k, output_cost_per_1k").eq("model", aiModel).eq("active", true).limit(1);
+              if (pricing2 && pricing2.length > 0) { inputCostPer1k2 = Number(pricing2[0].input_cost_per_1k) || 0; outputCostPer1k2 = Number(pricing2[0].output_cost_per_1k) || 0; }
+            } catch {}
+            const totalCost2 = ((fu.prompt_tokens || 0) / 1000 * inputCostPer1k2) + ((fu.completion_tokens || 0) / 1000 * outputCostPer1k2);
+            await sb.from("llm_usage_logs").insert({ provider: providerLabel, model: aiModel, input_tokens: fu.prompt_tokens || 0, output_tokens: fu.completion_tokens || 0, total_tokens: fu.total_tokens || 0, cost_per_1k: inputCostPer1k2, total_cost: totalCost2, company_id: cid, conversation_id: conv.id });
+          } catch {}
+        }
+      }
+    } catch (e: any) {
+      logErr("🧠 Follow-up AI call failed:", e.message);
     }
   }
 
