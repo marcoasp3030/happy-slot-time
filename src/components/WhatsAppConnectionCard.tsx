@@ -43,8 +43,8 @@ export default function WhatsAppConnectionCard({ hasCredentials, hasAdminToken, 
         method: 'GET',
       });
 
-      // If no instance exists yet, just show idle state (not an error)
-      if (data?.needsCreate || fnError) {
+      // If no instance exists yet or error, just show idle state
+      if (fnError || data?.needsCreate || data?.error) {
         setStatus('idle');
         return;
       }

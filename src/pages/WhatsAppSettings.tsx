@@ -14,7 +14,7 @@ import WhatsAppConnectionCard from '@/components/WhatsAppConnectionCard';
 
 export default function WhatsAppSettings() {
   const { companyId } = useAuth();
-  const [settings, setSettings] = useState({ base_url: '', instance_id: '', token: '', admin_token: '', from_number: '', active: false });
+  const [settings, setSettings] = useState({ base_url: '', instance_id: '', token: '', admin_token: '', from_number: '', active: false } as any);
   const [templates, setTemplates] = useState<any[]>([]);
   const [rules, setRules] = useState<any[]>([]);
   const [testPhone, setTestPhone] = useState('');
@@ -26,7 +26,17 @@ export default function WhatsAppSettings() {
       supabase.from('message_templates').select('*').eq('company_id', companyId),
       supabase.from('notification_rules').select('*').eq('company_id', companyId),
     ]);
-    if (settingsRes.data) setSettings(settingsRes.data as any);
+    if (settingsRes.data) {
+      const s = settingsRes.data as any;
+      setSettings({
+        base_url: s.base_url || '',
+        instance_id: s.instance_id || '',
+        token: s.token || '',
+        admin_token: s.admin_token || '',
+        from_number: s.from_number || '',
+        active: s.active ?? false,
+      });
+    }
     setTemplates(templatesRes.data || []);
     setRules(rulesRes.data || []);
   };
