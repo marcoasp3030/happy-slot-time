@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Calendar, Clock, CheckCircle, ArrowLeft, ArrowRight, User, Sparkles, MapPin, Phone, Star, Video, ClipboardList } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, ArrowLeft, ArrowRight, User, Sparkles, MapPin, Phone, Star, Video, ClipboardList, Shield } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -45,6 +45,8 @@ export default function PublicBooking() {
   const [meetLink, setMeetLink] = useState<string | null>(null);
   const [anamnesisTemplates, setAnamnesisTemplates] = useState<any[]>([]);
   const [anamnesisResponses, setAnamnesisResponses] = useState<Record<string, any>>({});
+  const [lgpdConsent, setLgpdConsent] = useState(false);
+  const [privacyPolicyText, setPrivacyPolicyText] = useState('');
 
   useEffect(() => {
     if (!slug) return;
@@ -58,14 +60,17 @@ export default function PublicBooking() {
         supabase.from('services').select('*').eq('company_id', comp.id).eq('active', true).order('name'),
         supabase.from('staff').select('*').eq('company_id', comp.id).eq('active', true).order('name'),
         supabase.from('business_hours').select('*').eq('company_id', comp.id).order('day_of_week'),
-        supabase.from('company_settings').select('*').eq('company_id', comp.id).single(),
+        supabase.from('company_settings').select('*, privacy_policy_text').eq('company_id', comp.id).single(),
       ]);
 
       setPageSettings(pageRes.data);
       setServices(servicesRes.data || []);
       setStaffList(staffRes.data || []);
       setBusinessHours(hoursRes.data || []);
-      if (settingsRes.data) setCompanySettings(settingsRes.data);
+      if (settingsRes.data) {
+        setCompanySettings(settingsRes.data);
+        setPrivacyPolicyText(settingsRes.data.privacy_policy_text || '');
+      }
       setLoading(false);
     };
     fetchData();
@@ -168,8 +173,17 @@ export default function PublicBooking() {
   };
 
   const handleSubmit = async () => {
-    if (!clientName.trim() || !clientPhone.trim() || !company || !selectedService) return;
+    if (!clientName.trim() || !clientPhone.trim() || !company || !selectedService || !lgpdConsent) return;
     setSubmitting(true);
+
+    // Log LGPD consent
+    await supabase.from('consent_logs').insert({
+      company_id: company.id,
+      client_name: clientName.trim(),
+      client_phone: clientPhone.trim(),
+      consent_type: 'booking',
+      user_agent: navigator.userAgent,
+    });
     const duration = selectedService.duration || 30;
     const [h, m] = selectedTime.split(':').map(Number);
     const endMin = h * 60 + m + duration;
@@ -841,11 +855,39 @@ export default function PublicBooking() {
                 </div>
               </div>
 
+              {/* LGPD Consent */}
+              <div className="p-4 rounded-2xl bg-white shadow-sm border border-border/40">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <Checkbox
+                    checked={lgpdConsent}
+                    onCheckedChange={(v) => setLgpdConsent(!!v)}
+                    className="mt-0.5"
+                  />
+                  <div className="text-xs text-muted-foreground leading-relaxed">
+                    <span className="flex items-center gap-1 font-semibold text-foreground mb-1">
+                      <Shield className="h-3 w-3" style={{ color: primaryColor }} />
+                      Consentimento LGPD
+                    </span>
+                    Li e concordo com a{' '}
+                    <a
+                      href={`/privacidade/${slug}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold underline hover:no-underline"
+                      style={{ color: primaryColor }}
+                    >
+                      Política de Privacidade
+                    </a>
+                    {' '}e autorizo o tratamento dos meus dados pessoais para fins de agendamento e atendimento.
+                  </div>
+                </label>
+              </div>
+
               <Button
                 onClick={handleSubmit}
                 className="w-full h-13 font-bold text-base shadow-lg hover:shadow-xl transition-all duration-300 text-white border-0"
                 style={{ backgroundColor: primaryColor, borderRadius: btnRadius }}
-                disabled={!clientName.trim() || !clientPhone.trim() || submitting}
+                disabled={!clientName.trim() || !clientPhone.trim() || !lgpdConsent || submitting}
               >
                 {submitting ? (
                   <span className="flex items-center gap-2">
@@ -924,7 +966,7 @@ export default function PublicBooking() {
               <Button
                 onClick={() => {
                   setStep('service'); setSelectedService(null); setSelectedStaff(null);
-                  setSelectedDate(''); setSelectedTime(''); setClientName(''); setClientPhone(''); setNotes(''); setMeetLink(null); setAnamnesisResponses({});
+                  setSelectedDate(''); setSelectedTime(''); setClientName(''); setClientPhone(''); setNotes(''); setMeetLink(null); setAnamnesisResponses({}); setLgpdConsent(false);
                 }}
                 variant="outline"
                 className="font-bold mt-2 h-11 px-6"
@@ -942,9 +984,13 @@ export default function PublicBooking() {
           <p className="text-[11px] text-muted-foreground/40 mt-12 text-center leading-relaxed max-w-sm mx-auto">{pageSettings.cancellation_policy}</p>
         )}
 
-        <p className="text-[10px] text-muted-foreground/25 mt-6 text-center font-medium">
-          Powered by Agendamento Online
-        </p>
+        <div className="flex items-center justify-center gap-3 mt-6 text-[10px] text-muted-foreground/30 font-medium">
+          <a href={`/privacidade/${slug}`} target="_blank" rel="noopener noreferrer" className="hover:text-muted-foreground/60 underline transition-colors">
+            Política de Privacidade
+          </a>
+          <span>•</span>
+          <span>Powered by Agendamento Online</span>
+        </div>
       </div>
     </div>
   );

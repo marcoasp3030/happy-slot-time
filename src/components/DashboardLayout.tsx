@@ -26,6 +26,7 @@ const settingsItems = [
   { title: 'Aparência', icon: Palette, path: '/aparencia' },
   { title: 'WhatsApp', icon: MessageSquare, path: '/whatsapp' },
   { title: 'Google Agenda', icon: Calendar, path: '/google-calendar' },
+  { title: 'LGPD & Privacidade', icon: Shield, path: '/privacidade' },
   { title: 'Plano', icon: CreditCard, path: '/plano' },
 ];
 
