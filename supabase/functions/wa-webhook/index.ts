@@ -21,7 +21,6 @@ function extractMessageText(body: any): string | null {
     if (typeof msg.imageMessage?.caption === "string") return msg.imageMessage.caption;
     if (typeof msg.videoMessage?.caption === "string") return msg.videoMessage.caption;
     if (typeof msg.documentMessage?.caption === "string") return msg.documentMessage.caption;
-    // If message object exists but no text found, try to get any text
     if (typeof msg.body === "string") return msg.body;
     if (typeof msg.text === "string") return msg.text;
   }
@@ -44,6 +43,32 @@ function extractMessageText(body: any): string | null {
   if (typeof body.msg === "string") return body.msg;
 
   return null;
+}
+
+function detectAudioMessage(body: any): { isAudio: boolean; mediaUrl: string | null; messageId: string | null } {
+  const msg = body.message;
+  if (msg && typeof msg === "object") {
+    // UAZAPI: messageType or type indicates audio
+    const msgType = msg.messageType || msg.type || "";
+    const mediaType = msg.mediaType || "";
+    
+    if (msgType === "audioMessage" || msgType === "audio" || mediaType === "audio" || mediaType === "ptt") {
+      // Try to get media URL from various UAZAPI fields
+      const mediaUrl = msg.mediaUrl || msg.media_url || msg.url || msg.content || null;
+      const messageId = msg.messageid || msg.id || msg.messageId || body.key?.id || null;
+      log("🎵 Audio message detected! msgType:", msgType, "mediaType:", mediaType, "mediaUrl:", mediaUrl ? "yes" : "no", "messageId:", messageId);
+      return { isAudio: true, mediaUrl: typeof mediaUrl === "string" ? mediaUrl : null, messageId };
+    }
+
+    // Also check if audioMessage key exists in the message object
+    if (msg.audioMessage) {
+      const mediaUrl = msg.audioMessage?.url || msg.audioMessage?.mediaUrl || msg.mediaUrl || msg.content || null;
+      const messageId = msg.messageid || msg.id || msg.messageId || body.key?.id || null;
+      log("🎵 Audio message detected (audioMessage key)! mediaUrl:", mediaUrl ? "yes" : "no", "messageId:", messageId);
+      return { isAudio: true, mediaUrl: typeof mediaUrl === "string" ? mediaUrl : null, messageId };
+    }
+  }
+  return { isAudio: false, mediaUrl: null, messageId: null };
 }
 
 function extractPhone(body: any): string | null {
@@ -176,12 +201,14 @@ Deno.serve(async (req) => {
 
     log("📩 phone:", phone, "msg:", msg?.substring(0, 100));
 
-    if (!phone || !msg) {
+    // Check if this is an audio message
+    const audioInfo = detectAudioMessage(body);
+    
+    if (!phone || (!msg && !audioInfo.isAudio)) {
       log("⚠️ Could not extract phone/msg. Full body keys:", JSON.stringify(Object.keys(body)));
-      // Log more details to help debug
       if (body.chat) log("⚠️ chat keys:", Object.keys(body.chat).join(","));
       return new Response(
-        JSON.stringify({ ok: true, skipped: "no_msg", phone, hasMsg: !!msg }),
+        JSON.stringify({ ok: true, skipped: "no_msg", phone, hasMsg: !!msg, isAudio: audioInfo.isAudio }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -190,7 +217,20 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const forwardUrl = `${supabaseUrl}/functions/v1/send-whatsapp`;
-    log("🚀 Forwarding to:", forwardUrl);
+    log("🚀 Forwarding to:", forwardUrl, audioInfo.isAudio ? "(AUDIO)" : "(TEXT)");
+
+    const forwardBody: any = {
+      action: "agent-process",
+      company_id: companyId,
+      phone,
+      message: msg || "[áudio]",
+    };
+
+    if (audioInfo.isAudio) {
+      forwardBody.is_audio = true;
+      forwardBody.audio_media_url = audioInfo.mediaUrl;
+      forwardBody.audio_message_id = audioInfo.messageId;
+    }
 
     const res = await fetch(forwardUrl, {
       method: "POST",
@@ -198,12 +238,7 @@ Deno.serve(async (req) => {
         "Content-Type": "application/json",
         Authorization: `Bearer ${serviceKey}`,
       },
-      body: JSON.stringify({
-        action: "agent-process",
-        company_id: companyId,
-        phone,
-        message: msg,
-      }),
+      body: JSON.stringify(forwardBody),
     });
 
     const result = await res.text();
