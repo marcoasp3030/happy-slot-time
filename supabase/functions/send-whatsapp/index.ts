@@ -478,12 +478,13 @@ async function sendMenuViaUazapi(
   wsSettings: { base_url: string; token: string },
   phone: string,
   options: {
-    type: "button" | "list" | "poll";
+    type: "button" | "list" | "poll" | "carousel";
     text: string;
     footerText?: string;
     choices: string[];
     title?: string; // for list type
     imageButton?: string; // URL for button image
+    cards?: Array<{ title: string; body?: string; image?: string; choices: string[] }>; // for carousel type
   }
 ): Promise<any> {
   const baseUrl = wsSettings.base_url.replace(/\/$/, "");
@@ -492,8 +493,12 @@ async function sendMenuViaUazapi(
     number: phone,
     type: options.type,
     text: options.text,
-    choices: options.choices,
   };
+  if (options.type === "carousel" && options.cards) {
+    body.cards = options.cards;
+  } else {
+    body.choices = options.choices;
+  }
   if (options.footerText) body.footerText = options.footerText;
   if (options.title) body.title = options.title;
   if (options.imageButton) body.imageButton = options.imageButton;
@@ -835,7 +840,23 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
 
             // Now send the services menu
             const headerText = "Escolha o serviço que deseja agendar: 👇";
-            if (svcs.length <= 3) {
+            const hasImages = svcs.some((s: any) => s.image_url);
+            
+            if (hasImages) {
+              // Use carousel when services have images
+              const cards = svcs.slice(0, 10).map((s: any) => ({
+                title: s.name,
+                body: `${s.duration}min${s.price ? ' - R$' + s.price : ''}${s.description ? '\n' + s.description.substring(0, 60) : ''}`,
+                image: s.image_url || undefined,
+                choices: [`Agendar|svc_${s.id.substring(0, 8)}`],
+              }));
+              await sendMenuViaUazapi(
+                { base_url: ws.base_url, token: ws.token },
+                cleanPhone,
+                { type: "carousel", text: headerText, choices: [], cards }
+              );
+              log("🔘 ✅ Services sent as carousel:", cards.length);
+            } else if (svcs.length <= 3) {
               const choices = svcs.map((s: any) => `${s.name}|svc_${s.id.substring(0, 8)}`);
               await sendMenuViaUazapi(
                 { base_url: ws.base_url, token: ws.token },
@@ -934,7 +955,7 @@ async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
     sb.from("whatsapp_messages").select("direction, content, created_at").eq("conversation_id", convId).order("created_at", { ascending: false }).limit(20),
     sb.from("appointments").select("id, client_name, appointment_date, start_time, end_time, status, services(name), staff(name)").eq("company_id", cid).or("client_phone.eq." + cp + ",client_phone.eq.+" + cp).in("status", ["pending", "confirmed"]).order("appointment_date", { ascending: true }).limit(10),
     sb.from("companies").select("name, address, phone").eq("id", cid).single(),
-    sb.from("services").select("id, name, duration, price, description").eq("company_id", cid).eq("active", true),
+    sb.from("services").select("id, name, duration, price, description, image_url").eq("company_id", cid).eq("active", true),
     sb.from("business_hours").select("day_of_week, open_time, close_time, is_open").eq("company_id", cid),
     sb.from("whatsapp_knowledge_base").select("category, title, content").eq("company_id", cid).eq("active", true),
     sb.from("company_settings").select("slot_interval, max_capacity_per_slot, min_advance_hours").eq("company_id", cid).single(),
@@ -969,7 +990,7 @@ async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string
   if (!key) throw new Error("LOVABLE_API_KEY missing");
 
   const hrs = (ctx.hrs || []).sort((a: any, b: any) => a.day_of_week - b.day_of_week).map((x: any) => DN[x.day_of_week] + ": " + (x.is_open ? (x.open_time || "").substring(0, 5) + "-" + (x.close_time || "").substring(0, 5) : "Fechado")).join("; ");
-  const svcs = (ctx.svcs || []).map((x: any) => x.name + " (id:" + x.id + ") " + x.duration + "min R$" + (x.price || "?")).join("; ");
+  const svcs = (ctx.svcs || []).map((x: any) => x.name + " (id:" + x.id + ") " + x.duration + "min R$" + (x.price || "?") + (x.image_url ? " [tem imagem]" : "")).join("; ");
   const kbs = (ctx.kb || []).map((x: any) => x.title + ": " + x.content).join("; ");
   const appts = (ctx.appts || []).map((x: any, i: number) => (i + 1) + "." + (x.services?.name || "?") + " " + x.appointment_date + " " + (x.start_time || "").substring(0, 5) + " " + x.status + " (id:" + x.id + ")" + (x.staff?.name ? " prof:" + x.staff.name : "")).join("; ");
 
@@ -1066,13 +1087,16 @@ FLUXO DE AGENDAMENTO (IMPORTANTE):
 - O agendamento criado será automaticamente sincronizado com o Google Agenda
 
 BOTÕES INTERATIVOS (OBRIGATÓRIO — SEMPRE USE QUANDO HOUVER ESCOLHA):
-- REGRA: Toda vez que o cliente precisa ESCOLHER entre opções, você DEVE usar send_buttons ou send_list. NUNCA liste opções como texto simples.
+- REGRA: Toda vez que o cliente precisa ESCOLHER entre opções, você DEVE usar send_buttons, send_list ou send_carousel. NUNCA liste opções como texto simples.
 - send_buttons: para 2-3 opções rápidas (serviços, sim/não, profissionais, horários)
 - send_list: para 4+ opções (muitos horários, muitos serviços)
+- send_carousel: para mostrar serviços/produtos com IMAGEM. Cada card tem título, descrição, imagem e botões. Use quando os serviços tiverem imagens cadastradas.
 - Formato choices para buttons: ["Texto do botão|id_curto"] — ex: ["Corte de cabelo|corte", "Barba|barba"]
 - Formato choices para list: ["Título|Descrição"] — ex: ["09:00|Horário disponível", "10:00|Horário disponível"]
+- Formato cards para carousel: [{ title: "Serviço", body: "30min - R$50", image: "url", choices: ["Agendar|svc_id"] }]
 - EXEMPLOS DE USO OBRIGATÓRIO:
-  * Cliente quer agendar e há serviços → send_buttons com os serviços (ou send_list se >3)
+  * Cliente quer agendar e há serviços COM imagem → send_carousel com os serviços
+  * Cliente quer agendar e há serviços SEM imagem → send_buttons (≤3) ou send_list (>3)
   * Verificou disponibilidade e há horários → send_buttons com top 3 horários (ou send_list se >3)
   * Precisa confirmar algo → send_buttons ["Sim|sim", "Não|nao"]
   * Precisa escolher profissional → send_buttons com nomes
@@ -1148,6 +1172,37 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
           footer_text: { type: "string", description: "Texto de rodapé opcional" },
         },
         required: ["text", "title", "choices"],
+      },
+    },
+  });
+
+  // Add carousel tool
+  tools.push({
+    type: "function",
+    function: {
+      name: "send_carousel",
+      description: "Envia um carrossel de cards com imagem e botões via WhatsApp. Cada card pode ter título, descrição, imagem e até 2 botões. Ideal para mostrar serviços com foto, pacotes ou opções visuais. Máximo 10 cards.",
+      parameters: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "Texto introdutório acima do carrossel" },
+          cards: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                title: { type: "string", description: "Título do card" },
+                body: { type: "string", description: "Descrição do card (opcional)" },
+                image: { type: "string", description: "URL da imagem do card (opcional)" },
+                choices: { type: "array", items: { type: "string" }, description: "Botões do card. Formato: 'Texto|id'. Máximo 2 botões por card." },
+              },
+              required: ["title", "choices"],
+            },
+            description: "Array de cards do carrossel (máx 10)",
+          },
+          footer_text: { type: "string", description: "Texto de rodapé opcional" },
+        },
+        required: ["text", "cards"],
       },
     },
   });
@@ -1372,33 +1427,41 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
           }
         }
         txt = txt || `Enviei o arquivo "${args.file_name}" pra você! 📎`;
-      } else if (fn === "send_buttons" || fn === "send_list") {
-        // Send interactive buttons or list via UAZAPI /send/menu
+      } else if (fn === "send_buttons" || fn === "send_list" || fn === "send_carousel") {
+        // Send interactive menu via UAZAPI /send/menu
         const { data: ws } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
         let menuSentOk = false;
         if (ws?.active && ws?.base_url && ws?.token) {
           try {
-            const menuType = fn === "send_buttons" ? "button" : "list";
+            const menuType = fn === "send_buttons" ? "button" : fn === "send_list" ? "list" : "carousel";
+            const menuOptions: any = {
+              type: menuType as "button" | "list" | "carousel",
+              text: args.text,
+              choices: args.choices || [],
+              footerText: args.footer_text,
+              title: args.title,
+            };
+            if (fn === "send_carousel" && args.cards) {
+              menuOptions.cards = args.cards;
+            }
             await sendMenuViaUazapi(
               { base_url: ws.base_url, token: ws.token },
               conv.phone.replace(/\D/g, ""),
-              {
-                type: menuType as "button" | "list",
-                text: args.text,
-                choices: args.choices || [],
-                footerText: args.footer_text,
-                title: args.title,
-              }
+              menuOptions
             );
             log("🔘 ✅ Menu sent successfully! type:", menuType);
             menuSentOk = true;
-            // Mark txt as __MENU_SENT__ so we skip sendHumanizedReply later
             txt = "__MENU_SENT__";
           } catch (e: any) {
             logErr("🔘 ❌ Menu send error:", e.message);
-            // Fallback: send as plain text with numbered options
-            const fallbackText = args.text + "\n\n" + (args.choices || []).map((c: string, i: number) => `${i + 1}. ${c.split("|")[0]}`).join("\n");
-            txt = fallbackText;
+            if (fn === "send_carousel" && args.cards) {
+              // Fallback: send cards as text
+              const fallbackText = args.text + "\n\n" + args.cards.map((c: any, i: number) => `${i + 1}. *${c.title}*${c.body ? "\n   " + c.body : ""}`).join("\n");
+              txt = fallbackText;
+            } else {
+              const fallbackText = args.text + "\n\n" + (args.choices || []).map((c: string, i: number) => `${i + 1}. ${c.split("|")[0]}`).join("\n");
+              txt = fallbackText;
+            }
           }
         }
         if (!menuSentOk && !txt) txt = args.text || "";
