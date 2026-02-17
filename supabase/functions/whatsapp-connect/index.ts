@@ -350,9 +350,43 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: `UAZAPI error`, details: e?.data || {} }, e?.status || 500);
       }
 
+    // ============================================================
+    // ACTION: set-webhook — Force reconfigure webhook URL
+    // ============================================================
+    } else if (action === "set-webhook") {
+      if (!settings.token) {
+        return jsonResponse({ error: "Token não configurado." }, 400);
+      }
+      try {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+        const webhookUrl = `${supabaseUrl}/functions/v1/wa-webhook/${companyId}`;
+        console.log(`[whatsapp-connect] 🔗 Setting webhook to: ${webhookUrl}`);
+
+        const data = await callUazapi(
+          baseUrl,
+          "/webhook",
+          "POST",
+          { name: "token", value: settings.token },
+          { url: webhookUrl, enabled: true, events: ["Message"] }
+        );
+
+        await supabase.from("audit_logs").insert({
+          company_id: companyId,
+          user_id: userId,
+          user_email: userEmail,
+          action: "WhatsApp: Webhook reconfigurado",
+          category: "whatsapp",
+          details: { webhookUrl },
+        });
+
+        return jsonResponse({ success: true, webhookUrl, data });
+      } catch (e: any) {
+        return jsonResponse({ error: `UAZAPI error`, details: e?.data || {} }, e?.status || 500);
+      }
+
     } else {
       return jsonResponse(
-        { error: "Invalid action. Use ?action=connect, status, disconnect, or check-webhook" },
+        { error: "Invalid action" },
         400
       );
     }

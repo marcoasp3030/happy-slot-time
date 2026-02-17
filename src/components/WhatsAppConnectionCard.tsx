@@ -211,9 +211,16 @@ export default function WhatsAppConnectionCard({ hasCredentials, hasAdminToken, 
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={async () => {
                 toast.loading('Verificando status e reconfigurando webhook...');
-                await checkStatus();
-                toast.dismiss();
-                toast.success('Status verificado e webhook reconfigurado!');
+                try {
+                  await checkStatus();
+                  // Force reconfigure webhook with new URL
+                  await supabase.functions.invoke('whatsapp-connect?action=set-webhook', { method: 'POST', body: {} });
+                  toast.dismiss();
+                  toast.success('Status verificado e webhook reconfigurado!');
+                } catch {
+                  toast.dismiss();
+                  toast.error('Erro ao verificar status');
+                }
               }}>
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Verificar Status
