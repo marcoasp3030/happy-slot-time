@@ -57,7 +57,8 @@ function detectAudioMessage(body: any): { isAudio: boolean; mediaUrl: string | n
     
     if (isAudioType) {
       // Try to get media URL from various UAZAPI fields
-      const mediaUrl = msg.mediaUrl || msg.media_url || msg.url || msg.audioMessage?.url || msg.audioMessage?.mediaUrl || null;
+      // UAZAPI stores the URL inside msg.content.URL for audio messages
+      const mediaUrl = msg.content?.URL || msg.content?.url || msg.mediaUrl || msg.media_url || msg.url || msg.audioMessage?.url || msg.audioMessage?.mediaUrl || null;
       // UAZAPI internal ID (hex format)
       const messageId = msg.messageid || msg.messageId || null;
       // WhatsApp message ID (format like "5511...:3EB0...")
