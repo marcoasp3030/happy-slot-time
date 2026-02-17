@@ -230,6 +230,7 @@ export type Database = {
           meet_link: string | null
           notes: string | null
           service_id: string | null
+          source: string
           staff_id: string | null
           start_time: string
           status: string
@@ -247,6 +248,7 @@ export type Database = {
           meet_link?: string | null
           notes?: string | null
           service_id?: string | null
+          source?: string
           staff_id?: string | null
           start_time: string
           status?: string
@@ -264,6 +266,7 @@ export type Database = {
           meet_link?: string | null
           notes?: string | null
           service_id?: string | null
+          source?: string
           staff_id?: string | null
           start_time?: string
           status?: string

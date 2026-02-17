@@ -569,6 +569,21 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
         txt = txt || "Remarcado para " + formatDate(args.new_date) + " " + args.new_time;
       } else if (fn === "check_availability") {
         log("🧠 Checking availability for:", args.date, "staff:", args.staff_id, "service:", args.service_id);
+        
+        // Real-time sync from Google Calendar before checking availability
+        try {
+          const syncUrl = Deno.env.get("SUPABASE_URL") + "/functions/v1/google-calendar/sync-from-google";
+          const syncRes = await fetch(syncUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: "Bearer " + Deno.env.get("SUPABASE_ANON_KEY") },
+            body: JSON.stringify({ companyId: cid, staffId: args.staff_id || null }),
+          });
+          const syncData = await syncRes.json();
+          log("🧠 Google Calendar sync result:", JSON.stringify(syncData).substring(0, 200));
+        } catch (syncErr: any) {
+          log("🧠 Google Calendar sync failed (non-fatal):", syncErr.message);
+        }
+
         const dow = new Date(args.date + "T12:00:00").getDay();
         const { data: bh } = await sb.from("business_hours").select("*").eq("company_id", cid).eq("day_of_week", dow).single();
         if (!bh?.is_open) { txt = txt || "Fechado em " + formatDate(args.date); }
@@ -577,7 +592,7 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
           const svcDur = args.service_id ? (ctx.svcs || []).find((s: any) => s.id === args.service_id)?.duration : null;
           const iv = ctx.cs?.slot_interval || 30; const mc = ctx.cs?.max_capacity_per_slot || 1;
           
-          // Get existing appointments, optionally filtered by staff
+          // Get existing appointments (includes both local and google_calendar source)
           let exQuery = sb.from("appointments").select("start_time, end_time, staff_id").eq("company_id", cid).eq("appointment_date", args.date).in("status", ["pending", "confirmed"]);
           const { data: ex } = await exQuery;
           
