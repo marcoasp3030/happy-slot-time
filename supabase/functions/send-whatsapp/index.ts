@@ -1345,18 +1345,25 @@ async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string
   }
 
   // Custom prompt takes TOP PRIORITY — it defines who the agent IS and how it should behave
-  const customPromptSection = ctx.cs?.custom_prompt 
-    ? `\n\nINSTRUÇÕES DO ESTABELECIMENTO (PRIORIDADE MÁXIMA — SIGA ESTAS INSTRUÇÕES ACIMA DE TUDO):
+  const hasCustomPrompt = !!(ctx.cs?.custom_prompt && ctx.cs.custom_prompt.trim());
+  const customBusinessInfo = caps.custom_business_info ? `\nINFORMAÇÕES DO ESTABELECIMENTO:\n${caps.custom_business_info}\n` : "";
+  
+  // When custom prompt exists, it REPLACES the default identity entirely
+  const identitySection = hasCustomPrompt 
+    ? `IDENTIDADE E COMPORTAMENTO DO AGENTE (PRIORIDADE MÁXIMA — SIGA ESTAS INSTRUÇÕES ACIMA DE QUALQUER OUTRA REGRA):
 ${ctx.cs.custom_prompt}
---- FIM DAS INSTRUÇÕES PRIORITÁRIAS ---\n`
-    : "";
+${customBusinessInfo}
+--- FIM DAS INSTRUÇÕES DE IDENTIDADE ---
 
-  const sys = `Você é a atendente virtual de ${ctx.co.name || "nossa empresa"} no WhatsApp.
-${customPromptSection}
+Você está respondendo via WhatsApp para a empresa ${ctx.co.name || "nossa empresa"}. Siga EXCLUSIVAMENTE as instruções de identidade acima para definir quem você é, como se comporta, e o que responde. As regras abaixo são apenas complementares e NÃO devem contradizer as instruções acima.`
+    : `Você é a atendente virtual de ${ctx.co.name || "nossa empresa"} no WhatsApp.${customBusinessInfo}`;
+
+  const sys = `${identitySection}
+
 DATA E HORA ATUAL (use como referência oficial):
 ${dateStr}, ${timeStr} (fuso: ${tzLabel})
 
-REGRAS ESSENCIAIS (respeite as instruções do estabelecimento acima quando houver conflito):
+REGRAS COMPLEMENTARES (NÃO sobrescreva a identidade/comportamento definidos acima):
 - Fale como pessoa real: informal, curta, acolhedora
 - Máximo 2-3 frases por resposta
 - Emojis com moderação (1-2 por mensagem)
@@ -1428,7 +1435,7 @@ ${caps.can_share_business_hours ? "Horários: " + hrs : ""}
 ${caps.can_share_services ? "Serviços: " + svcs : ""}
 ${caps.can_share_professionals ? "Profissionais: " + (staffInfo || "nenhum cadastrado") : ""}
 ${kbs ? "Info extra: " + kbs : ""}
-${caps.custom_business_info ? "Info do estabelecimento: " + caps.custom_business_info : ""}
+${!hasCustomPrompt && caps.custom_business_info ? "Info do estabelecimento: " + caps.custom_business_info : ""}
 Agendamentos do cliente: ${appts || "nenhum"}
 ${fileParts.join("\n")}
 ${caps.can_send_payment_link && caps.payment_link_url ? "\nPAGAMENTO - LINK:\nQuando o cliente perguntar sobre pagamento ou após confirmar agendamento, envie o link: " + caps.payment_link_url : ""}
