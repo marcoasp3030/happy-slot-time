@@ -11,13 +11,37 @@ function log(...args: any[]) {
 function extractButtonResponse(body: any): { buttonId: string; buttonText: string } | null {
   const msg = body.message;
   if (msg && typeof msg === "object") {
-    // UAZAPI: buttonOrListid contains the ID from the button/list choice
     const btnId = msg.buttonOrListid || msg.buttonId || msg.listResponseId || msg.selectedButtonId;
     if (btnId && typeof btnId === "string" && btnId.trim()) {
-      // The text of the selected option may be in msg.text, msg.content.text, or msg.body
-      const btnText = msg.text || (typeof msg.content === "object" ? msg.content?.text : (typeof msg.content === "string" ? msg.content : null)) || msg.body || btnId;
-      log("🔘 Button/List response detected! id:", btnId, "text:", btnText);
-      return { buttonId: btnId.trim(), buttonText: typeof btnText === "string" ? btnText.trim() : btnId.trim() };
+      const trimmedId = btnId.trim();
+      // UAZAPI often puts the button ID in msg.text, so we need to detect that
+      const rawText = msg.text || (typeof msg.content === "object" ? msg.content?.text : (typeof msg.content === "string" ? msg.content : null)) || msg.body || "";
+      const rawTextStr = typeof rawText === "string" ? rawText.trim() : "";
+      
+      // If rawText equals the button ID, UAZAPI didn't provide the real label
+      // Try to derive the display text from the semantic ID (e.g. "notif_canceled_sim" → "Sim")
+      let btnText = rawTextStr;
+      if (!rawTextStr || rawTextStr === trimmedId) {
+        // Extract last meaningful segment from semantic ID as the display text
+        // e.g. "notif_canceled_sim" → "sim", "svc_corte_masc" → "corte masc"
+        const parts = trimmedId.split("_");
+        // Skip known prefixes (notif, svc, slot, btn)
+        const prefixes = ["notif", "svc", "slot", "btn"];
+        let labelParts = parts;
+        // Remove prefix
+        if (prefixes.includes(parts[0])) labelParts = parts.slice(1);
+        // For notif_ IDs, also skip the status (canceled, confirmed, etc.)
+        if (parts[0] === "notif" && labelParts.length > 1) {
+          const statuses = ["canceled", "confirmed", "pending", "rescheduled", "completed"];
+          if (statuses.includes(labelParts[0])) labelParts = labelParts.slice(1);
+        }
+        btnText = labelParts.join(" ") || trimmedId;
+        // Capitalize first letter
+        btnText = btnText.charAt(0).toUpperCase() + btnText.slice(1);
+      }
+      
+      log("🔘 Button/List response detected! id:", trimmedId, "text:", btnText);
+      return { buttonId: trimmedId, buttonText: btnText };
     }
   }
   return null;
