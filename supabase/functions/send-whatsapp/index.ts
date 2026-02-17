@@ -124,6 +124,7 @@ Deno.serve(async (req) => {
       const result = await handleAgent(supabase, body.company_id, body.phone, body.message, {
         is_audio: body.is_audio || false,
         audio_media_url: body.audio_media_url || null,
+        audio_media_key: body.audio_media_key || null,
         audio_message_id: body.audio_message_id || null,
         audio_wa_msg_id: body.audio_wa_msg_id || null,
         audio_chat_id: body.audio_chat_id || null,
@@ -294,11 +295,57 @@ async function sendHumanizedReply(
 
 function formatDate(dateStr: string): string { const [y, m, d] = dateStr.split("-"); return `${d}/${m}/${y}`; }
 
+// ─── WhatsApp Media Decryption ───
+async function decryptWhatsAppMedia(encryptedData: Uint8Array, mediaKeyB64: string, mediaType: string = "audio"): Promise<Uint8Array> {
+  log("🔐 Decrypting WhatsApp media, encrypted size:", encryptedData.length, "type:", mediaType);
+  
+  // Info strings for HKDF by media type
+  const infoStrings: Record<string, string> = {
+    audio: "WhatsApp Audio Keys",
+    ptt: "WhatsApp Audio Keys",
+    image: "WhatsApp Image Keys",
+    video: "WhatsApp Video Keys",
+    document: "WhatsApp Document Keys",
+  };
+  const info = new TextEncoder().encode(infoStrings[mediaType] || infoStrings.audio);
+  
+  // Decode the base64 mediaKey (32 bytes)
+  const mediaKeyBytes = Uint8Array.from(atob(mediaKeyB64), c => c.charCodeAt(0));
+  log("🔐 mediaKey decoded:", mediaKeyBytes.length, "bytes");
+  
+  // Import mediaKey for HKDF
+  const hkdfKey = await crypto.subtle.importKey("raw", mediaKeyBytes, "HKDF", false, ["deriveBits"]);
+  
+  // Derive 112 bytes using HKDF-SHA256
+  const derivedBits = await crypto.subtle.deriveBits(
+    { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(32), info },
+    hkdfKey,
+    112 * 8 // bits
+  );
+  const derived = new Uint8Array(derivedBits);
+  
+  // Split derived key material
+  const iv = derived.slice(0, 16);        // 16 bytes IV
+  const cipherKey = derived.slice(16, 48); // 32 bytes AES-256 key
+  // macKey = derived.slice(48, 80);       // 32 bytes MAC key (not needed for decryption)
+  // refKey = derived.slice(80, 112);      // 32 bytes ref key (unused)
+  
+  // The encrypted file has 10 bytes of MAC at the end
+  const encFile = encryptedData.slice(0, encryptedData.length - 10);
+  
+  // Import AES key and decrypt
+  const aesKey = await crypto.subtle.importKey("raw", cipherKey, { name: "AES-CBC" }, false, ["decrypt"]);
+  const decrypted = await crypto.subtle.decrypt({ name: "AES-CBC", iv }, aesKey, encFile);
+  
+  log("🔐 Decrypted successfully:", decrypted.byteLength, "bytes");
+  return new Uint8Array(decrypted);
+}
+
 // ─── Audio Transcription via ElevenLabs STT ───
-async function transcribeAudio(audioUrl: string, wsSettings: any): Promise<string> {
+async function transcribeAudio(audioUrl: string, wsSettings: any, mediaKey?: string | null): Promise<string> {
   log("🎵 Transcribing audio from:", audioUrl.substring(0, 100));
   
-  // Download audio from URL (could be UAZAPI media URL)
+  // Download audio from URL
   let audioData: Uint8Array;
   try {
     const headers: Record<string, string> = {};
@@ -313,6 +360,17 @@ async function transcribeAudio(audioUrl: string, wsSettings: any): Promise<strin
   } catch (e: any) {
     logErr("🎵 Audio download error:", e.message);
     throw new Error("audio_download_failed: " + e.message);
+  }
+
+  // If we have a mediaKey, the file is encrypted WhatsApp media - decrypt it
+  if (mediaKey) {
+    try {
+      audioData = await decryptWhatsAppMedia(audioData, mediaKey, "audio");
+      log("🎵 Audio decrypted successfully:", audioData.length, "bytes");
+    } catch (e: any) {
+      logErr("🎵 WhatsApp media decryption failed:", e.message);
+      // Continue with raw data as fallback (maybe it's not encrypted)
+    }
   }
 
   // Transcribe using ElevenLabs STT
@@ -577,12 +635,13 @@ const DN = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"];
 interface AudioParams {
   is_audio: boolean;
   audio_media_url: string | null;
+  audio_media_key: string | null;
   audio_message_id: string | null;
   audio_wa_msg_id?: string | null;
   audio_chat_id?: string | null;
 }
 
-async function handleAgent(sb: any, cid: string, phone: string, msg: string, audioParams: AudioParams = { is_audio: false, audio_media_url: null, audio_message_id: null }): Promise<any> {
+async function handleAgent(sb: any, cid: string, phone: string, msg: string, audioParams: AudioParams = { is_audio: false, audio_media_url: null, audio_media_key: null, audio_message_id: null }): Promise<any> {
   log("🤖 handleAgent START cid:", cid, "phone:", phone, "msg:", msg.substring(0, 100), "is_audio:", audioParams.is_audio);
 
   if (!cid || !phone || !msg) {
@@ -654,7 +713,7 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
     
     if (audioUrl) {
       try {
-        actualMsg = await transcribeAudio(audioUrl, wsForAudio);
+        actualMsg = await transcribeAudio(audioUrl, wsForAudio, audioParams.audio_media_key);
         log("🎵 Transcribed audio:", actualMsg.substring(0, 150));
       } catch (e: any) {
         logErr("🎵 Transcription failed:", e.message);
