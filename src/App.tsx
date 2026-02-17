@@ -28,6 +28,7 @@ import AdminNotifications from "./pages/admin/AdminNotifications";
 import AdminGoogleCalendar from "./pages/admin/AdminGoogleCalendar";
 import GoogleCalendarSettings from "./pages/GoogleCalendarSettings";
 import AdminPlatformSettings from "./pages/admin/AdminPlatformSettings";
+import AdminAuditLogs from "./pages/admin/AdminAuditLogs";
 import StaffInvite from "./pages/StaffInvite";
 import StaffDashboard from "./pages/StaffDashboard";
 import AnamnesisTemplates from "./pages/AnamnesisTemplates";
@@ -135,6 +136,7 @@ function AnimatedRoutes() {
       <Route path="/admin/notificacoes" element={<AdminRoute><PageTransition><AdminNotifications /></PageTransition></AdminRoute>} />
       <Route path="/admin/google-calendar" element={<AdminRoute><PageTransition><AdminGoogleCalendar /></PageTransition></AdminRoute>} />
       <Route path="/admin/plataforma" element={<AdminRoute><PageTransition><AdminPlatformSettings /></PageTransition></AdminRoute>} />
+      <Route path="/admin/logs" element={<AdminRoute><PageTransition><AdminAuditLogs /></PageTransition></AdminRoute>} />
       
       <Route path="*" element={<PageTransition><NotFound /></PageTransition>} />
     </Routes>
