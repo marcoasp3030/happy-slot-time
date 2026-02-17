@@ -132,12 +132,16 @@ Deno.serve(async (req) => {
 
     if (buttons.length > 0) {
       // Send with interactive buttons via /send/menu (UAZAPI v2 format)
-      // choices must be simple strings like "Texto do botão|id_botao"
+      // choices as "Label|semantic_id" so the agent can understand context when client clicks
       const menuBody = {
         number: targetPhone,
         type: "button",
         text: message,
-        choices: buttons.map((b: any) => `${b.text.substring(0, 20)}|${b.id || 'btn_' + b.text.replace(/\s/g, '_')}`),
+        choices: buttons.map((b: any) => {
+          // Build semantic ID: notif_{status}_{sanitized_text} for agent context
+          const semanticId = `notif_${new_status}_${(b.text || '').toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 15)}`;
+          return `${b.text.substring(0, 20)}|${semanticId}`;
+        }),
       };
       console.log("[notify] Menu body:", JSON.stringify(menuBody));
       res = await fetch(`${baseUrl}/send/menu`, {
