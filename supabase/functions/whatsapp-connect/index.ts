@@ -245,7 +245,8 @@ Deno.serve(async (req) => {
         if (isConnected) {
           try {
             const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-            const webhookUrl = `${supabaseUrl}/functions/v1/send-whatsapp?company_id=${companyId}`;
+            // Use wa-webhook proxy to avoid UAZAPI URL-encoding query params as %3F
+            const webhookUrl = `${supabaseUrl}/functions/v1/wa-webhook/${companyId}`;
 
             console.log(`[whatsapp-connect] 🔗 Instance connected! Auto-configuring webhook: ${webhookUrl}`);
 
