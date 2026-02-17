@@ -79,6 +79,7 @@ export default function WhatsAppAgent() {
         handoff_after_failures: settings.handoff_after_failures,
         elevenlabs_voice_id: settings.elevenlabs_voice_id,
         custom_prompt: settings.custom_prompt,
+        timezone: settings.timezone,
       })
       .eq('id', settings.id);
     setSaving(false);
@@ -232,13 +233,42 @@ export default function WhatsAppAgent() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Tentativas antes de handoff humano</Label>
-                  <Input
-                    type="number"
-                    value={settings?.handoff_after_failures || 2}
-                    onChange={(e) => setSettings({ ...settings, handoff_after_failures: Number(e.target.value) })}
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Tentativas antes de handoff humano</Label>
+                    <Input
+                      type="number"
+                      value={settings?.handoff_after_failures || 2}
+                      onChange={(e) => setSettings({ ...settings, handoff_after_failures: Number(e.target.value) })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Fuso Horário</Label>
+                    <select
+                      value={settings?.timezone || 'America/Sao_Paulo'}
+                      onChange={(e) => setSettings({ ...settings, timezone: e.target.value })}
+                      className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="America/Sao_Paulo">Brasília (GMT-3)</option>
+                      <option value="America/Manaus">Manaus (GMT-4)</option>
+                      <option value="America/Cuiaba">Cuiabá (GMT-4)</option>
+                      <option value="America/Belem">Belém (GMT-3)</option>
+                      <option value="America/Fortaleza">Fortaleza (GMT-3)</option>
+                      <option value="America/Recife">Recife (GMT-3)</option>
+                      <option value="America/Bahia">Salvador (GMT-3)</option>
+                      <option value="America/Rio_Branco">Rio Branco (GMT-5)</option>
+                      <option value="America/Noronha">Fernando de Noronha (GMT-2)</option>
+                      <option value="America/Argentina/Buenos_Aires">Buenos Aires (GMT-3)</option>
+                      <option value="America/Bogota">Bogotá (GMT-5)</option>
+                      <option value="America/Santiago">Santiago (GMT-4)</option>
+                      <option value="America/New_York">Nova York (GMT-5)</option>
+                      <option value="America/Los_Angeles">Los Angeles (GMT-8)</option>
+                      <option value="Europe/Lisbon">Lisboa (GMT+0)</option>
+                      <option value="Europe/Madrid">Madri (GMT+1)</option>
+                      <option value="Asia/Tokyo">Tóquio (GMT+9)</option>
+                    </select>
+                    <p className="text-xs text-muted-foreground">Define o horário que o agente usa como referência nas respostas</p>
+                  </div>
                 </div>
 
                 <Separator />

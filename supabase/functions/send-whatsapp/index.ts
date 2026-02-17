@@ -396,9 +396,9 @@ async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
     sb.from("business_hours").select("day_of_week, open_time, close_time, is_open").eq("company_id", cid),
     sb.from("whatsapp_knowledge_base").select("category, title, content").eq("company_id", cid).eq("active", true),
     sb.from("company_settings").select("slot_interval, max_capacity_per_slot, min_advance_hours").eq("company_id", cid).single(),
-    sb.from("whatsapp_agent_settings").select("custom_prompt").eq("company_id", cid).single(),
+    sb.from("whatsapp_agent_settings").select("custom_prompt, timezone").eq("company_id", cid).single(),
   ]);
-  return { msgs: (m.data || []).reverse(), appts: a.data || [], co: c.data || {}, svcs: s.data || [], hrs: h.data || [], kb: k.data || [], cs: { ...(cs.data || {}), custom_prompt: as_.data?.custom_prompt } };
+  return { msgs: (m.data || []).reverse(), appts: a.data || [], co: c.data || {}, svcs: s.data || [], hrs: h.data || [], kb: k.data || [], cs: { ...(cs.data || {}), custom_prompt: as_.data?.custom_prompt, timezone: as_.data?.timezone || "America/Sao_Paulo" } };
 }
 
 async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string): Promise<string> {
@@ -413,17 +413,17 @@ async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string
 
   const hasHistory = ctx.msgs && ctx.msgs.length > 0;
 
-  // Dynamic date/time in Brazil timezone
+  // Dynamic date/time using configured timezone
+  const tz = ctx.cs?.timezone || "America/Sao_Paulo";
   const now = new Date();
-  const brFormatter = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  const brTime = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
-  const dateStr = brFormatter.format(now);
-  const timeStr = brTime.format(now);
+  const dateStr = new Intl.DateTimeFormat("pt-BR", { timeZone: tz, weekday: "long", year: "numeric", month: "long", day: "numeric" }).format(now);
+  const timeStr = new Intl.DateTimeFormat("pt-BR", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(now);
+  const tzLabel = tz.replace(/_/g, " ").split("/").pop();
 
   const sys = `Você é a atendente virtual de ${ctx.co.name || "nossa empresa"} no WhatsApp.
 
 DATA E HORA ATUAL (use como referência oficial):
-${dateStr}, ${timeStr} (horário de Brasília, GMT-3)
+${dateStr}, ${timeStr} (fuso: ${tzLabel})
 
 REGRAS ESSENCIAIS:
 - Fale como pessoa real: informal, curta, acolhedora
