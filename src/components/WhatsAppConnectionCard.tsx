@@ -42,9 +42,9 @@ export default function WhatsAppConnectionCard({ hasCredentials, hasAdminToken, 
       const { data, error: fnError } = await supabase.functions.invoke('whatsapp-connect?action=status', {
         method: 'GET',
       });
-      if (fnError) throw fnError;
 
-      if (data?.error && data?.needsCreate) {
+      // If no instance exists yet, just show idle state (not an error)
+      if (data?.needsCreate || fnError) {
         setStatus('idle');
         return;
       }
