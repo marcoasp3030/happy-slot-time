@@ -844,12 +844,24 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
             
             if (hasImages) {
               // Use carousel when services have images
-              const cards = svcs.slice(0, 10).map((s: any) => ({
-                title: s.name,
-                body: `${s.duration}min${s.price ? ' - R$' + s.price : ''}${s.description ? '\n' + s.description.substring(0, 60) : ''}`,
-                image: s.image_url || undefined,
-                choices: [`Agendar|svc_${s.id.substring(0, 8)}`],
-              }));
+              const cards = svcs.slice(0, 10).map((s: any) => {
+                // Ensure image URL is clean and properly encoded
+                let imgUrl = s.image_url || undefined;
+                if (imgUrl) {
+                  // Decode any double-encoding, then re-encode properly
+                  try {
+                    const urlObj = new URL(imgUrl);
+                    imgUrl = urlObj.href; // normalized URL
+                  } catch { /* keep original */ }
+                }
+                log("🔘 Card image URL for", s.name, ":", imgUrl);
+                return {
+                  title: s.name,
+                  body: `${s.duration}min${s.price ? ' - R$' + s.price : ''}${s.description ? '\n' + s.description.substring(0, 60) : ''}`,
+                  image: imgUrl,
+                  choices: [`Agendar|svc_${s.id.substring(0, 8)}`],
+                };
+              });
               await sendMenuViaUazapi(
                 { base_url: ws.base_url, token: ws.token },
                 cleanPhone,

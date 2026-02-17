@@ -107,7 +107,13 @@ export default function Services() {
 
   const uploadImage = async (): Promise<string | null> => {
     if (!imageFile || !companyId) return null;
-    const path = `${companyId}/${Date.now()}-${imageFile.name}`;
+    // Sanitize filename: remove spaces, parentheses, special chars
+    const ext = imageFile.name.split('.').pop()?.toLowerCase() || 'jpg';
+    const safeName = imageFile.name
+      .replace(/\.[^/.]+$/, '') // remove extension
+      .replace(/[^a-zA-Z0-9_-]/g, '_') // replace special chars
+      .substring(0, 50); // limit length
+    const path = `${companyId}/${Date.now()}-${safeName}.${ext}`;
     const { error } = await supabase.storage.from('service-images').upload(path, imageFile);
     if (error) { toast.error('Erro no upload da imagem'); return null; }
     const { data } = supabase.storage.from('service-images').getPublicUrl(path);
