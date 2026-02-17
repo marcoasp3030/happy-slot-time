@@ -51,13 +51,13 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Handle audio transcription
+    // Handle audio transcription via OpenAI Whisper
     const isAudio = messageType === "audio" && audioUrl;
     if (isAudio) {
-      const ELEVENLABS_API_KEY = Deno.env.get("ELEVENLABS_API_KEY");
-      if (ELEVENLABS_API_KEY) {
+      const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+      if (OPENAI_API_KEY) {
         try {
-          const transcription = await transcribeAudio(audioUrl, ELEVENLABS_API_KEY);
+          const transcription = await transcribeAudio(audioUrl, OPENAI_API_KEY);
           if (transcription) {
             messageText = transcription;
           }
@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
           console.error("Audio transcription error:", e);
         }
       } else {
-        console.warn("ELEVENLABS_API_KEY not set, cannot transcribe audio");
+        console.warn("OPENAI_API_KEY not set, cannot transcribe audio");
       }
     }
 
@@ -211,23 +211,23 @@ async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string
   }
   const audioBlob = await audioResponse.blob();
 
-  // Send to ElevenLabs Speech-to-Text
+  // Send to OpenAI Whisper API
   const formData = new FormData();
   formData.append("file", audioBlob, "audio.ogg");
-  formData.append("model_id", "scribe_v2");
-  formData.append("language_code", "por"); // Portuguese
+  formData.append("model", "whisper-1");
+  formData.append("language", "pt");
 
-  const response = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
+  const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
     headers: {
-      "xi-api-key": apiKey,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: formData,
   });
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`ElevenLabs STT error ${response.status}: ${errText}`);
+    throw new Error(`OpenAI Whisper error ${response.status}: ${errText}`);
   }
 
   const result = await response.json();
