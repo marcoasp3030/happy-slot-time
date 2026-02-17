@@ -291,32 +291,37 @@ export default function WhatsAppAgent() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">🔗 Webhook UAZAPI</CardTitle>
-                <CardDescription>Configure esta URL na sua UAZAPI para receber mensagens</CardDescription>
+                <CardDescription>Configurado automaticamente ao conectar o WhatsApp</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="flex gap-2">
-                  <Input value={webhookUrl} readOnly className="font-mono text-xs" />
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => {
-                      navigator.clipboard.writeText(webhookUrl);
-                      toast({ title: 'URL copiada!' });
-                    }}
-                  >
-                    <Copy className="h-4 w-4" />
-                  </Button>
+                <div className="flex items-start gap-3 p-3 rounded-xl bg-primary/5 border border-primary/10">
+                  <Zap className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Webhook automático</p>
+                    <p className="text-xs text-muted-foreground">
+                      Quando o WhatsApp é conectado, o webhook é configurado automaticamente na UAZAPI.
+                      Não é necessário copiar nenhuma URL manualmente.
+                    </p>
+                  </div>
                 </div>
-                <div className="bg-muted/60 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
-                  <p className="font-semibold text-foreground">Como configurar:</p>
-                  <ol className="list-decimal list-inside space-y-0.5">
-                    <li>Acesse o painel da UAZAPI</li>
-                    <li>Vá em Configurações → Webhook</li>
-                    <li>Cole a URL acima no campo de Webhook</li>
-                    <li>Ative os eventos: <code>messages</code></li>
-                    <li>Salve e teste enviando uma mensagem</li>
-                  </ol>
-                </div>
+                <details className="text-xs text-muted-foreground">
+                  <summary className="cursor-pointer hover:text-foreground transition-colors">
+                    Ver URL do webhook (avançado)
+                  </summary>
+                  <div className="mt-2 flex gap-2">
+                    <Input value={webhookUrl} readOnly className="font-mono text-xs" />
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => {
+                        navigator.clipboard.writeText(webhookUrl);
+                        toast({ title: 'URL copiada!' });
+                      }}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </details>
               </CardContent>
             </Card>
           </TabsContent>
