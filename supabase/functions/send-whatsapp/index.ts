@@ -975,7 +975,8 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
 
     // Check if reply is a menu marker (buttons/list already sent via /send/menu)
     const menuAlreadySent = reply === "__MENU_SENT__";
-    const displayReply = menuAlreadySent ? "[menu interativo enviado]" : reply;
+    // Save with a system note that won't be mimicked by the AI
+    const displayReply = menuAlreadySent ? "(sistema: menu interativo enviado ao cliente)" : reply;
 
     // Save outgoing message
     const { error: outErr } = await sb.from("whatsapp_messages").insert({ conversation_id: conv.id, company_id: cid, direction: "outgoing", message_type: menuAlreadySent ? "interactive" : "text", content: displayReply });
@@ -984,6 +985,23 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
     // Send via UAZAPI (skip if menu was already sent)
     if (menuAlreadySent) {
       log("🤖 ✅ Menu already sent via /send/menu, skipping text send");
+      // If incoming was audio and audio response is enabled, send a natural TTS intro
+      if (isAudioMsg && ag?.respond_audio_with_audio && ag?.elevenlabs_voice_id) {
+        try {
+          const { data: ws } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
+          if (ws?.active && ws?.base_url && ws?.token) {
+            const ttsIntro = "Tá aqui pra você escolher! Te mandei as opções aí.";
+            log("🔊 Sending TTS audio for menu context...");
+            const audioData = await textToSpeech(ttsIntro, ag.elevenlabs_voice_id);
+            if (audioData) {
+              await sendAudioViaUazapi(ws, phone.replace(/\D/g, ""), audioData);
+              log("🔊 ✅ Audio intro sent for menu!");
+            }
+          }
+        } catch (e: any) {
+          logErr("🔊 Audio intro for menu failed:", e.message);
+        }
+      }
     } else {
       log("🤖 Fetching WhatsApp settings to send reply...");
       const { data: ws, error: wsErr } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
@@ -1467,21 +1485,6 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
             // Auto-send slots as interactive menu
             const { data: ws } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
             if (ws?.active && ws?.base_url && ws?.token) {
-              // Send TTS audio before menu if audio response is enabled
-              if (opts?.isAudioMsg && opts?.agentSettings?.respond_audio_with_audio && opts?.agentSettings?.elevenlabs_voice_id) {
-                try {
-                  const audioIntro = normalizeTimeForSpeech(`Aqui estão os horários disponíveis para ${dateLabel}${staffName ? " com " + staffName : ""}. Vou te enviar a lista para você escolher!`);
-                  log("🔊 Sending TTS audio before slots menu...");
-                  const audioData = await textToSpeech(audioIntro, opts.agentSettings.elevenlabs_voice_id);
-                  if (audioData) {
-                    const cleanPh = conv.phone.replace(/\D/g, "");
-                    await sendAudioViaUazapi(ws, cleanPh, audioData);
-                    log("🔊 ✅ Audio sent before slots menu!");
-                  }
-                } catch (e: any) {
-                  logErr("🔊 Audio before slots menu failed:", e.message);
-                }
-              }
               const headerText = `Horários disponíveis ${dateLabel}${staffName ? " com " + staffName : ""} 📅\n\nEscolha um horário:`;
               const topSlots = slots.slice(0, 10);
               try {
