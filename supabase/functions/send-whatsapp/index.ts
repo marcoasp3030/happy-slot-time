@@ -465,6 +465,43 @@ async function textToSpeech(text: string, voiceId: string): Promise<Uint8Array |
   return null;
 }
 
+// ─── Send interactive menu (buttons/list) via UAZAPI /send/menu ───
+async function sendMenuViaUazapi(
+  wsSettings: { base_url: string; token: string },
+  phone: string,
+  options: {
+    type: "button" | "list" | "poll";
+    text: string;
+    footerText?: string;
+    choices: string[];
+    title?: string; // for list type
+    imageButton?: string; // URL for button image
+  }
+): Promise<any> {
+  const baseUrl = wsSettings.base_url.replace(/\/$/, "");
+  const url = baseUrl + "/send/menu";
+  const body: any = {
+    number: phone,
+    type: options.type,
+    text: options.text,
+    choices: options.choices,
+  };
+  if (options.footerText) body.footerText = options.footerText;
+  if (options.title) body.title = options.title;
+  if (options.imageButton) body.imageButton = options.imageButton;
+
+  log("🔘 Sending menu via UAZAPI:", url, "type:", options.type, "choices:", options.choices.length);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", token: wsSettings.token },
+    body: JSON.stringify(body),
+  });
+  const resText = await res.text();
+  log("🔘 UAZAPI /send/menu result:", res.status, resText.substring(0, 300));
+  if (!res.ok) throw new Error(`UAZAPI menu error ${res.status}: ${resText.substring(0, 200)}`);
+  try { return JSON.parse(resText); } catch { return { raw: resText }; }
+}
+
 // ─── Send audio via UAZAPI ───
 async function sendAudioViaUazapi(wsSettings: any, phone: string, audioData: Uint8Array): Promise<void> {
   // Upload to Supabase storage first, then send URL
@@ -962,6 +999,15 @@ FLUXO DE AGENDAMENTO (IMPORTANTE):
 - Para cancelar, confirme com o cliente e use cancel_appointment
 - O agendamento criado será automaticamente sincronizado com o Google Agenda
 
+BOTÕES INTERATIVOS (IMPORTANTE):
+- Use send_buttons quando quiser oferecer opções rápidas ao cliente (máximo 3 botões)
+- Exemplos de uso: escolha de serviço (2-3 opções), confirmação sim/não, escolha de profissional
+- Formato choices: ["Texto visível|id_curto"] — ex: ["Corte|corte", "Barba|barba", "Combo|combo"]
+- Use send_list quando houver MAIS de 3 opções (ex: muitos horários, muitos serviços)
+- Formato list choices: ["Título|Descrição"] — ex: ["09:00|Disponível", "10:00|Disponível"]
+- PREFIRA botões sempre que possível — é mais fácil para o cliente interagir
+- NÃO use botões para mensagens informativas simples, apenas quando precisa de uma ESCOLHA do cliente
+
 DADOS (use só quando relevante, não despeje tudo de uma vez):
 ${dataParts.join(" | ")}
 ${caps.can_share_business_hours ? "Horários: " + hrs : ""}
@@ -989,6 +1035,42 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
     { type: "function", function: { name: "request_handoff", description: "Transfere para atendente humano", parameters: { type: "object", properties: {} } } },
     { type: "function", function: { name: "save_client_name", description: "Salva o nome do cliente quando ele se apresenta", parameters: { type: "object", properties: { name: { type: "string", description: "Nome do cliente" } }, required: ["name"] } } },
   ];
+
+  // Add interactive menu tools (buttons and list)
+  tools.push({
+    type: "function",
+    function: {
+      name: "send_buttons",
+      description: "Envia botões interativos ao cliente via WhatsApp. Útil para oferecer opções rápidas como escolha de serviço, confirmação sim/não, ou seleção de horário. Máximo 3 botões de resposta.",
+      parameters: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "Texto principal da mensagem acima dos botões" },
+          choices: { type: "array", items: { type: "string" }, description: "Array de opções. Formato: 'Texto do botão|id_curto'. Ex: ['Corte de cabelo|svc_corte', 'Barba|svc_barba', 'Combo|svc_combo']" },
+          footer_text: { type: "string", description: "Texto de rodapé opcional (aparece abaixo dos botões)" },
+        },
+        required: ["text", "choices"],
+      },
+    },
+  });
+
+  tools.push({
+    type: "function",
+    function: {
+      name: "send_list",
+      description: "Envia um menu lista expansível ao cliente. Útil quando há mais de 3 opções (serviços, horários disponíveis, etc). O cliente toca em 'Ver opções' para expandir.",
+      parameters: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "Texto principal da mensagem" },
+          title: { type: "string", description: "Título do botão que abre a lista (ex: 'Ver serviços')" },
+          choices: { type: "array", items: { type: "string" }, description: "Array de opções. Formato: 'Título da opção|descrição opcional'. Ex: ['Corte Masculino|30min - R$45', 'Barba|20min - R$30']" },
+          footer_text: { type: "string", description: "Texto de rodapé opcional" },
+        },
+        required: ["text", "title", "choices"],
+      },
+    },
+  });
 
   // Add send_file tool only if file sending is enabled and there are files
   if ((caps.can_send_files || caps.can_send_images || caps.can_send_audio) && (ctx.agentFiles || []).length > 0) {
@@ -1177,6 +1259,32 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
           }
         }
         txt = txt || `Enviei o arquivo "${args.file_name}" pra você! 📎`;
+      } else if (fn === "send_buttons" || fn === "send_list") {
+        // Send interactive buttons or list via UAZAPI /send/menu
+        const { data: ws } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
+        if (ws?.active && ws?.base_url && ws?.token) {
+          try {
+            const menuType = fn === "send_buttons" ? "button" : "list";
+            await sendMenuViaUazapi(
+              { base_url: ws.base_url, token: ws.token },
+              conv.phone.replace(/\D/g, ""),
+              {
+                type: menuType as "button" | "list",
+                text: args.text,
+                choices: args.choices || [],
+                footerText: args.footer_text,
+                title: args.title,
+              }
+            );
+            log("🔘 ✅ Menu sent successfully! type:", menuType);
+          } catch (e: any) {
+            logErr("🔘 ❌ Menu send error:", e.message);
+            // Fallback: send as plain text with numbered options
+            const fallbackText = args.text + "\n\n" + (args.choices || []).map((c: string, i: number) => `${i + 1}. ${c.split("|")[0]}`).join("\n");
+            txt = txt || fallbackText;
+          }
+        }
+        if (!txt) txt = args.text || "";
       }
       await sb.from("whatsapp_agent_logs").insert({ company_id: cid, conversation_id: conv.id, action: fn, details: args });
     }
