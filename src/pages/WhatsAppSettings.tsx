@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { MessageSquare, Send, Settings, Wifi, Bell } from 'lucide-react';
 import { toast } from 'sonner';
+import WhatsAppConnectionCard from '@/components/WhatsAppConnectionCard';
 
 export default function WhatsAppSettings() {
   const { companyId } = useAuth();
@@ -89,6 +90,9 @@ export default function WhatsAppSettings() {
           <h1 className="section-title">WhatsApp (UAZAPI)</h1>
           <p className="section-subtitle">Configure a integração com WhatsApp</p>
         </div>
+
+        {/* Connection Card - QR Code flow */}
+        <WhatsAppConnectionCard hasCredentials={!!(settings.base_url && settings.token)} />
 
         {/* Credentials */}
         <Card className="glass-card-static rounded-2xl">
