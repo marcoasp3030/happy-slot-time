@@ -82,7 +82,13 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ ok: true, skipped: "from_me" }), { headers: jsonH });
       }
 
-      if (!phone || !msg) {
+      // Detect audio messages
+      const isAudio = body.data?.message?.audioMessage || body.data?.messageType === "audioMessage";
+      const audioMediaUrl = body.data?.message?.audioMessage?.url || body.data?.mediaUrl || null;
+      const audioMsgId = body.data?.key?.id || body.data?.messageId || null;
+      log("📩 isAudio:", !!isAudio, "audioMediaUrl:", audioMediaUrl ? "yes" : "no", "audioMsgId:", audioMsgId);
+
+      if (!phone || (!msg && !isAudio)) {
         log("⚠️ No phone or msg found, skipping");
         return new Response(JSON.stringify({ ok: true, skipped: "no_msg" }), { headers: jsonH });
       }
@@ -90,7 +96,11 @@ Deno.serve(async (req) => {
       log("🚀 CALLING handleAgent...");
       const t0 = Date.now();
       try {
-        const result = await handleAgent(supabase, uazapiCompanyId, phone, msg);
+        const result = await handleAgent(supabase, uazapiCompanyId, phone, msg || "[áudio]", {
+          is_audio: !!isAudio,
+          audio_media_url: audioMediaUrl,
+          audio_message_id: audioMsgId,
+        });
         const elapsed = Date.now() - t0;
         log("✅ handleAgent completed in", elapsed, "ms, result:", JSON.stringify(result).substring(0, 300));
 
@@ -98,7 +108,7 @@ Deno.serve(async (req) => {
           company_id: uazapiCompanyId,
           conversation_id: result.conversation_id || null,
           action: "response_sent",
-          details: { response_time_ms: elapsed, is_audio: false },
+          details: { response_time_ms: elapsed, is_audio: !!isAudio },
         }).then(() => log("✅ Agent log inserted")).catch((e: any) => logErr("❌ Agent log insert error:", e));
 
         return new Response(JSON.stringify({ ok: true, ...result }), { headers: jsonH });
@@ -110,8 +120,12 @@ Deno.serve(async (req) => {
 
     // ─── Agent processing route (internal call) ───
     if (body.action === "agent-process") {
-      log("🔵 agent-process route");
-      const result = await handleAgent(supabase, body.company_id, body.phone, body.message);
+      log("🔵 agent-process route, is_audio:", body.is_audio);
+      const result = await handleAgent(supabase, body.company_id, body.phone, body.message, {
+        is_audio: body.is_audio || false,
+        audio_media_url: body.audio_media_url || null,
+        audio_message_id: body.audio_message_id || null,
+      });
       return new Response(JSON.stringify(result), { headers: jsonH, status: result.error ? 500 : 200 });
     }
 
@@ -278,11 +292,196 @@ async function sendHumanizedReply(
 
 function formatDate(dateStr: string): string { const [y, m, d] = dateStr.split("-"); return `${d}/${m}/${y}`; }
 
+// ─── Audio Transcription via ElevenLabs STT ───
+async function transcribeAudio(audioUrl: string, wsSettings: any): Promise<string> {
+  log("🎵 Transcribing audio from:", audioUrl.substring(0, 100));
+  
+  // Download audio from URL (could be UAZAPI media URL)
+  let audioData: Uint8Array;
+  try {
+    const headers: Record<string, string> = {};
+    // If URL is from UAZAPI, include token
+    if (wsSettings?.token && audioUrl.includes(wsSettings.base_url?.replace("https://", "").replace("http://", ""))) {
+      headers.token = wsSettings.token;
+    }
+    const audioRes = await fetch(audioUrl, { headers });
+    if (!audioRes.ok) throw new Error(`Download failed: ${audioRes.status}`);
+    audioData = new Uint8Array(await audioRes.arrayBuffer());
+    log("🎵 Audio downloaded:", audioData.length, "bytes");
+  } catch (e: any) {
+    logErr("🎵 Audio download error:", e.message);
+    throw new Error("audio_download_failed: " + e.message);
+  }
+
+  // Transcribe using ElevenLabs STT
+  const elevenLabsKey = Deno.env.get("ELEVENLABS_API_KEY");
+  if (elevenLabsKey) {
+    try {
+      const formData = new FormData();
+      formData.append("file", new Blob([audioData], { type: "audio/ogg" }), "audio.ogg");
+      formData.append("model_id", "scribe_v2");
+      formData.append("language_code", "por");
+
+      const sttRes = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
+        method: "POST",
+        headers: { "xi-api-key": elevenLabsKey },
+        body: formData,
+      });
+
+      if (sttRes.ok) {
+        const result = await sttRes.json();
+        log("🎵 ElevenLabs STT result:", result.text?.substring(0, 200));
+        if (result.text) return result.text;
+      } else {
+        const errText = await sttRes.text();
+        logErr("🎵 ElevenLabs STT error:", sttRes.status, errText.substring(0, 200));
+      }
+    } catch (e: any) {
+      logErr("🎵 ElevenLabs STT exception:", e.message);
+    }
+  }
+
+  // Fallback: OpenAI Whisper
+  const openaiKey = Deno.env.get("OPENAI_API_KEY");
+  if (openaiKey) {
+    try {
+      const formData = new FormData();
+      formData.append("file", new Blob([audioData], { type: "audio/ogg" }), "audio.ogg");
+      formData.append("model", "whisper-1");
+      formData.append("language", "pt");
+
+      const whisperRes = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${openaiKey}` },
+        body: formData,
+      });
+
+      if (whisperRes.ok) {
+        const result = await whisperRes.json();
+        log("🎵 Whisper result:", result.text?.substring(0, 200));
+        if (result.text) return result.text;
+      } else {
+        const errText = await whisperRes.text();
+        logErr("🎵 Whisper error:", whisperRes.status, errText.substring(0, 200));
+      }
+    } catch (e: any) {
+      logErr("🎵 Whisper exception:", e.message);
+    }
+  }
+
+  throw new Error("no_stt_available");
+}
+
+// ─── Text-to-Speech via ElevenLabs ───
+async function textToSpeech(text: string, voiceId: string): Promise<Uint8Array | null> {
+  const elevenLabsKey = Deno.env.get("ELEVENLABS_API_KEY");
+  if (!elevenLabsKey) return null;
+
+  try {
+    log("🔊 TTS generating audio for:", text.substring(0, 80));
+    const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      method: "POST",
+      headers: {
+        "xi-api-key": elevenLabsKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        text,
+        model_id: "eleven_multilingual_v2",
+        output_format: "mp3_44100_128",
+      }),
+    });
+
+    if (ttsRes.ok) {
+      const audioData = new Uint8Array(await ttsRes.arrayBuffer());
+      log("🔊 TTS generated:", audioData.length, "bytes");
+      return audioData;
+    } else {
+      const errText = await ttsRes.text();
+      logErr("🔊 TTS error:", ttsRes.status, errText.substring(0, 200));
+    }
+  } catch (e: any) {
+    logErr("🔊 TTS exception:", e.message);
+  }
+  return null;
+}
+
+// ─── Send audio via UAZAPI ───
+async function sendAudioViaUazapi(wsSettings: any, phone: string, audioData: Uint8Array): Promise<void> {
+  // Upload to Supabase storage first, then send URL
+  const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const fileName = `tts/${Date.now()}.mp3`;
+  
+  const { error: upErr } = await sb.storage.from("agent-files").upload(fileName, audioData, { contentType: "audio/mpeg" });
+  if (upErr) {
+    logErr("🔊 Upload TTS error:", upErr.message);
+    return;
+  }
+  
+  const { data: urlData } = sb.storage.from("agent-files").getPublicUrl(fileName);
+  const audioUrl = urlData.publicUrl;
+  log("🔊 TTS uploaded to:", audioUrl);
+
+  const sendUrl = wsSettings.base_url.replace(/\/$/, "") + "/send/audio";
+  const res = await fetch(sendUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", token: wsSettings.token },
+    body: JSON.stringify({ number: phone, url: audioUrl }),
+  });
+  log("🔊 UAZAPI audio send:", res.status);
+  await res.text();
+}
+
+// ─── Download audio from UAZAPI (using downloadMediaMessage endpoint) ───
+async function downloadAudioFromUazapi(wsSettings: any, messageId: string): Promise<string | null> {
+  if (!messageId || !wsSettings?.base_url || !wsSettings?.token) return null;
+  
+  try {
+    const url = wsSettings.base_url.replace(/\/$/, "") + "/chat/downloadMediaMessage/" + messageId;
+    log("🎵 Downloading media from UAZAPI:", url);
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { token: wsSettings.token },
+    });
+    
+    if (res.ok) {
+      const data = await res.json();
+      // UAZAPI returns { url: "..." } or { base64: "..." }
+      if (data.url) {
+        log("🎵 UAZAPI media URL:", data.url.substring(0, 100));
+        return data.url;
+      }
+      if (data.base64) {
+        // Upload base64 to storage and return URL
+        const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+        const binaryData = Uint8Array.from(atob(data.base64), c => c.charCodeAt(0));
+        const path = `audio-incoming/${Date.now()}.ogg`;
+        await sb.storage.from("agent-files").upload(path, binaryData, { contentType: "audio/ogg" });
+        const { data: urlData } = sb.storage.from("agent-files").getPublicUrl(path);
+        log("🎵 Uploaded audio to storage:", urlData.publicUrl);
+        return urlData.publicUrl;
+      }
+    } else {
+      const errText = await res.text();
+      logErr("🎵 UAZAPI download error:", res.status, errText.substring(0, 200));
+    }
+  } catch (e: any) {
+    logErr("🎵 UAZAPI download exception:", e.message);
+  }
+  return null;
+}
+
 // ─── AI Agent Logic ───
 const DN = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"];
 
-async function handleAgent(sb: any, cid: string, phone: string, msg: string): Promise<any> {
-  log("🤖 handleAgent START cid:", cid, "phone:", phone, "msg:", msg.substring(0, 100));
+interface AudioParams {
+  is_audio: boolean;
+  audio_media_url: string | null;
+  audio_message_id: string | null;
+}
+
+async function handleAgent(sb: any, cid: string, phone: string, msg: string, audioParams: AudioParams = { is_audio: false, audio_media_url: null, audio_message_id: null }): Promise<any> {
+  log("🤖 handleAgent START cid:", cid, "phone:", phone, "msg:", msg.substring(0, 100), "is_audio:", audioParams.is_audio);
 
   if (!cid || !phone || !msg) {
     log("🤖 ❌ Missing fields");
@@ -334,9 +533,45 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string): Pr
     return { ok: true, skipped: "duplicate", conversation_id: conv.id };
   }
 
+  // ── Audio transcription: convert audio to text ──
+  let actualMsg = msg;
+  let isAudioMsg = audioParams.is_audio;
+  
+  if (isAudioMsg) {
+    log("🎵 Audio message detected, attempting transcription...");
+    
+    // Fetch WS settings to download media from UAZAPI
+    const { data: wsForAudio } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
+    
+    let audioUrl = audioParams.audio_media_url;
+    
+    // If no direct URL, try downloading from UAZAPI
+    if (!audioUrl && audioParams.audio_message_id && wsForAudio) {
+      audioUrl = await downloadAudioFromUazapi(wsForAudio, audioParams.audio_message_id);
+    }
+    
+    if (audioUrl) {
+      try {
+        actualMsg = await transcribeAudio(audioUrl, wsForAudio);
+        log("🎵 Transcribed audio:", actualMsg.substring(0, 150));
+      } catch (e: any) {
+        logErr("🎵 Transcription failed:", e.message);
+        actualMsg = "[O cliente enviou um áudio que não pôde ser transcrito]";
+      }
+    } else {
+      log("🎵 No audio URL available, cannot transcribe");
+      actualMsg = "[O cliente enviou um áudio mas não foi possível obter o arquivo]";
+    }
+  }
+
   // Save incoming message
   log("🤖 Saving incoming message...");
-  const { error: msgErr } = await sb.from("whatsapp_messages").insert({ conversation_id: conv.id, company_id: cid, direction: "incoming", message_type: "text", content: msg });
+  const { error: msgErr } = await sb.from("whatsapp_messages").insert({ 
+    conversation_id: conv.id, company_id: cid, direction: "incoming", 
+    message_type: isAudioMsg ? "audio" : "text", 
+    content: actualMsg,
+    metadata: isAudioMsg ? { original_type: "audio", transcribed: actualMsg !== msg } : {}
+  });
   log("🤖 Message saved:", msgErr ? `ERROR: ${msgErr.message}` : "OK");
 
   await sb.from("whatsapp_conversations").update({ last_message_at: new Date().toISOString() }).eq("id", conv.id);
@@ -351,35 +586,61 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string): Pr
   log("🤖 Calling AI...");
   const t2 = Date.now();
   try {
-    const reply = await callAI(sb, cid, conv, ctx, msg);
+    const reply = await callAI(sb, cid, conv, ctx, actualMsg);
     log("🤖 AI reply in", Date.now() - t2, "ms:", reply.substring(0, 150));
 
     // Save outgoing message
     const { error: outErr } = await sb.from("whatsapp_messages").insert({ conversation_id: conv.id, company_id: cid, direction: "outgoing", message_type: "text", content: reply });
     log("🤖 Outgoing msg saved:", outErr ? `ERROR: ${outErr.message}` : "OK");
 
-    // Send via UAZAPI (humanized: split into chunks with typing delays)
+    // Send via UAZAPI
     log("🤖 Fetching WhatsApp settings to send reply...");
     const { data: ws, error: wsErr } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
     log("🤖 WS settings:", ws ? `active=${ws.active} base_url=${ws.base_url}` : "NOT FOUND", "error:", wsErr?.message);
 
     if (ws?.active && ws?.base_url && ws?.token) {
-      try {
-        log("🤖 Sending humanized reply via UAZAPI...");
-        await sendHumanizedReply(
-          { base_url: ws.base_url, instance_id: ws.instance_id || "", token: ws.token },
-          phone.replace(/\D/g, ""),
-          reply
-        );
-        log("🤖 ✅ Humanized reply sent successfully!");
-      } catch (e: any) {
-        logErr("🤖 ❌ Send error:", e.message);
+      const cleanPhone = phone.replace(/\D/g, "");
+      
+      // Check if we should respond with audio (when incoming was audio and setting is enabled)
+      if (isAudioMsg && ag?.respond_audio_with_audio && ag?.elevenlabs_voice_id) {
+        log("🔊 Responding with audio (respond_audio_with_audio=true)");
+        try {
+          const audioData = await textToSpeech(reply, ag.elevenlabs_voice_id);
+          if (audioData) {
+            await sendAudioViaUazapi(ws, cleanPhone, audioData);
+            log("🔊 ✅ Audio response sent!");
+          } else {
+            log("🔊 TTS returned null, falling back to text");
+            await sendHumanizedReply(
+              { base_url: ws.base_url, instance_id: ws.instance_id || "", token: ws.token },
+              cleanPhone, reply
+            );
+          }
+        } catch (e: any) {
+          logErr("🔊 Audio response failed, falling back to text:", e.message);
+          await sendHumanizedReply(
+            { base_url: ws.base_url, instance_id: ws.instance_id || "", token: ws.token },
+            cleanPhone, reply
+          );
+        }
+      } else {
+        // Standard text reply
+        try {
+          log("🤖 Sending humanized reply via UAZAPI...");
+          await sendHumanizedReply(
+            { base_url: ws.base_url, instance_id: ws.instance_id || "", token: ws.token },
+            cleanPhone, reply
+          );
+          log("🤖 ✅ Humanized reply sent successfully!");
+        } catch (e: any) {
+          logErr("🤖 ❌ Send error:", e.message);
+        }
       }
     } else {
       log("🤖 ⚠️ Cannot send: WS inactive or missing credentials");
     }
 
-    return { ok: true, response: reply, conversation_id: conv.id };
+    return { ok: true, response: reply, conversation_id: conv.id, is_audio: isAudioMsg };
   } catch (aiErr: any) {
     logErr("🤖 ❌ AI call FAILED:", aiErr.message, aiErr.stack);
     return { error: aiErr.message, conversation_id: conv.id };
