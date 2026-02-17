@@ -303,6 +303,31 @@ async function sendHumanizedReply(
 
 function formatDate(dateStr: string): string { const [y, m, d] = dateStr.split("-"); return `${d}/${m}/${y}`; }
 
+// ─── Normalize HH:MM to natural PT-BR speech ───
+function normalizeTimeForSpeech(text: string): string {
+  return text.replace(/\b(\d{1,2}):(\d{2})\b/g, (_match, hStr, mStr) => {
+    const h = parseInt(hStr, 10);
+    const m = parseInt(mStr, 10);
+    if (h === 0 && m === 0) return "meia-noite";
+    if (h === 12 && m === 0) return "meio-dia";
+    
+    // Period label
+    let period = "";
+    if (h >= 5 && h < 12) period = " da manhã";
+    else if (h >= 12 && h < 18) period = " da tarde";
+    else if (h >= 18 || h < 5) period = " da noite";
+
+    const displayH = h > 12 ? h - 12 : h;
+    const hourWord = displayH === 1 ? "uma" : displayH === 2 ? "duas" : String(displayH);
+
+    if (m === 0) return `${hStr}:${mStr} (às ${hourWord}${period})`;
+    if (m === 30) return `${hStr}:${mStr} (às ${hourWord} e meia${period})`;
+    if (m === 15) return `${hStr}:${mStr} (às ${hourWord} e quinze${period})`;
+    if (m === 45) return `${hStr}:${mStr} (às ${hourWord} e quarenta e cinco${period})`;
+    return `${hStr}:${mStr} (às ${hourWord} e ${m}${period})`;
+  });
+}
+
 // ─── WhatsApp Media Decryption ───
 async function decryptWhatsAppMedia(encryptedData: Uint8Array, mediaKeyB64: string, mediaType: string = "audio"): Promise<Uint8Array> {
   log("🔐 Decrypting WhatsApp media, encrypted size:", encryptedData.length, "type:", mediaType);
@@ -846,6 +871,8 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
   const t2 = Date.now();
   try {
     let reply = await callAI(sb, cid, conv, ctx, actualMsg);
+    // Normalize times in reply for natural PT-BR speech
+    if (reply !== "__MENU_SENT__") reply = normalizeTimeForSpeech(reply);
     log("🤖 AI reply in", Date.now() - t2, "ms:", reply.substring(0, 150));
 
     // Auto-send services as interactive menu when scheduling intent is detected
@@ -949,7 +976,8 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
         if (isAudioMsg && ag?.respond_audio_with_audio && ag?.elevenlabs_voice_id) {
           log("🔊 Responding with audio (respond_audio_with_audio=true)");
           try {
-            const audioData = await textToSpeech(reply, ag.elevenlabs_voice_id);
+            const ttsText = normalizeTimeForSpeech(reply);
+            const audioData = await textToSpeech(ttsText, ag.elevenlabs_voice_id);
             if (audioData) {
               await sendAudioViaUazapi(ws, cleanPhone, audioData);
               log("🔊 ✅ Audio response sent!");
@@ -1002,7 +1030,7 @@ async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
     sb.from("business_hours").select("day_of_week, open_time, close_time, is_open").eq("company_id", cid),
     sb.from("whatsapp_knowledge_base").select("category, title, content").eq("company_id", cid).eq("active", true),
     sb.from("company_settings").select("slot_interval, max_capacity_per_slot, min_advance_hours").eq("company_id", cid).single(),
-    sb.from("whatsapp_agent_settings").select("custom_prompt, timezone, can_share_address, can_share_phone, can_share_business_hours, can_share_services, can_share_professionals, can_handle_anamnesis, can_send_files, can_send_images, can_send_audio, custom_business_info").eq("company_id", cid).single(),
+    sb.from("whatsapp_agent_settings").select("custom_prompt, timezone, can_share_address, can_share_phone, can_share_business_hours, can_share_services, can_share_professionals, can_handle_anamnesis, can_send_files, can_send_images, can_send_audio, custom_business_info, can_send_payment_link, payment_link_url, can_send_pix, pix_key, pix_name, pix_instructions").eq("company_id", cid).single(),
     sb.from("staff").select("id, name").eq("company_id", cid).eq("active", true),
     sb.from("staff_services").select("staff_id, service_id").in("staff_id", (await sb.from("staff").select("id").eq("company_id", cid).eq("active", true)).data?.map((x: any) => x.id) || []),
     sb.from("whatsapp_agent_files").select("file_name, file_url, file_type, description").eq("company_id", cid).eq("active", true),
@@ -1023,6 +1051,12 @@ async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
       can_send_images: agentCaps.can_send_images ?? false,
       can_send_audio: agentCaps.can_send_audio ?? false,
       custom_business_info: agentCaps.custom_business_info || null,
+      can_send_payment_link: agentCaps.can_send_payment_link ?? false,
+      payment_link_url: agentCaps.payment_link_url || null,
+      can_send_pix: agentCaps.can_send_pix ?? false,
+      pix_key: agentCaps.pix_key || null,
+      pix_name: agentCaps.pix_name || null,
+      pix_instructions: agentCaps.pix_instructions || null,
     },
   };
 }
@@ -1118,6 +1152,12 @@ REGRA ANTI-REPETIÇÃO (CRÍTICO):
 - Se já informou horários/serviços, NÃO repita — diga "como mencionei" ou vá direto ao próximo passo
 - Analise o histórico antes de responder para não repetir informações
 
+NORMALIZAÇÃO DE HORÁRIOS (OBRIGATÓRIO):
+- Ao mencionar horários, SEMPRE escreva de forma natural em PT-BR junto ao formato numérico
+- Converta qualquer padrão HH:MM em fala natural: 09:00 = "09:00 (às nove horas)", 09:30 = "09:30 (às nove e meia)", 12:00 = "meio-dia", 18:00 = "18:00 (às seis da tarde)"
+- PROIBIDO falar dígitos separados ("zero nove zero zero"). Sempre use fala natural.
+- Se for listar múltiplos horários, pode manter só o formato numérico (09:00, 10:30) pois será convertido automaticamente
+
 FLUXO DE AGENDAMENTO (IMPORTANTE):
 - Quando o cliente quiser agendar, pergunte: 1) Qual serviço? 2) Qual data/horário de preferência?
 - Use check_availability para verificar disponibilidade na data
@@ -1166,6 +1206,8 @@ ${kbs ? "Info extra: " + kbs : ""}
 ${caps.custom_business_info ? "Info do estabelecimento: " + caps.custom_business_info : ""}
 Agendamentos do cliente: ${appts || "nenhum"}
 ${fileParts.join("\n")}
+${caps.can_send_payment_link && caps.payment_link_url ? "\nPAGAMENTO - LINK:\nQuando o cliente perguntar sobre pagamento ou após confirmar agendamento, envie o link: " + caps.payment_link_url : ""}
+${caps.can_send_pix && caps.pix_key ? "\nPAGAMENTO - PIX:\nChave PIX: " + caps.pix_key + (caps.pix_name ? " | Titular: " + caps.pix_name : "") + (caps.pix_instructions ? "\nInstruções: " + caps.pix_instructions : "") : ""}
 ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" + ctx.cs.custom_prompt : ""}`;
 
 
