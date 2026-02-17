@@ -20,6 +20,7 @@ import {
   Phone, ChevronRight, ChevronLeft, ImageIcon, ArrowLeft, Pencil, UserPlus, Shield
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { logAudit } from '@/lib/auditLog';
 import { Progress } from '@/components/ui/progress';
 
 interface ClientGroup {
@@ -478,6 +479,13 @@ export default function ClientRecords() {
     setDeleteClientOpen(false);
     setSelectedClient(null);
     toast.success('Todos os dados do cliente foram excluídos (LGPD)');
+    logAudit({
+      companyId,
+      action: 'Exclusão total de dados do cliente (LGPD)',
+      category: 'lgpd',
+      entityType: 'client',
+      details: { client_name: selectedClient?.client_name, client_phone: selectedClient?.client_phone },
+    });
     fetchResponses();
     fetchPackages();
   };

@@ -17,6 +17,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
+import { logAudit } from '@/lib/auditLog';
 
 const statusConfig: Record<string, { label: string; color: string; icon: any; bg: string }> = {
   pending: { label: 'Pendente', color: 'text-amber-600', icon: AlertCircle, bg: 'bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-800' },
@@ -91,7 +92,16 @@ export default function Appointments() {
     if (error) { toast.error('Erro ao atualizar'); return; }
     toast.success('Status atualizado');
 
-    // Auto-register session when completing an appointment with session control
+    // Audit log for status change
+    const apt = appointments.find(a => a.id === id);
+    logAudit({
+      companyId,
+      action: `Agendamento ${statusConfig[status]?.label || status}`,
+      category: 'appointment',
+      entityType: 'appointment',
+      entityId: id,
+      details: { client: apt?.client_name, status, service: apt?.services?.name },
+    });
     if (status === 'completed') {
       const apt = appointments.find(a => a.id === id);
       if (apt?.service_id && apt.services) {

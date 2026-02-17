@@ -34,6 +34,7 @@ import AnamnesisTemplates from "./pages/AnamnesisTemplates";
 import ClientRecords from "./pages/ClientRecords";
 import PrivacyPolicySettings from "./pages/PrivacyPolicySettings";
 import PrivacyPolicyPublic from "./pages/PrivacyPolicyPublic";
+import AuditLogs from "./pages/AuditLogs";
 
 const queryClient = new QueryClient();
 
@@ -124,6 +125,7 @@ function AnimatedRoutes() {
       <Route path="/anamnese" element={<ProtectedRoute><PageTransition><AnamnesisTemplates /></PageTransition></ProtectedRoute>} />
       <Route path="/fichas" element={<ProtectedRoute><PageTransition><ClientRecords /></PageTransition></ProtectedRoute>} />
       <Route path="/privacidade" element={<ProtectedRoute><PageTransition><PrivacyPolicySettings /></PageTransition></ProtectedRoute>} />
+      <Route path="/logs" element={<ProtectedRoute><PageTransition><AuditLogs /></PageTransition></ProtectedRoute>} />
       
       {/* Super admin routes */}
       <Route path="/admin" element={<AdminRoute><PageTransition><AdminDashboard /></PageTransition></AdminRoute>} />

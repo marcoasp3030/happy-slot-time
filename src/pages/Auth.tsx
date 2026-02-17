@@ -10,6 +10,7 @@ import {
   BarChart3, Globe, Users, Smartphone, Zap, Shield, Clock
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { logAudit } from '@/lib/auditLog';
 import { motion, AnimatePresence } from 'framer-motion';
 import sloteraLogo from '@/assets/slotera-logo.png';
 
@@ -77,8 +78,14 @@ export default function Auth() {
 
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        const { data: loginData, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) {
+          logAudit({ action: 'Login falhou', category: 'auth', details: { email, error: error.message } });
+          throw error;
+        }
+        // Log successful login
+        const profile = await supabase.from('profiles').select('company_id').eq('user_id', loginData.user.id).single();
+        logAudit({ companyId: profile.data?.company_id, action: 'Login realizado', category: 'auth', details: { email } });
         navigate('/dashboard');
       } else {
         const { error } = await supabase.auth.signUp({
@@ -90,6 +97,7 @@ export default function Auth() {
           },
         });
         if (error) throw error;
+        logAudit({ action: 'Cadastro realizado', category: 'auth', details: { email, company_name: companyName } });
         toast.success('Conta criada! Verifique seu e-mail para confirmar.');
       }
     } catch (error: any) {
