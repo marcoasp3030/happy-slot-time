@@ -3,8 +3,10 @@ import { supabase } from '@/integrations/supabase/client';
 import AdminLayout from '@/components/AdminLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Users, Search, Building2 } from 'lucide-react';
+import { Users, Search, Building2, MailCheck, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface Profile {
   id: string;
@@ -14,39 +16,65 @@ interface Profile {
   company_id: string | null;
   created_at: string;
   company_name?: string;
+  email_confirmed?: boolean;
 }
 
 export default function AdminUsers() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [confirmingUserId, setConfirmingUserId] = useState<string | null>(null);
+
+  const fetchProfiles = async () => {
+    setLoading(true);
+    const { data: profilesData } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (profilesData) {
+      const companyIds = profilesData.filter(p => p.company_id).map(p => p.company_id!);
+      const { data: companies } = await supabase
+        .from('companies')
+        .select('id, name')
+        .in('id', companyIds);
+
+      const companyMap = new Map((companies || []).map(c => [c.id, c.name]));
+      setProfiles(profilesData.map(p => ({
+        ...p,
+        company_name: p.company_id ? companyMap.get(p.company_id) || 'N/A' : 'Sem empresa',
+      })));
+    }
+    setLoading(false);
+  };
 
   useEffect(() => {
-    const fetchProfiles = async () => {
-      setLoading(true);
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (profilesData) {
-        const companyIds = profilesData.filter(p => p.company_id).map(p => p.company_id!);
-        const { data: companies } = await supabase
-          .from('companies')
-          .select('id, name')
-          .in('id', companyIds);
-
-        const companyMap = new Map((companies || []).map(c => [c.id, c.name]));
-        setProfiles(profilesData.map(p => ({
-          ...p,
-          company_name: p.company_id ? companyMap.get(p.company_id) || 'N/A' : 'Sem empresa',
-        })));
-      }
-      setLoading(false);
-    };
-
     fetchProfiles();
   }, []);
+
+  const confirmUserEmail = async (userId: string) => {
+    setConfirmingUserId(userId);
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-confirm-user', {
+        body: { user_id: userId },
+      });
+
+      if (error) throw error;
+      if (data?.success) {
+        toast.success('Email confirmado com sucesso! O usuário já pode acessar a plataforma.');
+        // Update local state
+        setProfiles(prev => prev.map(p => 
+          p.user_id === userId ? { ...p, email_confirmed: true } : p
+        ));
+      } else {
+        toast.error(data?.error || 'Erro ao confirmar email');
+      }
+    } catch (e: any) {
+      toast.error(e.message || 'Erro ao confirmar email do usuário');
+    } finally {
+      setConfirmingUserId(null);
+    }
+  };
 
   const filtered = profiles.filter(p =>
     (p.full_name || '').toLowerCase().includes(search.toLowerCase()) ||
@@ -95,6 +123,20 @@ export default function AdminUsers() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs gap-1 text-primary hover:text-primary"
+                      onClick={() => confirmUserEmail(profile.user_id)}
+                      disabled={confirmingUserId === profile.user_id || profile.email_confirmed === true}
+                    >
+                      {confirmingUserId === profile.user_id ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <MailCheck className="h-3 w-3" />
+                      )}
+                      {profile.email_confirmed ? 'Confirmado' : 'Confirmar Email'}
+                    </Button>
                     <Badge variant="secondary" className="text-xs">{profile.role}</Badge>
                     <span className="text-xs text-muted-foreground">{formatDate(profile.created_at)}</span>
                   </div>
