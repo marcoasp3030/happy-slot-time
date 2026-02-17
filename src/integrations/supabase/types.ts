@@ -812,25 +812,31 @@ export type Database = {
       message_templates: {
         Row: {
           active: boolean
+          buttons: Json | null
           company_id: string
           created_at: string
           id: string
+          send_notification: boolean
           template: string
           type: string
         }
         Insert: {
           active?: boolean
+          buttons?: Json | null
           company_id: string
           created_at?: string
           id?: string
+          send_notification?: boolean
           template: string
           type: string
         }
         Update: {
           active?: boolean
+          buttons?: Json | null
           company_id?: string
           created_at?: string
           id?: string
+          send_notification?: boolean
           template?: string
           type?: string
         }

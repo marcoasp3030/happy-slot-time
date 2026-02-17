@@ -8,9 +8,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import { MessageSquare, Send, Settings, Wifi, Bell } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { MessageSquare, Send, Settings, Wifi, Bell, Plus, Trash2, MousePointerClick } from 'lucide-react';
 import { toast } from 'sonner';
 import WhatsAppConnectionCard from '@/components/WhatsAppConnectionCard';
+
+interface TemplateButton {
+  id: string;
+  text: string;
+}
 
 export default function WhatsAppSettings() {
   const { companyId } = useAuth();
@@ -18,6 +24,7 @@ export default function WhatsAppSettings() {
   const [templates, setTemplates] = useState<any[]>([]);
   const [rules, setRules] = useState<any[]>([]);
   const [testPhone, setTestPhone] = useState('');
+  const [editingButtons, setEditingButtons] = useState<Record<string, TemplateButton[]>>({});
 
   const fetchData = async () => {
     if (!companyId) return;
@@ -37,7 +44,17 @@ export default function WhatsAppSettings() {
         active: s.active ?? false,
       });
     }
-    setTemplates(templatesRes.data || []);
+    const tpls = templatesRes.data || [];
+    setTemplates(tpls);
+    // Initialize buttons state
+    const btns: Record<string, TemplateButton[]> = {};
+    tpls.forEach((t: any) => {
+      btns[t.id] = (t.buttons || []).map((b: any, i: number) => ({
+        id: b.id || `btn_${i}`,
+        text: b.text || '',
+      }));
+    });
+    setEditingButtons(btns);
     setRules(rulesRes.data || []);
   };
 
@@ -60,6 +77,48 @@ export default function WhatsAppSettings() {
   const updateTemplate = async (id: string, template: string) => {
     await supabase.from('message_templates').update({ template }).eq('id', id);
     toast.success('Template atualizado');
+  };
+
+  const toggleSendNotification = async (id: string, value: boolean) => {
+    await supabase.from('message_templates').update({ send_notification: value }).eq('id', id);
+    setTemplates(prev => prev.map(t => t.id === id ? { ...t, send_notification: value } : t));
+    toast.success(value ? 'Notificação ativada' : 'Notificação desativada');
+  };
+
+  const addButton = (templateId: string) => {
+    setEditingButtons(prev => {
+      const current = prev[templateId] || [];
+      if (current.length >= 3) {
+        toast.error('Máximo de 3 botões por template');
+        return prev;
+      }
+      return {
+        ...prev,
+        [templateId]: [...current, { id: `btn_${Date.now()}`, text: '' }],
+      };
+    });
+  };
+
+  const removeButton = (templateId: string, index: number) => {
+    setEditingButtons(prev => ({
+      ...prev,
+      [templateId]: (prev[templateId] || []).filter((_, i) => i !== index),
+    }));
+  };
+
+  const updateButtonText = (templateId: string, index: number, text: string) => {
+    setEditingButtons(prev => ({
+      ...prev,
+      [templateId]: (prev[templateId] || []).map((b, i) => i === index ? { ...b, text } : b),
+    }));
+  };
+
+  const saveButtons = async (templateId: string) => {
+    const buttons = (editingButtons[templateId] || [])
+      .filter(b => b.text.trim())
+      .map(b => ({ id: b.id, text: b.text } as Record<string, string>));
+    await supabase.from('message_templates').update({ buttons: buttons as any }).eq('id', templateId);
+    toast.success('Botões salvos');
   };
 
   const updateRule = async (id: string, field: string, value: any) => {
@@ -90,6 +149,14 @@ export default function WhatsAppSettings() {
   const typeLabels: Record<string, string> = {
     confirmation: 'Confirmação', reminder: 'Lembrete', cancellation: 'Cancelamento',
     reschedule: 'Remarcação', confirmation_request: 'Pedido de confirmação',
+  };
+
+  const typeDescriptions: Record<string, string> = {
+    confirmation: 'Enviada ao confirmar um agendamento',
+    reminder: 'Enviada antes do horário agendado',
+    cancellation: 'Enviada ao cancelar um agendamento',
+    reschedule: 'Enviada ao remarcar um agendamento',
+    confirmation_request: 'Solicita confirmação do cliente',
   };
 
   const ruleLabels: Record<string, string> = { reminder_1: 'Lembrete 1', reminder_2: 'Lembrete 2' };
@@ -166,21 +233,94 @@ export default function WhatsAppSettings() {
               Templates de Mensagem
             </CardTitle>
           </CardHeader>
-          <CardContent className="px-4 sm:px-6 space-y-4">
+          <CardContent className="px-4 sm:px-6 space-y-5">
             <p className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-xl font-mono leading-relaxed">
               Placeholders: {'{{cliente_nome}}'} {'{{data}}'} {'{{hora}}'} {'{{servico}}'} {'{{empresa_nome}}'}
             </p>
-            {templates.map((t) => (
-              <div key={t.id} className="space-y-1.5">
-                <Label className="font-semibold text-sm">{typeLabels[t.type] || t.type}</Label>
-                <Textarea
-                  defaultValue={t.template}
-                  onBlur={(e) => updateTemplate(t.id, e.target.value)}
-                  rows={3}
-                  className="text-sm"
-                />
-              </div>
-            ))}
+            {templates.map((t) => {
+              const buttons = editingButtons[t.id] || [];
+              return (
+                <div key={t.id} className="space-y-3 p-4 border border-border/60 rounded-xl bg-card/50">
+                  {/* Header with toggle */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="font-bold text-sm">{typeLabels[t.type] || t.type}</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">{typeDescriptions[t.type] || ''}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">Enviar</span>
+                      <Switch
+                        checked={t.send_notification ?? true}
+                        onCheckedChange={(v) => toggleSendNotification(t.id, v)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Template text */}
+                  <Textarea
+                    defaultValue={t.template}
+                    onBlur={(e) => updateTemplate(t.id, e.target.value)}
+                    rows={3}
+                    className="text-sm"
+                    disabled={!t.send_notification}
+                  />
+
+                  {/* Interactive buttons section */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <MousePointerClick className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-xs font-semibold text-muted-foreground">Botões interativos (opcional, máx. 3)</span>
+                    </div>
+                    {buttons.map((btn, i) => (
+                      <div key={btn.id} className="flex items-center gap-2">
+                        <Input
+                          value={btn.text}
+                          onChange={(e) => updateButtonText(t.id, i, e.target.value)}
+                          placeholder={`Texto do botão ${i + 1}`}
+                          className="h-8 text-sm flex-1"
+                          maxLength={20}
+                          disabled={!t.send_notification}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={() => removeButton(t.id, i)}
+                          disabled={!t.send_notification}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                    <div className="flex gap-2">
+                      {buttons.length < 3 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => addButton(t.id)}
+                          disabled={!t.send_notification}
+                        >
+                          <Plus className="h-3 w-3 mr-1" />
+                          Adicionar botão
+                        </Button>
+                      )}
+                      {buttons.length > 0 && (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => saveButtons(t.id)}
+                          disabled={!t.send_notification}
+                        >
+                          Salvar botões
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </CardContent>
         </Card>
 
