@@ -32,7 +32,6 @@ export default function AdminPromptTemplates() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [promptContent, setPromptContent] = useState('');
-  const [category, setCategory] = useState('general');
   const [active, setActive] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -52,9 +51,8 @@ export default function AdminPromptTemplates() {
     setEditing(null);
     setName('');
     setDescription('');
-    setPromptContent('');
-    setCategory('general');
     setActive(true);
+    setDialogOpen(true);
     setDialogOpen(true);
   }
 
@@ -63,7 +61,6 @@ export default function AdminPromptTemplates() {
     setName(t.name);
     setDescription(t.description || '');
     setPromptContent(t.prompt_content);
-    setCategory(t.category);
     setActive(t.active);
     setDialogOpen(true);
   }
@@ -77,14 +74,14 @@ export default function AdminPromptTemplates() {
     if (editing) {
       const { error } = await supabase
         .from('prompt_templates')
-        .update({ name, description: description || null, prompt_content: promptContent, category, active } as any)
+        .update({ name, description: description || null, prompt_content: promptContent, active } as any)
         .eq('id', editing.id);
       if (error) toast({ title: 'Erro', description: error.message, variant: 'destructive' });
       else toast({ title: 'Template atualizado!' });
     } else {
       const { error } = await supabase
         .from('prompt_templates')
-        .insert({ name, description: description || null, prompt_content: promptContent, category, active } as any);
+        .insert({ name, description: description || null, prompt_content: promptContent, active } as any);
       if (error) toast({ title: 'Erro', description: error.message, variant: 'destructive' });
       else toast({ title: 'Template criado!' });
     }
@@ -105,14 +102,6 @@ export default function AdminPromptTemplates() {
     fetchTemplates();
   }
 
-  const categoryLabels: Record<string, string> = {
-    general: 'Geral',
-    salon: 'Salão/Barbearia',
-    clinic: 'Clínica',
-    office: 'Escritório',
-    restaurant: 'Restaurante',
-    fitness: 'Fitness/Academia',
-  };
 
   return (
     <AdminLayout>
@@ -152,9 +141,6 @@ export default function AdminPromptTemplates() {
                         <Badge variant={t.active ? 'default' : 'secondary'} className="text-[10px]">
                           {t.active ? 'Ativo' : 'Inativo'}
                         </Badge>
-                        <Badge variant="outline" className="text-[10px]">
-                          {categoryLabels[t.category] || t.category}
-                        </Badge>
                       </CardTitle>
                       {t.description && (
                         <CardDescription>{t.description}</CardDescription>
@@ -190,23 +176,9 @@ export default function AdminPromptTemplates() {
               <DialogTitle>{editing ? 'Editar Template' : 'Novo Template de Prompt'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Nome do Template *</Label>
-                  <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Atendente de Salão de Beleza" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Categoria</Label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  >
-                    {Object.entries(categoryLabels).map(([k, v]) => (
-                      <option key={k} value={k}>{v}</option>
-                    ))}
-                  </select>
-                </div>
+              <div className="space-y-2">
+                <Label>Nome do Template *</Label>
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Atendente de Salão de Beleza" />
               </div>
               <div className="space-y-2">
                 <Label>Descrição (opcional)</Label>
