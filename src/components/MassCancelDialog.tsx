@@ -27,6 +27,7 @@ interface RescheduledDetail {
 export default function MassCancelDialog() {
   const { companyId } = useAuth();
   const [open, setOpen] = useState(false);
+  const [showAllSlots, setShowAllSlots] = useState(false);
   const [date, setDate] = useState('');
   const [reason, setReason] = useState('');
   const [sendWhatsApp, setSendWhatsApp] = useState(true);
@@ -144,6 +145,7 @@ export default function MassCancelDialog() {
   }, [companyId]);
 
   useEffect(() => {
+    setShowAllSlots(false);
     if (rescheduleMode === 'manual' && targetDate && targetDate > date) {
       fetchTargetDateSlots(targetDate);
     } else {
@@ -430,15 +432,26 @@ export default function MassCancelDialog() {
                                   <p>✅ Capacidade suficiente para remarcar todos os {previewCount} agendamentos</p>
                                 )}
                                 {targetSlots.freeSlots.length > 0 && (
-                                  <div className="flex flex-wrap gap-1 pt-1">
-                                    {targetSlots.freeSlots.map((slot) => (
-                                      <span
-                                        key={slot}
-                                        className="inline-block px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-semibold"
+                                  <div className="space-y-1 pt-1">
+                                    <div className="flex flex-wrap gap-1">
+                                      {(showAllSlots ? targetSlots.freeSlots : targetSlots.freeSlots.slice(0, 12)).map((slot) => (
+                                        <span
+                                          key={slot}
+                                          className="inline-block px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-semibold"
+                                        >
+                                          {slot}
+                                        </span>
+                                      ))}
+                                    </div>
+                                    {targetSlots.freeSlots.length > 12 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setShowAllSlots(!showAllSlots)}
+                                        className="text-[10px] font-semibold text-primary hover:underline"
                                       >
-                                        {slot}
-                                      </span>
-                                    ))}
+                                        {showAllSlots ? 'Ver menos' : `+ ${targetSlots.freeSlots.length - 12} horários`}
+                                      </button>
+                                    )}
                                   </div>
                                 )}
                               </div>
