@@ -120,8 +120,16 @@ Deno.serve(async (req) => {
 
     // ─── Agent processing route (internal call) ───
     if (body.action === "agent-process") {
-      log("🔵 agent-process route, is_audio:", body.is_audio);
-      const result = await handleAgent(supabase, body.company_id, body.phone, body.message, {
+      log("🔵 agent-process route, is_audio:", body.is_audio, "button_response:", body.button_response_id || "none");
+      
+      // If this is a button/list response, enrich the message with context
+      let agentMessage = body.message;
+      if (body.button_response_id) {
+        agentMessage = `[BOTÃO CLICADO: id="${body.button_response_id}" texto="${body.button_response_text || body.message}"] ${body.message}`;
+        log("🔘 Enriched message with button context:", agentMessage);
+      }
+      
+      const result = await handleAgent(supabase, body.company_id, body.phone, agentMessage, {
         is_audio: body.is_audio || false,
         audio_media_url: body.audio_media_url || null,
         audio_media_key: body.audio_media_key || null,
@@ -1069,6 +1077,16 @@ BOTÕES INTERATIVOS (OBRIGATÓRIO — SEMPRE USE QUANDO HOUVER ESCOLHA):
   * Precisa confirmar algo → send_buttons ["Sim|sim", "Não|nao"]
   * Precisa escolher profissional → send_buttons com nomes
 - IMPORTANTE: Ao usar send_buttons/send_list, inclua o texto explicativo no campo "text" do botão. NÃO retorne texto adicional no content — o texto dos botões já é a resposta.
+
+RESPOSTAS DE BOTÕES (QUANDO O CLIENTE CLICA EM UM BOTÃO):
+- Quando o cliente clica em um botão interativo, a mensagem chega no formato: [BOTÃO CLICADO: id="xxx" texto="yyy"] yyy
+- O "id" corresponde ao id_curto que foi enviado no botão (ex: svc_corte, slot_0900, sim, nao)
+- Use o ID para identificar a escolha do cliente e prosseguir no fluxo:
+  * IDs começando com "svc_" = serviço selecionado → pergunte a data/horário e use check_availability
+  * IDs começando com "slot_" = horário selecionado (formato slot_HHMM) → confirme e use book_appointment
+  * ID "sim" ou "nao" = resposta de confirmação
+- Trate a resposta de botão como se o cliente tivesse digitado a escolha — continue o fluxo normalmente
+- NÃO pergunte novamente o que o cliente já escolheu pelo botão
 
 DADOS (use só quando relevante, não despeje tudo de uma vez):
 ${dataParts.join(" | ")}
