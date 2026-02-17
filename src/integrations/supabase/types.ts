@@ -401,6 +401,45 @@ export type Database = {
           },
         ]
       }
+      platform_settings: {
+        Row: {
+          cta_subtitle: string | null
+          cta_text: string | null
+          footer_text: string | null
+          hero_subtitle: string | null
+          hero_title: string | null
+          hero_title_highlight: string | null
+          id: string
+          logo_url: string | null
+          updated_at: string | null
+          updated_by: string | null
+        }
+        Insert: {
+          cta_subtitle?: string | null
+          cta_text?: string | null
+          footer_text?: string | null
+          hero_subtitle?: string | null
+          hero_title?: string | null
+          hero_title_highlight?: string | null
+          id?: string
+          logo_url?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Update: {
+          cta_subtitle?: string | null
+          cta_text?: string | null
+          footer_text?: string | null
+          hero_subtitle?: string | null
+          hero_title?: string | null
+          hero_title_highlight?: string | null
+          id?: string
+          logo_url?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null

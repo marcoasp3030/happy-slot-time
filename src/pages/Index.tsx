@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import {
   Calendar, MessageSquare, Palette, ArrowRight, CheckCircle,
@@ -64,10 +65,28 @@ const steps = [
 export default function Index() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const [platform, setPlatform] = useState<any>(null);
 
   useEffect(() => {
     if (!loading && user) navigate('/dashboard');
   }, [user, loading, navigate]);
+
+  useEffect(() => {
+    supabase
+      .from('platform_settings')
+      .select('*')
+      .limit(1)
+      .single()
+      .then(({ data }) => { if (data) setPlatform(data); });
+  }, []);
+
+  const heroTitle = platform?.hero_title || 'Sua agenda online,';
+  const heroHighlight = platform?.hero_title_highlight || 'sempre organizada';
+  const heroSubtitle = platform?.hero_subtitle || 'Plataforma completa de agendamentos com página personalizada, notificações automáticas por WhatsApp e painel inteligente para qualquer tipo de negócio.';
+  const ctaText = platform?.cta_text || 'Pronto para transformar seu negócio?';
+  const ctaSubtitle = platform?.cta_subtitle || 'Comece agora e tenha sua página de agendamentos online em menos de 2 minutos. Sem complicação.';
+  const footerText = platform?.footer_text || `© ${new Date().getFullYear()} Slotera. Todos os direitos reservados.`;
+  const platformLogo = platform?.logo_url || sloteraLogo;
 
   return (
     <div className="min-h-screen bg-background overflow-hidden">
@@ -75,7 +94,7 @@ export default function Index() {
       <nav className="border-b border-border/50 bg-background/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-6xl mx-auto flex items-center justify-between px-4 sm:px-6 py-3">
           <div className="flex items-center gap-2.5">
-            <img src={sloteraLogo} alt="Slotera" className="h-9 w-auto" />
+            <img src={platformLogo} alt="Slotera" className="h-9 w-auto" />
             <span className="text-lg font-extrabold tracking-tight">Slotera</span>
           </div>
           <div className="flex gap-2">
@@ -104,15 +123,15 @@ export default function Index() {
           </div>
 
           <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold tracking-tight mb-6 animate-fade-in leading-[1.08]">
-            Sua agenda online,
+            {heroTitle}
             <br />
             <span className="bg-gradient-to-r from-primary to-primary-glow bg-clip-text text-transparent">
-              sempre organizada
+              {heroHighlight}
             </span>
           </h1>
 
           <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10 animate-fade-in leading-relaxed">
-            Plataforma completa de agendamentos com página personalizada, notificações automáticas por WhatsApp e painel inteligente para qualquer tipo de negócio.
+            {heroSubtitle}
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center animate-fade-in">
@@ -242,10 +261,10 @@ export default function Index() {
           </div>
           <div className="relative">
             <h2 className="text-2xl md:text-4xl font-extrabold mb-4">
-              Pronto para transformar seu negócio?
+              {ctaText}
             </h2>
             <p className="text-primary-foreground/80 mb-8 text-lg max-w-lg mx-auto leading-relaxed">
-              Comece agora e tenha sua página de agendamentos online em menos de 2 minutos. Sem complicação.
+              {ctaSubtitle}
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Button
@@ -269,11 +288,11 @@ export default function Index() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2.5">
-              <img src={sloteraLogo} alt="Slotera" className="h-7 w-auto" />
+              <img src={platformLogo} alt="Slotera" className="h-7 w-auto" />
               <span className="font-bold text-foreground">Slotera</span>
             </div>
             <p className="text-sm text-muted-foreground">
-              © {new Date().getFullYear()} Slotera. Todos os direitos reservados.
+              {footerText}
             </p>
           </div>
         </div>
