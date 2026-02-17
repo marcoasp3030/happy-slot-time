@@ -473,7 +473,7 @@ async function textToSpeech(text: string, voiceId: string): Promise<Uint8Array |
   return null;
 }
 
-// ─── Send interactive menu (buttons/list) via UAZAPI /send/menu ───
+// ─── Send interactive menu (buttons/list/carousel) via UAZAPI ───
 async function sendMenuViaUazapi(
   wsSettings: { base_url: string; token: string },
   phone: string,
@@ -482,23 +482,54 @@ async function sendMenuViaUazapi(
     text: string;
     footerText?: string;
     choices: string[];
-    title?: string; // for list type
-    imageButton?: string; // URL for button image
-    cards?: Array<{ title: string; body?: string; image?: string; choices: string[] }>; // for carousel type
+    title?: string;
+    imageButton?: string;
+    cards?: Array<{ title: string; body?: string; image?: string; choices: string[] }>;
   }
 ): Promise<any> {
   const baseUrl = wsSettings.base_url.replace(/\/$/, "");
+
+  // Use dedicated /send/carousel endpoint for carousel type
+  if (options.type === "carousel" && options.cards) {
+    const url = baseUrl + "/send/carousel";
+    const carouselPayload = {
+      number: phone,
+      text: options.text,
+      carousel: options.cards.map((card) => ({
+        text: card.title + (card.body ? "\n" + card.body : ""),
+        image: card.image || undefined,
+        buttons: card.choices.map((c) => {
+          const parts = c.split("|");
+          return {
+            id: parts[1] || parts[0],
+            text: parts[0],
+            type: "REPLY",
+          };
+        }),
+      })),
+    };
+
+    log("🔘 Sending carousel via UAZAPI /send/carousel:", url, "cards:", options.cards.length);
+    log("🔘 Carousel payload:", JSON.stringify(carouselPayload).substring(0, 500));
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", token: wsSettings.token },
+      body: JSON.stringify(carouselPayload),
+    });
+    const resText = await res.text();
+    log("🔘 UAZAPI /send/carousel result:", res.status, resText.substring(0, 300));
+    if (!res.ok) throw new Error(`UAZAPI carousel error ${res.status}: ${resText.substring(0, 200)}`);
+    try { return JSON.parse(resText); } catch { return { raw: resText }; }
+  }
+
+  // For button/list/poll, use /send/menu
   const url = baseUrl + "/send/menu";
   const body: any = {
     number: phone,
     type: options.type,
     text: options.text,
+    choices: options.choices,
   };
-  if (options.type === "carousel" && options.cards) {
-    body.cards = options.cards;
-  } else {
-    body.choices = options.choices;
-  }
   if (options.footerText) body.footerText = options.footerText;
   if (options.title) body.title = options.title;
   if (options.imageButton) body.imageButton = options.imageButton;
