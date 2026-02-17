@@ -1364,6 +1364,81 @@ ${ctx.cs?.custom_prompt ? "\nINSTRUÇÕES PERSONALIZADAS DO ESTABELECIMENTO:\n" 
   const ch = ai.choices?.[0];
   log("🧠 AI finish_reason:", ch?.finish_reason, "has_tool_calls:", !!ch?.message?.tool_calls, "content_len:", ch?.message?.content?.length);
 
+  // ── Log token usage ──
+  const usage = ai.usage;
+  if (usage) {
+    const inputTokens = usage.prompt_tokens || 0;
+    const outputTokens = usage.completion_tokens || 0;
+    const totalTokens = usage.total_tokens || inputTokens + outputTokens;
+    const provider = aiModel.includes("/") ? aiModel.split("/")[0] : (aiModel.startsWith("gpt") ? "openai" : "google");
+    
+    // Fetch pricing
+    let inputCostPer1k = 0, outputCostPer1k = 0;
+    try {
+      const { data: pricing } = await sb.from("llm_model_pricing").select("input_cost_per_1k, output_cost_per_1k").eq("model", aiModel).eq("active", true).limit(1);
+      if (pricing && pricing.length > 0) {
+        inputCostPer1k = Number(pricing[0].input_cost_per_1k) || 0;
+        outputCostPer1k = Number(pricing[0].output_cost_per_1k) || 0;
+      }
+    } catch {}
+    
+    const totalCost = (inputTokens / 1000 * inputCostPer1k) + (outputTokens / 1000 * outputCostPer1k);
+    
+    try {
+      await sb.from("llm_usage_logs").insert({
+        provider,
+        model: aiModel,
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        total_tokens: totalTokens,
+        cost_per_1k: inputCostPer1k,
+        total_cost: totalCost,
+        company_id: cid,
+        conversation_id: conv.id,
+      });
+      log("📊 Token usage logged:", inputTokens, "in", outputTokens, "out", totalTokens, "total, cost:", totalCost.toFixed(6));
+    } catch (e: any) {
+      logErr("📊 Failed to log token usage:", e.message);
+    }
+    
+    // Check usage limits and alerts
+    try {
+      const currentMonth = new Date().toISOString().substring(0, 7);
+      let { data: limits } = await sb.from("llm_usage_limits").select("*").eq("company_id", cid).single();
+      
+      if (!limits) {
+        await sb.from("llm_usage_limits").insert({ company_id: cid, current_month: currentMonth });
+        limits = { monthly_token_limit: 1000000, alert_50_sent: false, alert_80_sent: false, alert_100_sent: false, current_month: currentMonth };
+      }
+      
+      // Reset alerts if month changed
+      if (limits.current_month !== currentMonth) {
+        await sb.from("llm_usage_limits").update({ current_month: currentMonth, alert_50_sent: false, alert_80_sent: false, alert_100_sent: false }).eq("company_id", cid);
+        limits.alert_50_sent = false;
+        limits.alert_80_sent = false;
+        limits.alert_100_sent = false;
+      }
+      
+      // Sum monthly usage
+      const { data: monthUsage } = await sb.from("llm_usage_logs").select("total_tokens").eq("company_id", cid).gte("created_at", currentMonth + "-01T00:00:00Z");
+      const monthTotal = (monthUsage || []).reduce((sum: number, r: any) => sum + (r.total_tokens || 0), 0);
+      const pct = (monthTotal / limits.monthly_token_limit) * 100;
+      
+      if (pct >= 100 && !limits.alert_100_sent) {
+        log("🚨 Token limit 100% reached for company:", cid);
+        await sb.from("llm_usage_limits").update({ alert_100_sent: true }).eq("company_id", cid);
+      } else if (pct >= 80 && !limits.alert_80_sent) {
+        log("⚠️ Token limit 80% reached for company:", cid);
+        await sb.from("llm_usage_limits").update({ alert_80_sent: true }).eq("company_id", cid);
+      } else if (pct >= 50 && !limits.alert_50_sent) {
+        log("📊 Token limit 50% reached for company:", cid);
+        await sb.from("llm_usage_limits").update({ alert_50_sent: true }).eq("company_id", cid);
+      }
+    } catch (e: any) {
+      logErr("📊 Usage limit check failed:", e.message);
+    }
+  }
+
   let txt = ch?.message?.content || "";
 
   if (ch?.message?.tool_calls) {
