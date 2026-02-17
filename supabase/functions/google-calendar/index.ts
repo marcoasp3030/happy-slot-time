@@ -214,7 +214,7 @@ Deno.serve(async (req) => {
       const supabase = getSupabaseWithAuth(authHeader);
       const { data } = await supabase
         .from("google_calendar_tokens")
-        .select("connected_email, created_at")
+        .select("connected_email, created_at, calendar_id")
         .eq("company_id", companyId)
         .single();
 
@@ -222,7 +222,69 @@ Deno.serve(async (req) => {
         connected: !!data,
         email: data?.connected_email || null,
         connectedAt: data?.created_at || null,
+        calendarId: data?.calendar_id || "primary",
       }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // === LIST CALENDARS: fetch user's Google calendars ===
+    if (action === "calendars" && req.method === "GET") {
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const companyId = await getCompanyId(authHeader);
+      const accessToken = await getValidAccessToken(companyId);
+
+      const calRes = await fetch(`${GOOGLE_CALENDAR_API}/users/me/calendarList`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const calData = await calRes.json();
+      if (!calRes.ok) {
+        console.error("Failed to list calendars:", calData);
+        throw new Error(`Google Calendar API error: ${calRes.status}`);
+      }
+
+      const calendars = (calData.items || []).map((c: any) => ({
+        id: c.id,
+        summary: c.summary,
+        primary: c.primary || false,
+        backgroundColor: c.backgroundColor || null,
+      }));
+
+      return new Response(JSON.stringify({ calendars }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // === SET CALENDAR: update selected calendar ===
+    if (action === "set-calendar" && req.method === "POST") {
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const companyId = await getCompanyId(authHeader);
+      const { calendarId } = await req.json();
+      if (!calendarId) {
+        return new Response(JSON.stringify({ error: "calendarId required" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const supabase = getSupabaseAdmin();
+      await supabase
+        .from("google_calendar_tokens")
+        .update({ calendar_id: calendarId })
+        .eq("company_id", companyId);
+
+      return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -263,7 +325,16 @@ Deno.serve(async (req) => {
 
       const accessToken = await getValidAccessToken(companyId);
 
-      const eventRes = await fetch(`${GOOGLE_CALENDAR_API}/calendars/primary/events`, {
+      // Get selected calendar
+      const supabaseAdmin = getSupabaseAdmin();
+      const { data: tokenData } = await supabaseAdmin
+        .from("google_calendar_tokens")
+        .select("calendar_id")
+        .eq("company_id", companyId)
+        .single();
+      const calId = encodeURIComponent(tokenData?.calendar_id || "primary");
+
+      const eventRes = await fetch(`${GOOGLE_CALENDAR_API}/calendars/${calId}/events`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -286,8 +357,7 @@ Deno.serve(async (req) => {
 
       // Save event ID to appointment
       if (appointmentId) {
-        const supabase = getSupabaseAdmin();
-        await supabase
+        await supabaseAdmin
           .from("appointments")
           .update({ google_calendar_event_id: event.id })
           .eq("id", appointmentId);
@@ -318,7 +388,16 @@ Deno.serve(async (req) => {
 
       const accessToken = await getValidAccessToken(companyId);
 
-      const res = await fetch(`${GOOGLE_CALENDAR_API}/calendars/primary/events/${eventId}`, {
+      // Get selected calendar
+      const supabaseAdmin2 = getSupabaseAdmin();
+      const { data: tokenData2 } = await supabaseAdmin2
+        .from("google_calendar_tokens")
+        .select("calendar_id")
+        .eq("company_id", companyId)
+        .single();
+      const calId2 = encodeURIComponent(tokenData2?.calendar_id || "primary");
+
+      const res = await fetch(`${GOOGLE_CALENDAR_API}/calendars/${calId2}/events/${eventId}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${accessToken}` },
       });
@@ -350,7 +429,7 @@ Deno.serve(async (req) => {
       // Check if company has Google Calendar connected
       const { data: tokenRow } = await supabase
         .from("google_calendar_tokens")
-        .select("id")
+        .select("id, calendar_id")
         .eq("company_id", companyId)
         .single();
 
@@ -387,7 +466,8 @@ Deno.serve(async (req) => {
       const startDateTime = `${appointment.appointment_date}T${appointment.start_time}`;
       const endDateTime = `${appointment.appointment_date}T${appointment.end_time}`;
 
-      const eventRes = await fetch(`${GOOGLE_CALENDAR_API}/calendars/primary/events`, {
+      const syncCalId = encodeURIComponent(tokenRow?.calendar_id || "primary");
+      const eventRes = await fetch(`${GOOGLE_CALENDAR_API}/calendars/${syncCalId}/events`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -432,7 +512,15 @@ Deno.serve(async (req) => {
 
       try {
         const accessToken = await getValidAccessToken(companyId);
-        const res = await fetch(`${GOOGLE_CALENDAR_API}/calendars/primary/events/${eventId}`, {
+        // Get selected calendar for delete
+        const supabaseDel = getSupabaseAdmin();
+        const { data: tokenDel } = await supabaseDel
+          .from("google_calendar_tokens")
+          .select("calendar_id")
+          .eq("company_id", companyId)
+          .single();
+        const delCalId = encodeURIComponent(tokenDel?.calendar_id || "primary");
+        const res = await fetch(`${GOOGLE_CALENDAR_API}/calendars/${delCalId}/events/${eventId}`, {
           method: "DELETE",
           headers: { Authorization: `Bearer ${accessToken}` },
         });
