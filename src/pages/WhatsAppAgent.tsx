@@ -91,6 +91,7 @@ export default function WhatsAppAgent() {
         can_send_images: settings.can_send_images,
         can_send_audio: settings.can_send_audio,
         custom_business_info: settings.custom_business_info,
+        ai_model: settings.ai_model,
         collect_client_name: settings.collect_client_name,
         collect_client_phone: settings.collect_client_phone,
         collect_client_email: settings.collect_client_email,
@@ -243,6 +244,30 @@ export default function WhatsAppAgent() {
                 </div>
 
                 <Separator />
+
+                <div className="space-y-2">
+                  <Label>Modelo de IA</Label>
+                  <select
+                    value={settings?.ai_model || 'google/gemini-2.5-flash'}
+                    onChange={(e) => setSettings({ ...settings, ai_model: e.target.value })}
+                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    <optgroup label="Google Gemini">
+                      <option value="google/gemini-2.5-flash">Gemini 2.5 Flash (Rápido, recomendado)</option>
+                      <option value="google/gemini-2.5-flash-lite">Gemini 2.5 Flash Lite (Mais rápido, básico)</option>
+                      <option value="google/gemini-2.5-pro">Gemini 2.5 Pro (Mais inteligente, mais lento)</option>
+                      <option value="google/gemini-3-flash-preview">Gemini 3 Flash Preview (Nova geração)</option>
+                      <option value="google/gemini-3-pro-preview">Gemini 3 Pro Preview (Top, nova geração)</option>
+                    </optgroup>
+                    <optgroup label="OpenAI GPT">
+                      <option value="openai/gpt-5-nano">GPT-5 Nano (Rápido, econômico)</option>
+                      <option value="openai/gpt-5-mini">GPT-5 Mini (Balanceado)</option>
+                      <option value="openai/gpt-5">GPT-5 (Mais inteligente)</option>
+                      <option value="openai/gpt-5.2">GPT-5.2 (Último modelo, raciocínio avançado)</option>
+                    </optgroup>
+                  </select>
+                  <p className="text-xs text-muted-foreground">Modelos mais inteligentes entendem melhor as respostas dos clientes, mas são mais lentos e custam mais</p>
+                </div>
 
                 <div className="space-y-2">
                   <Label>Mensagem de Saudação</Label>

@@ -1328,6 +1328,7 @@ export type Database = {
       }
       whatsapp_agent_settings: {
         Row: {
+          ai_model: string | null
           can_handle_anamnesis: boolean | null
           can_send_audio: boolean | null
           can_send_files: boolean | null
@@ -1363,6 +1364,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          ai_model?: string | null
           can_handle_anamnesis?: boolean | null
           can_send_audio?: boolean | null
           can_send_files?: boolean | null
@@ -1398,6 +1400,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          ai_model?: string | null
           can_handle_anamnesis?: boolean | null
           can_send_audio?: boolean | null
           can_send_files?: boolean | null
