@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.google-calendar]
 verify_jwt = false
+
+[functions.notify-appointment-status]
+verify_jwt = false
