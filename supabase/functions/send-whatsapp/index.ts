@@ -18,57 +18,104 @@ function replacePlaceholders(template: string, data: Record<string, string>): st
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => data[key] || "");
 }
 
+function log(...args: any[]) {
+  console.log("[send-whatsapp]", new Date().toISOString(), ...args);
+}
+
+function logErr(...args: any[]) {
+  console.error("[send-whatsapp]", new Date().toISOString(), ...args);
+}
+
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  log("🔵 REQUEST RECEIVED", req.method, req.url);
+  log("🔵 Headers:", JSON.stringify(Object.fromEntries(req.headers.entries())));
+
+  if (req.method === "OPTIONS") {
+    log("🔵 CORS preflight");
+    return new Response(null, { headers: corsHeaders });
+  }
 
   try {
     const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const raw = await req.text();
-    let body: any;
-    try { body = JSON.parse(raw); } catch { return new Response(JSON.stringify({ ok: true, skipped: "bad_json" }), { headers: jsonH }); }
+    log("🔵 RAW BODY (first 500):", raw.substring(0, 500));
+    log("🔵 RAW BODY length:", raw.length);
 
-    // ─── Detect UAZAPI webhook payload (no "action" or "type" field, has event/data/message structure) ───
+    let body: any;
+    try {
+      body = JSON.parse(raw);
+      log("🔵 PARSED JSON keys:", Object.keys(body));
+    } catch (e) {
+      log("⚠️ BAD JSON, skipping:", e);
+      return new Response(JSON.stringify({ ok: true, skipped: "bad_json" }), { headers: jsonH });
+    }
+
+    // ─── Detect UAZAPI webhook payload ───
     const uazapiCompanyId = new URL(req.url).searchParams.get("company_id");
+    log("🔵 company_id from URL:", uazapiCompanyId);
+    log("🔵 body.type:", body.type, "body.action:", body.action, "body.event:", body.event);
+
     const isUazapiWebhook = uazapiCompanyId && !body.type && !body.action && (
       body.event || body.data || (body.phone && body.message && !body.appointment_id)
     );
+    log("🔵 isUazapiWebhook:", isUazapiWebhook);
 
     if (isUazapiWebhook) {
-      console.log("[send-whatsapp] 📩 UAZAPI webhook detected, cid:", uazapiCompanyId);
-      console.log("[send-whatsapp] payload:", raw.substring(0, 400));
+      log("📩 UAZAPI WEBHOOK DETECTED, cid:", uazapiCompanyId);
 
-      // Extract phone and message from various UAZAPI payload formats
-      const phone = body.phone || body.from || body.data?.from || 
+      const phone = body.phone || body.from || body.data?.from ||
         body.data?.key?.remoteJid?.replace("@s.whatsapp.net", "") || null;
-      const msg = body.message || body.text || body.data?.message?.conversation || 
+      const msg = body.message || body.text || body.data?.message?.conversation ||
         body.data?.message?.extendedTextMessage?.text || null;
 
+      log("📩 Extracted phone:", phone, "msg:", msg?.substring(0, 100));
+      log("📩 body.phone:", body.phone, "body.from:", body.from);
+      log("📩 body.message:", body.message, "body.text:", body.text);
+      log("📩 body.data:", JSON.stringify(body.data)?.substring(0, 300));
+
+      // Check if message is from the business itself (fromMe)
+      const fromMe = body.fromMe === true || body.data?.fromMe === true;
+      log("📩 fromMe:", fromMe);
+      if (fromMe) {
+        log("📩 Skipping own message (fromMe=true)");
+        return new Response(JSON.stringify({ ok: true, skipped: "from_me" }), { headers: jsonH });
+      }
+
       if (!phone || !msg) {
-        console.log("[send-whatsapp] no phone/msg, skipping");
+        log("⚠️ No phone or msg found, skipping");
         return new Response(JSON.stringify({ ok: true, skipped: "no_msg" }), { headers: jsonH });
       }
 
-      console.log("[send-whatsapp] phone:", phone, "msg:", msg.substring(0, 80));
+      log("🚀 CALLING handleAgent...");
       const t0 = Date.now();
-      const result = await handleAgent(supabase, uazapiCompanyId, phone, msg);
-      
-      await supabase.from("whatsapp_agent_logs").insert({
-        company_id: uazapiCompanyId,
-        conversation_id: result.conversation_id || null,
-        action: "response_sent",
-        details: { response_time_ms: Date.now() - t0, is_audio: false },
-      }).then(() => {}).catch(() => {});
+      try {
+        const result = await handleAgent(supabase, uazapiCompanyId, phone, msg);
+        const elapsed = Date.now() - t0;
+        log("✅ handleAgent completed in", elapsed, "ms, result:", JSON.stringify(result).substring(0, 300));
 
-      return new Response(JSON.stringify({ ok: true, ...result }), { headers: jsonH });
+        await supabase.from("whatsapp_agent_logs").insert({
+          company_id: uazapiCompanyId,
+          conversation_id: result.conversation_id || null,
+          action: "response_sent",
+          details: { response_time_ms: elapsed, is_audio: false },
+        }).then(() => log("✅ Agent log inserted")).catch((e: any) => logErr("❌ Agent log insert error:", e));
+
+        return new Response(JSON.stringify({ ok: true, ...result }), { headers: jsonH });
+      } catch (agentErr: any) {
+        logErr("❌ handleAgent THREW:", agentErr.message, agentErr.stack);
+        return new Response(JSON.stringify({ error: agentErr.message }), { status: 500, headers: jsonH });
+      }
     }
 
     // ─── Agent processing route (internal call) ───
     if (body.action === "agent-process") {
+      log("🔵 agent-process route");
       const result = await handleAgent(supabase, body.company_id, body.phone, body.message);
       return new Response(JSON.stringify(result), { headers: jsonH, status: result.error ? 500 : 200 });
     }
 
     // ─── Original send-whatsapp logic ───
+    log("🔵 Standard send-whatsapp route");
     const { company_id, type, appointment_id, phone } = body as SendRequest;
 
     if (!company_id) return new Response(JSON.stringify({ error: "company_id is required" }), { status: 400, headers: jsonH });
@@ -113,18 +160,19 @@ Deno.serve(async (req) => {
     await supabase.from("whatsapp_logs").insert({ company_id, appointment_id, phone: targetPhone, type, status, error, payload: responsePayload ? { response: responsePayload, message } : { message, error } });
 
     return new Response(JSON.stringify({ success: status === "sent", status, error }), { headers: jsonH });
-  } catch (e) {
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: jsonH });
+  } catch (e: any) {
+    logErr("❌ TOP-LEVEL ERROR:", e.message, e.stack);
+    return new Response(JSON.stringify({ error: e.message || String(e) }), { status: 500, headers: jsonH });
   }
 });
 
 // ─── UAZAPI send ───
 async function sendUazapiMessage(settings: { base_url: string; instance_id: string; token: string }, phone: string, message: string): Promise<any> {
   const url = settings.base_url.replace(/\/$/, "") + "/send/text";
-  console.log(`[send-whatsapp] POST ${url} phone:${phone} len:${message.length}`);
+  log("📤 SENDING via UAZAPI:", url, "phone:", phone, "len:", message.length);
   const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", token: settings.token }, body: JSON.stringify({ number: phone, text: message }) });
   const text = await res.text();
-  console.log(`[send-whatsapp] ${res.status} ${text.substring(0, 300)}`);
+  log("📤 UAZAPI response:", res.status, text.substring(0, 300));
   if (!res.ok) throw new Error(`UAZAPI error ${res.status}: ${text}`);
   try { return JSON.parse(text); } catch { return { raw: text }; }
 }
@@ -135,32 +183,89 @@ function formatDate(dateStr: string): string { const [y, m, d] = dateStr.split("
 const DN = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"];
 
 async function handleAgent(sb: any, cid: string, phone: string, msg: string): Promise<any> {
-  if (!cid || !phone || !msg) return { error: "missing fields" };
-  console.log("[agent] cid:", cid, "ph:", phone, "msg:", msg.substring(0, 80));
+  log("🤖 handleAgent START cid:", cid, "phone:", phone, "msg:", msg.substring(0, 100));
 
-  const { data: ag } = await sb.from("whatsapp_agent_settings").select("*").eq("company_id", cid).single();
-  if (!ag?.enabled) return { ok: true, skipped: "agent_disabled" };
+  if (!cid || !phone || !msg) {
+    log("🤖 ❌ Missing fields");
+    return { error: "missing fields" };
+  }
 
-  let { data: conv } = await sb.from("whatsapp_conversations").select("*").eq("company_id", cid).eq("phone", phone).eq("status", "active").order("created_at", { ascending: false }).limit(1).single();
-  if (!conv) { const { data: nc } = await sb.from("whatsapp_conversations").insert({ company_id: cid, phone, status: "active" }).select().single(); conv = nc; }
-  if (!conv) return { error: "conv_fail" };
-  if (conv.handoff_requested) return { ok: true, skipped: "handoff" };
+  // Check agent settings
+  log("🤖 Fetching agent settings...");
+  const { data: ag, error: agErr } = await sb.from("whatsapp_agent_settings").select("*").eq("company_id", cid).single();
+  log("🤖 Agent settings:", ag ? `enabled=${ag.enabled}` : "NOT FOUND", "error:", agErr?.message);
+  if (!ag?.enabled) {
+    log("🤖 Agent is DISABLED, skipping");
+    return { ok: true, skipped: "agent_disabled" };
+  }
 
-  await sb.from("whatsapp_messages").insert({ conversation_id: conv.id, company_id: cid, direction: "incoming", message_type: "text", content: msg });
+  // Get/create conversation
+  log("🤖 Looking for active conversation...");
+  let { data: conv, error: convErr } = await sb.from("whatsapp_conversations").select("*").eq("company_id", cid).eq("phone", phone).eq("status", "active").order("created_at", { ascending: false }).limit(1).single();
+  log("🤖 Existing conv:", conv?.id || "NONE", "error:", convErr?.message);
+
+  if (!conv) {
+    log("🤖 Creating new conversation...");
+    const { data: nc, error: ncErr } = await sb.from("whatsapp_conversations").insert({ company_id: cid, phone, status: "active" }).select().single();
+    conv = nc;
+    log("🤖 New conv:", nc?.id || "FAILED", "error:", ncErr?.message);
+  }
+  if (!conv) {
+    logErr("🤖 ❌ Conv creation failed!");
+    return { error: "conv_fail" };
+  }
+
+  if (conv.handoff_requested) {
+    log("🤖 Handoff active, skipping");
+    return { ok: true, skipped: "handoff" };
+  }
+
+  // Save incoming message
+  log("🤖 Saving incoming message...");
+  const { error: msgErr } = await sb.from("whatsapp_messages").insert({ conversation_id: conv.id, company_id: cid, direction: "incoming", message_type: "text", content: msg });
+  log("🤖 Message saved:", msgErr ? `ERROR: ${msgErr.message}` : "OK");
+
   await sb.from("whatsapp_conversations").update({ last_message_at: new Date().toISOString() }).eq("id", conv.id);
 
+  // Load context
+  log("🤖 Loading context...");
+  const t1 = Date.now();
   const ctx = await loadCtx(sb, cid, phone, conv.id);
-  const reply = await callAI(sb, cid, conv, ctx, msg);
+  log("🤖 Context loaded in", Date.now() - t1, "ms. msgs:", ctx.msgs.length, "appts:", ctx.appts.length, "svcs:", ctx.svcs.length, "kb:", ctx.kb.length);
 
-  await sb.from("whatsapp_messages").insert({ conversation_id: conv.id, company_id: cid, direction: "outgoing", message_type: "text", content: reply });
+  // Call AI
+  log("🤖 Calling AI...");
+  const t2 = Date.now();
+  try {
+    const reply = await callAI(sb, cid, conv, ctx, msg);
+    log("🤖 AI reply in", Date.now() - t2, "ms:", reply.substring(0, 150));
 
-  const { data: ws } = await sb.from("whatsapp_settings").select("base_url, token, active").eq("company_id", cid).single();
-  if (ws?.active && ws?.base_url && ws?.token) {
-    try { await sendUazapiMessage({ base_url: ws.base_url, instance_id: "", token: ws.token }, phone.replace(/\D/g, ""), reply); }
-    catch (e: any) { console.error("[agent] send err:", e.message); }
+    // Save outgoing message
+    const { error: outErr } = await sb.from("whatsapp_messages").insert({ conversation_id: conv.id, company_id: cid, direction: "outgoing", message_type: "text", content: reply });
+    log("🤖 Outgoing msg saved:", outErr ? `ERROR: ${outErr.message}` : "OK");
+
+    // Send via UAZAPI
+    log("🤖 Fetching WhatsApp settings to send reply...");
+    const { data: ws, error: wsErr } = await sb.from("whatsapp_settings").select("base_url, token, active").eq("company_id", cid).single();
+    log("🤖 WS settings:", ws ? `active=${ws.active} base_url=${ws.base_url}` : "NOT FOUND", "error:", wsErr?.message);
+
+    if (ws?.active && ws?.base_url && ws?.token) {
+      try {
+        log("🤖 Sending reply via UAZAPI...");
+        await sendUazapiMessage({ base_url: ws.base_url, instance_id: "", token: ws.token }, phone.replace(/\D/g, ""), reply);
+        log("🤖 ✅ Reply sent successfully!");
+      } catch (e: any) {
+        logErr("🤖 ❌ Send error:", e.message);
+      }
+    } else {
+      log("🤖 ⚠️ Cannot send: WS inactive or missing credentials");
+    }
+
+    return { ok: true, response: reply, conversation_id: conv.id };
+  } catch (aiErr: any) {
+    logErr("🤖 ❌ AI call FAILED:", aiErr.message, aiErr.stack);
+    return { error: aiErr.message, conversation_id: conv.id };
   }
-  console.log("[agent] reply:", reply.substring(0, 80));
-  return { ok: true, response: reply };
 }
 
 async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
@@ -179,6 +284,7 @@ async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
 
 async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string): Promise<string> {
   const key = Deno.env.get("LOVABLE_API_KEY");
+  log("🧠 callAI: LOVABLE_API_KEY exists:", !!key, "length:", key?.length);
   if (!key) throw new Error("LOVABLE_API_KEY missing");
 
   const hrs = (ctx.hrs || []).sort((a: any, b: any) => a.day_of_week - b.day_of_week).map((x: any) => DN[x.day_of_week] + ": " + (x.is_open ? (x.open_time || "").substring(0, 5) + "-" + (x.close_time || "").substring(0, 5) : "Fechado")).join("; ");
@@ -192,6 +298,8 @@ async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string
   for (const m of ctx.msgs) messages.push({ role: m.direction === "incoming" ? "user" : "assistant", content: m.content || "" });
   messages.push({ role: "user", content: userMsg });
 
+  log("🧠 AI request: model=google/gemini-2.5-flash, messages:", messages.length, "system_len:", sys.length);
+
   const tools = [
     { type: "function", function: { name: "confirm_appointment", description: "Confirma agendamento", parameters: { type: "object", properties: { appointment_id: { type: "string" } }, required: ["appointment_id"] } } },
     { type: "function", function: { name: "cancel_appointment", description: "Cancela agendamento", parameters: { type: "object", properties: { appointment_id: { type: "string" } }, required: ["appointment_id"] } } },
@@ -200,26 +308,53 @@ async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string
     { type: "function", function: { name: "request_handoff", description: "Transfere humano", parameters: { type: "object", properties: {} } } },
   ];
 
-  const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", { method: "POST", headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" }, body: JSON.stringify({ model: "google/gemini-2.5-flash", messages, tools }) });
-  if (!r.ok) { const t = await r.text(); console.error("AI err:", r.status, t); throw new Error("AI " + r.status); }
+  log("🧠 Sending request to AI gateway...");
+  const t0 = Date.now();
+  const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "google/gemini-2.5-flash", messages, tools }),
+  });
+  log("🧠 AI response status:", r.status, "in", Date.now() - t0, "ms");
+
+  if (!r.ok) {
+    const t = await r.text();
+    logErr("🧠 ❌ AI ERROR:", r.status, t.substring(0, 500));
+    throw new Error("AI " + r.status + ": " + t.substring(0, 200));
+  }
 
   const ai = await r.json();
   const ch = ai.choices?.[0];
+  log("🧠 AI finish_reason:", ch?.finish_reason, "has_tool_calls:", !!ch?.message?.tool_calls, "content_len:", ch?.message?.content?.length);
+
   let txt = ch?.message?.content || "";
 
   if (ch?.message?.tool_calls) {
+    log("🧠 Processing", ch.message.tool_calls.length, "tool calls...");
     for (const tc of ch.message.tool_calls) {
       let args: any = {}; try { args = JSON.parse(tc.function.arguments); } catch {}
       const fn = tc.function.name;
-      if (fn === "confirm_appointment") { await sb.from("appointments").update({ status: "confirmed" }).eq("id", args.appointment_id).eq("company_id", cid); txt = txt || "Agendamento confirmado! ✅"; }
-      else if (fn === "cancel_appointment") { await sb.from("appointments").update({ status: "canceled" }).eq("id", args.appointment_id).eq("company_id", cid); txt = txt || "Agendamento cancelado."; }
-      else if (fn === "reschedule_appointment") {
+      log("🧠 Tool call:", fn, "args:", JSON.stringify(args));
+
+      if (fn === "confirm_appointment") {
+        const { error: upErr } = await sb.from("appointments").update({ status: "confirmed" }).eq("id", args.appointment_id).eq("company_id", cid);
+        log("🧠 confirm result:", upErr ? `ERROR: ${upErr.message}` : "OK");
+        txt = txt || "Agendamento confirmado! ✅";
+      } else if (fn === "cancel_appointment") {
+        const { error: upErr } = await sb.from("appointments").update({ status: "canceled" }).eq("id", args.appointment_id).eq("company_id", cid);
+        log("🧠 cancel result:", upErr ? `ERROR: ${upErr.message}` : "OK");
+        txt = txt || "Agendamento cancelado.";
+      } else if (fn === "reschedule_appointment") {
         const { data: ap } = await sb.from("appointments").select("services(duration)").eq("id", args.appointment_id).single();
-        const dur = ap?.services?.duration || 30; const p = (args.new_time || "09:00").split(":").map(Number);
-        const em = p[0] * 60 + p[1] + dur; const et = String(Math.floor(em / 60)).padStart(2, "0") + ":" + String(em % 60).padStart(2, "0");
-        await sb.from("appointments").update({ appointment_date: args.new_date, start_time: args.new_time, end_time: et, status: "pending" }).eq("id", args.appointment_id).eq("company_id", cid);
+        const dur = ap?.services?.duration || 30;
+        const p = (args.new_time || "09:00").split(":").map(Number);
+        const em = p[0] * 60 + p[1] + dur;
+        const et = String(Math.floor(em / 60)).padStart(2, "0") + ":" + String(em % 60).padStart(2, "0");
+        const { error: upErr } = await sb.from("appointments").update({ appointment_date: args.new_date, start_time: args.new_time, end_time: et, status: "pending" }).eq("id", args.appointment_id).eq("company_id", cid);
+        log("🧠 reschedule result:", upErr ? `ERROR: ${upErr.message}` : "OK");
         txt = txt || "Remarcado para " + args.new_date + " " + args.new_time;
       } else if (fn === "check_availability") {
+        log("🧠 Checking availability for:", args.date);
         const dow = new Date(args.date + "T12:00:00").getDay();
         const { data: bh } = await sb.from("business_hours").select("*").eq("company_id", cid).eq("day_of_week", dow).single();
         if (!bh?.is_open) { txt = txt || "Fechado em " + args.date; }
@@ -230,6 +365,7 @@ async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string
           const tm = (t: string) => { if (!t) return 0; const pp = t.split(":").map(Number); return pp[0] * 60 + pp[1]; };
           let cur = tm(bh.open_time); const end = tm(bh.close_time); const slots: string[] = [];
           while (cur < end) { const ss = String(Math.floor(cur / 60)).padStart(2, "0") + ":" + String(cur % 60).padStart(2, "0"); const blocked = (bl || []).some((x: any) => (!x.start_time && !x.end_time) || (cur >= tm(x.start_time) && cur < tm(x.end_time))); if (!blocked && (ex || []).filter((x: any) => cur >= tm(x.start_time) && cur < tm(x.end_time)).length < mc) slots.push(ss); cur += iv; }
+          log("🧠 Available slots:", slots.length);
           txt = txt || (slots.length ? "Horarios " + args.date + ": " + slots.slice(0, 5).join(", ") : "Sem horarios em " + args.date);
         }
       } else if (fn === "request_handoff") {
@@ -239,5 +375,8 @@ async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string
       await sb.from("whatsapp_agent_logs").insert({ company_id: cid, conversation_id: conv.id, action: fn, details: args });
     }
   }
-  return txt || "Nao entendi. Digite 'atendente' para falar com alguem.";
+
+  const finalReply = txt || "Nao entendi. Digite 'atendente' para falar com alguem.";
+  log("🧠 FINAL REPLY:", finalReply.substring(0, 150));
+  return finalReply;
 }
