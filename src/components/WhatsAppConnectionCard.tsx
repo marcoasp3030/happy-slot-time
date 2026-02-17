@@ -166,18 +166,44 @@ export default function WhatsAppConnectionCard({ hasCredentials, hasAdminToken, 
   };
 
   if (!hasCredentials) {
+    // Still show the connect button - the edge function will auto-provision credentials
     return (
       <Card className="glass-card-static rounded-2xl">
         <CardHeader className="px-4 sm:px-6">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Smartphone className="h-4.5 w-4.5 text-muted-foreground" />
-            Conexão WhatsApp
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Smartphone className="h-4.5 w-4.5 text-primary" />
+              Conexão WhatsApp
+            </CardTitle>
+            <Badge variant="secondary">⚪ Desconectado</Badge>
+          </div>
         </CardHeader>
-        <CardContent className="px-4 sm:px-6">
+        <CardContent className="px-4 sm:px-6 space-y-4">
           <p className="text-sm text-muted-foreground">
-            Configure as credenciais da API na seção acima antes de conectar o WhatsApp.
+            Conecte seu WhatsApp para habilitar o envio automático de notificações, lembretes e o agente de IA. A instância será criada automaticamente.
           </p>
+          <Button
+            onClick={startConnection}
+            disabled={status === 'connecting'}
+            className="gradient-primary border-0 font-semibold"
+          >
+            {status === 'connecting' ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Configurando e conectando...
+              </>
+            ) : (
+              <>
+                <Wifi className="h-4 w-4 mr-2" />
+                Conectar WhatsApp
+              </>
+            )}
+          </Button>
+          {error && (
+            <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-sm text-destructive">
+              {error}
+            </div>
+          )}
         </CardContent>
       </Card>
     );
