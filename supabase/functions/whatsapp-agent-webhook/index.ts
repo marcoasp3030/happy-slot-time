@@ -699,14 +699,14 @@ async function sendWhatsAppResponse(supabase: any, companyId: string, phone: str
     return;
   }
 
-  const url = `${settings.base_url.replace(/\/$/, "")}/sendText/${settings.instance_id}`;
+  const url = `${settings.base_url.replace(/\/$/, "")}/send/text`;
   const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${settings.token}`,
+      token: settings.token,
     },
-    body: JSON.stringify({ phone: phone.replace(/\D/g, ""), message }),
+    body: JSON.stringify({ number: phone.replace(/\D/g, ""), text: message }),
   });
 
   if (!res.ok) {
@@ -727,16 +727,17 @@ async function sendWhatsAppAudio(supabase: any, companyId: string, phone: string
     return;
   }
 
-  const url = `${settings.base_url.replace(/\/$/, "")}/sendAudio/${settings.instance_id}`;
+  const url = `${settings.base_url.replace(/\/$/, "")}/send/media`;
   const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${settings.token}`,
+      token: settings.token,
     },
     body: JSON.stringify({
-      phone: phone.replace(/\D/g, ""),
-      audio: `data:audio/mp3;base64,${audioBase64}`,
+      number: phone.replace(/\D/g, ""),
+      mediatype: "audio",
+      media: `data:audio/mp3;base64,${audioBase64}`,
     }),
   });
 

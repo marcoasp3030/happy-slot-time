@@ -29,14 +29,14 @@ async function sendUazapiMessage(
   phone: string,
   message: string
 ): Promise<any> {
-  const url = `${settings.base_url.replace(/\/$/, "")}/sendText/${settings.instance_id}`;
+  const url = `${settings.base_url.replace(/\/$/, "")}/send/text`;
   const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${settings.token}`,
+      token: settings.token,
     },
-    body: JSON.stringify({ phone, message }),
+    body: JSON.stringify({ number: phone, text: message }),
   });
   if (!res.ok) {
     const text = await res.text();
