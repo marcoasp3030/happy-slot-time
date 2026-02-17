@@ -413,7 +413,17 @@ async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string
 
   const hasHistory = ctx.msgs && ctx.msgs.length > 0;
 
+  // Dynamic date/time in Brazil timezone
+  const now = new Date();
+  const brFormatter = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  const brTime = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false });
+  const dateStr = brFormatter.format(now);
+  const timeStr = brTime.format(now);
+
   const sys = `Você é a atendente virtual de ${ctx.co.name || "nossa empresa"} no WhatsApp.
+
+DATA E HORA ATUAL (use como referência oficial):
+${dateStr}, ${timeStr} (horário de Brasília, GMT-3)
 
 REGRAS ESSENCIAIS:
 - Fale como pessoa real: informal, curta, acolhedora
