@@ -5,7 +5,7 @@ import { useRole } from '@/hooks/useRole';
 import {
   LayoutDashboard, Users, Clock, Calendar,
   Palette, MessageSquare, CreditCard, Menu, X, LogOut,
-  ChevronRight, Bell, Shield, Search,
+  ChevronRight, Bell, Shield, Search, ClipboardList, Layers,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -18,6 +18,8 @@ const navItems = [
   { title: 'Serviços', icon: Clock, path: '/servicos' },
   { title: 'Profissionais', icon: Users, path: '/profissionais' },
   { title: 'Horários', icon: Clock, path: '/horarios' },
+  { title: 'Fichas de Clientes', icon: ClipboardList, path: '/fichas' },
+  { title: 'Anamnese (Config)', icon: Layers, path: '/anamnese' },
 ];
 
 const settingsItems = [
