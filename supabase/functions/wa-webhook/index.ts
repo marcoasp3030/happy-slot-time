@@ -84,6 +84,17 @@ function isFromMe(body: any): boolean {
   if (body.data?.fromMe === true) return true;
   if (body.key?.fromMe === true) return true;
   if (body.data?.key?.fromMe === true) return true;
+  // UAZAPI: event.IsFromMe
+  if (body.event?.IsFromMe === true) return true;
+  // UAZAPI: check if sender matches the instance owner (business number)
+  const owner = body.owner;
+  if (owner) {
+    const phone = extractPhone(body);
+    // If the phone extracted is the same as the owner, it's our own message
+    if (phone && owner.replace(/\D/g, "") === phone.replace(/\D/g, "")) return true;
+  }
+  // UAZAPI: message sent by instance has "fromMe" in nested message key
+  if (body.message?.key?.fromMe === true) return true;
   return false;
 }
 
@@ -138,6 +149,14 @@ Deno.serve(async (req) => {
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // Log fromMe detection details
+    log("🔵 fromMe check:", 
+      "body.fromMe:", body.fromMe, 
+      "key.fromMe:", body.key?.fromMe,
+      "event.IsFromMe:", body.event?.IsFromMe,
+      "owner:", body.owner
+    );
 
     if (isFromMe(body)) {
       log("📩 Skipping fromMe");
