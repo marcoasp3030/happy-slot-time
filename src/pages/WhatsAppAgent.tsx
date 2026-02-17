@@ -135,6 +135,24 @@ export default function WhatsAppAgent() {
     fetchAll();
   }
 
+  async function resetAllConversations() {
+    if (!companyId) return;
+    const confirmed = window.confirm('Tem certeza? Isso apagará TODAS as conversas e mensagens do agente. Esta ação não pode ser desfeita.');
+    if (!confirmed) return;
+
+    // Delete messages first (FK dependency), then conversations
+    await supabase.from('whatsapp_messages').delete().eq('company_id', companyId);
+    await supabase.from('whatsapp_agent_logs').delete().eq('company_id', companyId);
+    await supabase.from('whatsapp_conversations').delete().eq('company_id', companyId);
+    
+    setConversations([]);
+    setConversationMessages([]);
+    setSelectedConversation(null);
+    setAgentLogs([]);
+    toast({ title: 'Todas as conversas foram resetadas!' });
+    fetchAll();
+  }
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -450,6 +468,13 @@ export default function WhatsAppAgent() {
 
           {/* CONVERSATIONS TAB */}
           <TabsContent value="conversations" className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div />
+              <Button variant="outline" size="sm" onClick={resetAllConversations} className="text-destructive hover:text-destructive gap-1.5">
+                <Trash2 className="h-3.5 w-3.5" />
+                Resetar Todas as Conversas
+              </Button>
+            </div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <Card className="lg:col-span-1">
                 <CardHeader className="pb-3">
@@ -469,7 +494,10 @@ export default function WhatsAppAgent() {
                           }`}
                         >
                           <div className="flex items-center justify-between">
-                            <span className="font-medium text-sm">{conv.phone}</span>
+                            <div>
+                              <span className="font-medium text-sm">{conv.client_name || conv.phone}</span>
+                              {conv.client_name && <span className="text-[11px] text-muted-foreground ml-1.5">{conv.phone}</span>}
+                            </div>
                             {conv.handoff_requested && <Badge variant="destructive" className="text-[10px]">Humano</Badge>}
                           </div>
                           <div className="flex items-center justify-between mt-0.5">
