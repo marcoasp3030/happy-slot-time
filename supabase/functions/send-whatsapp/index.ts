@@ -177,7 +177,9 @@ async function sendUazapiMessage(
   phone: string,
   message: string
 ): Promise<any> {
-  const url = `${settings.base_url.replace(/\/$/, "")}/send/text`;
+  const baseUrl = settings.base_url.replace(/\/$/, "");
+  const instancePath = settings.instance_id ? `/${settings.instance_id}` : "";
+  const url = `${baseUrl}${instancePath}/send/text`;
 
   const res = await fetch(url, {
     method: "POST",
