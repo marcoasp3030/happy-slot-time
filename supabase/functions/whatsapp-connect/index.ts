@@ -12,7 +12,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Authenticate user via getClaims
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Not authenticated" }), {
@@ -39,13 +38,11 @@ Deno.serve(async (req) => {
     const userId = claimsData.claims.sub as string;
     const userEmail = (claimsData.claims as any).email as string | undefined;
 
-    // Use service role for DB operations
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Get user's company_id
     const { data: profile } = await supabase
       .from("profiles")
       .select("company_id")
@@ -61,35 +58,39 @@ Deno.serve(async (req) => {
 
     const companyId = profile.company_id;
 
-    // Fetch WhatsApp settings for this company
     const { data: settings } = await supabase
       .from("whatsapp_settings")
       .select("*")
       .eq("company_id", companyId)
       .single();
 
-    if (!settings || !settings.base_url || !settings.token) {
+    if (!settings || !settings.base_url) {
       return new Response(
-        JSON.stringify({ error: "WhatsApp settings not configured. Please set base URL and token first." }),
+        JSON.stringify({ error: "WhatsApp settings not configured. Please set base URL first." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Use admin_token for instance management, fallback to regular token
+    const adminToken = settings.admin_token || settings.token;
+    if (!adminToken) {
+      return new Response(
+        JSON.stringify({ error: "Nenhum token configurado. Configure o Admin Token ou o Token da instância." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     const baseUrl = settings.base_url.replace(/\/$/, "");
-    const uazapiToken = settings.token;
     const url = new URL(req.url);
     const action = url.searchParams.get("action");
 
-    // Helper to call UAZAPI with proper auth
     async function callUazapi(endpoint: string, method: string, body?: any) {
       const uazapiUrl = `${baseUrl}${endpoint}`;
-      console.log(`Calling UAZAPI: ${method} ${uazapiUrl}, token starts with: ${uazapiToken.substring(0, 8)}...`);
-      
-      // Try with both token header formats for compatibility
+      console.log(`Calling UAZAPI: ${method} ${uazapiUrl}`);
+
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        "token": uazapiToken,
-        "Authorization": `Bearer ${uazapiToken}`,
+        "token": adminToken,
       };
 
       const options: RequestInit = { method, headers };
@@ -118,7 +119,6 @@ Deno.serve(async (req) => {
 
         const data = await callUazapi("/instance/connect", "POST", connectBody);
 
-        // Log audit
         await supabase.from("audit_logs").insert({
           company_id: companyId,
           user_id: userId,

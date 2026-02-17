@@ -1,0 +1,1 @@
+ALTER TABLE public.whatsapp_settings ADD COLUMN admin_token text DEFAULT NULL;
