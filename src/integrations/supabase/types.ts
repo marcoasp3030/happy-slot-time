@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_notifications: {
+        Row: {
+          id: string
+          message: string
+          recipient_count: number
+          sent_at: string
+          sent_by: string
+          target: string
+          title: string
+        }
+        Insert: {
+          id?: string
+          message: string
+          recipient_count?: number
+          sent_at?: string
+          sent_by: string
+          target?: string
+          title: string
+        }
+        Update: {
+          id?: string
+          message?: string
+          recipient_count?: number
+          sent_at?: string
+          sent_by?: string
+          target?: string
+          title?: string
+        }
+        Relationships: []
+      }
       appointments: {
         Row: {
           appointment_date: string
@@ -122,6 +152,8 @@ export type Database = {
       companies: {
         Row: {
           address: string | null
+          blocked: boolean
+          blocked_reason: string | null
           created_at: string
           id: string
           logo_url: string | null
@@ -133,6 +165,8 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          blocked?: boolean
+          blocked_reason?: string | null
           created_at?: string
           id?: string
           logo_url?: string | null
@@ -144,6 +178,8 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          blocked?: boolean
+          blocked_reason?: string | null
           created_at?: string
           id?: string
           logo_url?: string | null
@@ -154,6 +190,45 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      company_notifications: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          notification_id: string
+          read: boolean
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          notification_id: string
+          read?: boolean
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          notification_id?: string
+          read?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_notifications_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_notifications_notification_id_fkey"
+            columns: ["notification_id"]
+            isOneToOne: false
+            referencedRelation: "admin_notifications"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       company_settings: {
         Row: {

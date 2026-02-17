@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import {
-  LayoutDashboard, Building2, Users, CreditCard, BarChart3,
+  LayoutDashboard, Building2, Users, CreditCard, BarChart3, Bell,
   Menu, X, LogOut, ChevronRight, Shield, ArrowLeft,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ const adminNavItems = [
   { title: 'Empresas', icon: Building2, path: '/admin/empresas' },
   { title: 'Assinaturas', icon: CreditCard, path: '/admin/assinaturas' },
   { title: 'Usuários', icon: Users, path: '/admin/usuarios' },
+  { title: 'Notificações', icon: Bell, path: '/admin/notificacoes' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

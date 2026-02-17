@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -5,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { useRole } from "@/hooks/useRole";
+import { supabase } from "@/integrations/supabase/client";
 import PageTransition from "@/components/PageTransition";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
@@ -22,13 +24,37 @@ import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminCompanies from "./pages/admin/AdminCompanies";
 import AdminSubscriptions from "./pages/admin/AdminSubscriptions";
 import AdminUsers from "./pages/admin/AdminUsers";
+import AdminNotifications from "./pages/admin/AdminNotifications";
 
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
-  if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-pulse text-muted-foreground">Carregando...</div></div>;
+  const { user, loading, companyId } = useAuth();
+  const { isSuperAdmin } = useRole();
+  const [blocked, setBlocked] = useState(false);
+  const [checkingBlock, setCheckingBlock] = useState(true);
+
+  useEffect(() => {
+    if (!companyId) { setCheckingBlock(false); return; }
+    supabase.from('companies').select('blocked').eq('id', companyId).single().then(({ data }) => {
+      setBlocked(data?.blocked || false);
+      setCheckingBlock(false);
+    });
+  }, [companyId]);
+
+  if (loading || checkingBlock) return <div className="min-h-screen flex items-center justify-center"><div className="animate-pulse text-muted-foreground">Carregando...</div></div>;
   if (!user) return <Navigate to="/login" replace />;
+  if (blocked && !isSuperAdmin) return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="text-center max-w-md">
+        <div className="h-16 w-16 rounded-2xl bg-destructive/10 flex items-center justify-center mx-auto mb-4">
+          <span className="text-3xl">🚫</span>
+        </div>
+        <h1 className="text-xl font-bold mb-2">Conta Bloqueada</h1>
+        <p className="text-muted-foreground text-sm">Sua empresa foi bloqueada pelo administrador da plataforma. Entre em contato com o suporte para mais informações.</p>
+      </div>
+    </div>
+  );
   return <>{children}</>;
 }
 
@@ -62,6 +88,7 @@ function AnimatedRoutes() {
       <Route path="/admin/empresas" element={<AdminRoute><PageTransition><AdminCompanies /></PageTransition></AdminRoute>} />
       <Route path="/admin/assinaturas" element={<AdminRoute><PageTransition><AdminSubscriptions /></PageTransition></AdminRoute>} />
       <Route path="/admin/usuarios" element={<AdminRoute><PageTransition><AdminUsers /></PageTransition></AdminRoute>} />
+      <Route path="/admin/notificacoes" element={<AdminRoute><PageTransition><AdminNotifications /></PageTransition></AdminRoute>} />
       
       <Route path="*" element={<PageTransition><NotFound /></PageTransition>} />
     </Routes>
