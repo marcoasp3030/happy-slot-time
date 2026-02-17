@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -33,6 +33,8 @@ export default function MassCancelDialog() {
   const [reschedule, setReschedule] = useState(false);
   const [rescheduleMode, setRescheduleMode] = useState<'auto' | 'manual'>('auto');
   const [targetDate, setTargetDate] = useState('');
+  const [targetSlots, setTargetSlots] = useState<{ total: number; free: number; occupied: number; isOpen: boolean } | null>(null);
+  const [targetSlotsLoading, setTargetSlotsLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [previewCount, setPreviewCount] = useState<number | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -68,6 +70,84 @@ export default function MassCancelDialog() {
     const [y, m, d] = dateStr.split('-');
     return `${d}/${m}/${y}`;
   };
+
+  const fetchTargetDateSlots = useCallback(async (tDate: string) => {
+    if (!companyId || !tDate) {
+      setTargetSlots(null);
+      return;
+    }
+    setTargetSlotsLoading(true);
+    try {
+      const targetDay = new Date(tDate + 'T12:00:00').getDay();
+      const [bhRes, settingsRes, aptsRes, blocksRes] = await Promise.all([
+        supabase.from('business_hours').select('*').eq('company_id', companyId).eq('day_of_week', targetDay).single(),
+        supabase.from('company_settings').select('slot_interval, max_capacity_per_slot').eq('company_id', companyId).single(),
+        supabase.from('appointments').select('start_time, end_time').eq('company_id', companyId).eq('appointment_date', tDate).neq('status', 'canceled'),
+        supabase.from('time_blocks').select('*').eq('company_id', companyId).eq('block_date', tDate),
+      ]);
+      const bh = bhRes.data;
+      if (!bh || !bh.is_open) {
+        setTargetSlots({ total: 0, free: 0, occupied: 0, isOpen: false });
+        return;
+      }
+      const interval = settingsRes.data?.slot_interval || 30;
+      const maxCapacity = settingsRes.data?.max_capacity_per_slot || 1;
+      const existingApts = aptsRes.data || [];
+      const timeBlocks = blocksRes.data || [];
+      const fullDayBlock = timeBlocks.find((b: any) => !b.start_time && !b.end_time && !b.staff_id);
+      if (fullDayBlock) {
+        setTargetSlots({ total: 0, free: 0, occupied: 0, isOpen: false });
+        return;
+      }
+      const dateBlocks = timeBlocks.filter((b: any) => b.start_time && b.end_time && !b.staff_id);
+      const [openH, openM] = bh.open_time.split(':').map(Number);
+      const [closeH, closeM] = bh.close_time.split(':').map(Number);
+      let current = openH * 60 + openM;
+      const end = closeH * 60 + closeM;
+      let total = 0;
+      let free = 0;
+      while (current + interval <= end) {
+        const hh = String(Math.floor(current / 60)).padStart(2, '0');
+        const mm = String(current % 60).padStart(2, '0');
+        const slotStart = `${hh}:${mm}`;
+        const endMin = current + interval;
+        const endHH = String(Math.floor(endMin / 60)).padStart(2, '0');
+        const endMM = String(endMin % 60).padStart(2, '0');
+        const slotEnd = `${endHH}:${endMM}`;
+        const isBlocked = dateBlocks.some((b: any) => {
+          const bs = b.start_time.slice(0, 5);
+          const be = b.end_time.slice(0, 5);
+          return slotStart < be && slotEnd > bs;
+        });
+        if (!isBlocked) {
+          total++;
+          const conflicts = existingApts.filter((a: any) => {
+            const aStart = a.start_time.slice(0, 5);
+            const aEnd = a.end_time.slice(0, 5);
+            return slotStart < aEnd && slotEnd > aStart;
+          });
+          if (conflicts.length < maxCapacity) {
+            free++;
+          }
+        }
+        current += interval;
+      }
+      setTargetSlots({ total, free, occupied: total - free, isOpen: true });
+    } catch (e) {
+      console.error('Error fetching target slots:', e);
+      setTargetSlots(null);
+    } finally {
+      setTargetSlotsLoading(false);
+    }
+  }, [companyId]);
+
+  useEffect(() => {
+    if (rescheduleMode === 'manual' && targetDate && targetDate > date) {
+      fetchTargetDateSlots(targetDate);
+    } else {
+      setTargetSlots(null);
+    }
+  }, [targetDate, date, rescheduleMode, fetchTargetDateSlots]);
 
   const handleMassCancel = async () => {
     if (!companyId || !date) {
@@ -147,6 +227,7 @@ export default function MassCancelDialog() {
     setDate('');
     setReason('');
     setTargetDate('');
+    setTargetSlots(null);
     setPreviewCount(null);
     setResult(null);
     setReschedule(false);
@@ -309,6 +390,46 @@ export default function MassCancelDialog() {
                           <p className="text-xs text-destructive font-medium">
                             A data de destino deve ser posterior à data cancelada
                           </p>
+                        )}
+
+                        {targetSlotsLoading && (
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            Verificando disponibilidade...
+                          </div>
+                        )}
+
+                        {targetSlots && !targetSlotsLoading && (
+                          <div className={`rounded-lg p-2.5 text-xs font-medium mt-1 ${
+                            !targetSlots.isOpen
+                              ? 'bg-destructive/10 text-destructive'
+                              : targetSlots.free === 0
+                                ? 'bg-destructive/10 text-destructive'
+                                : targetSlots.free < (previewCount || 0)
+                                  ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'
+                                  : 'bg-primary/10 text-primary'
+                          }`}>
+                            {!targetSlots.isOpen ? (
+                              '🚫 Este dia está fechado ou bloqueado'
+                            ) : targetSlots.free === 0 ? (
+                              '🚫 Nenhum horário livre nesta data'
+                            ) : (
+                              <div className="space-y-1">
+                                <p>
+                                  📊 {targetSlots.free} horário(s) livre(s) de {targetSlots.total} total
+                                  {targetSlots.occupied > 0 && ` · ${targetSlots.occupied} ocupado(s)`}
+                                </p>
+                                {previewCount !== null && targetSlots.free < previewCount && (
+                                  <p className="text-amber-600 dark:text-amber-400">
+                                    ⚠️ Apenas {targetSlots.free} de {previewCount} agendamentos poderão ser remarcados
+                                  </p>
+                                )}
+                                {previewCount !== null && targetSlots.free >= previewCount && (
+                                  <p>✅ Capacidade suficiente para remarcar todos os {previewCount} agendamentos</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     )}
