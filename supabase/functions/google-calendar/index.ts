@@ -477,6 +477,56 @@ Deno.serve(async (req) => {
       return jsonRes({ url: `${GOOGLE_AUTH_URL}?${params}` });
     }
 
+    // === OWNER LIST STAFF CALENDARS ===
+    if (action === "owner-staff-calendars" && req.method === "POST") {
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) return jsonRes({ error: "Unauthorized" }, 401);
+
+      const profile = await getUserProfile(authHeader);
+      if (profile.role === "staff") return jsonRes({ error: "Forbidden" }, 403);
+
+      const { staffId } = await req.json();
+      if (!staffId) return jsonRes({ error: "staffId required" }, 400);
+
+      const { accessToken } = await getValidToken(profile.companyId, staffId);
+
+      const calRes = await fetch(`${GOOGLE_CALENDAR_API}/users/me/calendarList`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const calData = await calRes.json();
+      if (!calRes.ok) throw new Error(`Google Calendar API error: ${calRes.status}`);
+
+      const calendars = (calData.items || []).map((c: any) => ({
+        id: c.id,
+        summary: c.summary,
+        primary: c.primary || false,
+        backgroundColor: c.backgroundColor || null,
+      }));
+
+      return jsonRes({ calendars });
+    }
+
+    // === OWNER SET STAFF CALENDAR ===
+    if (action === "owner-staff-set-calendar" && req.method === "POST") {
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) return jsonRes({ error: "Unauthorized" }, 401);
+
+      const profile = await getUserProfile(authHeader);
+      if (profile.role === "staff") return jsonRes({ error: "Forbidden" }, 403);
+
+      const { staffId, calendarId } = await req.json();
+      if (!staffId || !calendarId) return jsonRes({ error: "staffId and calendarId required" }, 400);
+
+      const supabase = getSupabaseAdmin();
+      await supabase
+        .from("google_calendar_tokens")
+        .update({ calendar_id: calendarId })
+        .eq("company_id", profile.companyId)
+        .eq("staff_id", staffId);
+
+      return jsonRes({ success: true });
+    }
+
     // === OWNER DISCONNECT STAFF CALENDAR ===
     if (action === "owner-disconnect-staff" && req.method === "POST") {
       const authHeader = req.headers.get("Authorization");
