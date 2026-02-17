@@ -30,6 +30,8 @@ import GoogleCalendarSettings from "./pages/GoogleCalendarSettings";
 import AdminPlatformSettings from "./pages/admin/AdminPlatformSettings";
 import StaffInvite from "./pages/StaffInvite";
 import StaffDashboard from "./pages/StaffDashboard";
+import AnamnesisTemplates from "./pages/AnamnesisTemplates";
+import ClientRecords from "./pages/ClientRecords";
 
 const queryClient = new QueryClient();
 
@@ -116,6 +118,8 @@ function AnimatedRoutes() {
       <Route path="/whatsapp" element={<ProtectedRoute><PageTransition><WhatsAppSettings /></PageTransition></ProtectedRoute>} />
       <Route path="/plano" element={<ProtectedRoute><PageTransition><Plan /></PageTransition></ProtectedRoute>} />
       <Route path="/google-calendar" element={<ProtectedRoute><PageTransition><GoogleCalendarSettings /></PageTransition></ProtectedRoute>} />
+      <Route path="/anamnese" element={<ProtectedRoute><PageTransition><AnamnesisTemplates /></PageTransition></ProtectedRoute>} />
+      <Route path="/fichas" element={<ProtectedRoute><PageTransition><ClientRecords /></PageTransition></ProtectedRoute>} />
       
       {/* Super admin routes */}
       <Route path="/admin" element={<AdminRoute><PageTransition><AdminDashboard /></PageTransition></AdminRoute>} />

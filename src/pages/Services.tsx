@@ -8,8 +8,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, ClipboardList, Layers } from 'lucide-react';
 import { toast } from 'sonner';
+import { Badge } from '@/components/ui/badge';
 
 interface Service {
   id: string;
@@ -19,6 +20,8 @@ interface Service {
   description: string | null;
   color: string | null;
   active: boolean;
+  requires_anamnesis: boolean;
+  requires_sessions: boolean;
 }
 
 export default function Services() {
@@ -26,7 +29,7 @@ export default function Services() {
   const [services, setServices] = useState<Service[]>([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Service | null>(null);
-  const [form, setForm] = useState({ name: '', duration: '30', price: '', description: '', color: '#10b981' });
+  const [form, setForm] = useState({ name: '', duration: '30', price: '', description: '', color: '#10b981', requires_anamnesis: false, requires_sessions: false });
 
   const fetchServices = async () => {
     if (!companyId) return;
@@ -42,7 +45,7 @@ export default function Services() {
 
   const openNew = () => {
     setEditing(null);
-    setForm({ name: '', duration: '30', price: '', description: '', color: '#10b981' });
+    setForm({ name: '', duration: '30', price: '', description: '', color: '#10b981', requires_anamnesis: false, requires_sessions: false });
     setOpen(true);
   };
 
@@ -54,6 +57,8 @@ export default function Services() {
       price: s.price ? String(s.price) : '',
       description: s.description || '',
       color: s.color || '#10b981',
+      requires_anamnesis: s.requires_anamnesis,
+      requires_sessions: s.requires_sessions,
     });
     setOpen(true);
   };
@@ -68,6 +73,8 @@ export default function Services() {
       price: form.price ? parseFloat(form.price) : null,
       description: form.description.trim() || null,
       color: form.color,
+      requires_anamnesis: form.requires_anamnesis,
+      requires_sessions: form.requires_sessions,
     };
 
     if (editing) {
@@ -132,6 +139,20 @@ export default function Services() {
                     <p className="text-sm text-muted-foreground">{s.duration} min</p>
                     {s.price && <p className="text-sm font-semibold">R$ {Number(s.price).toFixed(2)}</p>}
                   </div>
+                  {(s.requires_anamnesis || s.requires_sessions) && (
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      {s.requires_anamnesis && (
+                        <Badge variant="secondary" className="text-[10px] h-5 gap-1">
+                          <ClipboardList className="h-2.5 w-2.5" />Anamnese
+                        </Badge>
+                      )}
+                      {s.requires_sessions && (
+                        <Badge variant="secondary" className="text-[10px] h-5 gap-1">
+                          <Layers className="h-2.5 w-2.5" />Sessões
+                        </Badge>
+                      )}
+                    </div>
+                  )}
                   {s.description && <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{s.description}</p>}
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" onClick={() => openEdit(s)} className="text-xs h-8">
@@ -174,6 +195,23 @@ export default function Services() {
               <div className="space-y-1.5">
                 <Label className="font-semibold text-sm">Cor</Label>
                 <Input type="color" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} className="h-10 w-20 p-1 cursor-pointer" />
+              </div>
+              <div className="border-t border-border pt-4 space-y-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Recursos avançados</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="font-semibold text-sm flex items-center gap-1.5"><ClipboardList className="h-3.5 w-3.5 text-primary" />Anamnese</Label>
+                    <p className="text-[11px] text-muted-foreground">Ficha de avaliação do cliente</p>
+                  </div>
+                  <Switch checked={form.requires_anamnesis} onCheckedChange={(v) => setForm({ ...form, requires_anamnesis: v })} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="font-semibold text-sm flex items-center gap-1.5"><Layers className="h-3.5 w-3.5 text-primary" />Controle de Sessões</Label>
+                    <p className="text-[11px] text-muted-foreground">Pacotes e histórico de sessões</p>
+                  </div>
+                  <Switch checked={form.requires_sessions} onCheckedChange={(v) => setForm({ ...form, requires_sessions: v })} />
+                </div>
               </div>
               <Button onClick={handleSave} className="w-full gradient-primary border-0 font-semibold h-10">
                 {editing ? 'Salvar' : 'Criar serviço'}

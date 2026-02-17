@@ -44,6 +44,124 @@ export type Database = {
         }
         Relationships: []
       }
+      anamnesis_responses: {
+        Row: {
+          appointment_id: string | null
+          client_name: string
+          client_phone: string
+          company_id: string
+          created_at: string
+          filled_by: string
+          id: string
+          notes: string | null
+          responses: Json
+          service_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          appointment_id?: string | null
+          client_name: string
+          client_phone: string
+          company_id: string
+          created_at?: string
+          filled_by?: string
+          id?: string
+          notes?: string | null
+          responses?: Json
+          service_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          appointment_id?: string | null
+          client_name?: string
+          client_phone?: string
+          company_id?: string
+          created_at?: string
+          filled_by?: string
+          id?: string
+          notes?: string | null
+          responses?: Json
+          service_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "anamnesis_responses_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "anamnesis_responses_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "anamnesis_responses_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      anamnesis_templates: {
+        Row: {
+          active: boolean
+          company_id: string
+          created_at: string
+          field_label: string
+          field_options: Json | null
+          field_type: string
+          id: string
+          required: boolean
+          service_id: string | null
+          sort_order: number
+        }
+        Insert: {
+          active?: boolean
+          company_id: string
+          created_at?: string
+          field_label: string
+          field_options?: Json | null
+          field_type?: string
+          id?: string
+          required?: boolean
+          service_id?: string | null
+          sort_order?: number
+        }
+        Update: {
+          active?: boolean
+          company_id?: string
+          created_at?: string
+          field_label?: string
+          field_options?: Json | null
+          field_type?: string
+          id?: string
+          required?: boolean
+          service_id?: string | null
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "anamnesis_templates_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "anamnesis_templates_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       appointments: {
         Row: {
           appointment_date: string
@@ -151,6 +269,71 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_photos: {
+        Row: {
+          anamnesis_response_id: string | null
+          caption: string | null
+          company_id: string
+          created_at: string
+          id: string
+          package_id: string | null
+          photo_type: string | null
+          photo_url: string
+          session_id: string | null
+        }
+        Insert: {
+          anamnesis_response_id?: string | null
+          caption?: string | null
+          company_id: string
+          created_at?: string
+          id?: string
+          package_id?: string | null
+          photo_type?: string | null
+          photo_url: string
+          session_id?: string | null
+        }
+        Update: {
+          anamnesis_response_id?: string | null
+          caption?: string | null
+          company_id?: string
+          created_at?: string
+          id?: string
+          package_id?: string | null
+          photo_type?: string | null
+          photo_url?: string
+          session_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_photos_anamnesis_response_id_fkey"
+            columns: ["anamnesis_response_id"]
+            isOneToOne: false
+            referencedRelation: "anamnesis_responses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_photos_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_photos_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "session_packages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_photos_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
             referencedColumns: ["id"]
           },
         ]
@@ -554,6 +737,8 @@ export type Database = {
           id: string
           name: string
           price: number | null
+          requires_anamnesis: boolean
+          requires_sessions: boolean
         }
         Insert: {
           active?: boolean
@@ -565,6 +750,8 @@ export type Database = {
           id?: string
           name: string
           price?: number | null
+          requires_anamnesis?: boolean
+          requires_sessions?: boolean
         }
         Update: {
           active?: boolean
@@ -576,6 +763,8 @@ export type Database = {
           id?: string
           name?: string
           price?: number | null
+          requires_anamnesis?: boolean
+          requires_sessions?: boolean
         }
         Relationships: [
           {
@@ -583,6 +772,121 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      session_packages: {
+        Row: {
+          client_name: string
+          client_phone: string
+          company_id: string
+          created_at: string
+          id: string
+          notes: string | null
+          service_id: string | null
+          status: string
+          total_sessions: number | null
+          updated_at: string
+        }
+        Insert: {
+          client_name: string
+          client_phone: string
+          company_id: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          service_id?: string | null
+          status?: string
+          total_sessions?: number | null
+          updated_at?: string
+        }
+        Update: {
+          client_name?: string
+          client_phone?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          service_id?: string | null
+          status?: string
+          total_sessions?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_packages_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_packages_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sessions: {
+        Row: {
+          appointment_id: string | null
+          company_id: string
+          created_at: string
+          evolution: string | null
+          id: string
+          notes: string | null
+          package_id: string
+          session_date: string
+          session_number: number
+          status: string
+        }
+        Insert: {
+          appointment_id?: string | null
+          company_id: string
+          created_at?: string
+          evolution?: string | null
+          id?: string
+          notes?: string | null
+          package_id: string
+          session_date?: string
+          session_number?: number
+          status?: string
+        }
+        Update: {
+          appointment_id?: string | null
+          company_id?: string
+          created_at?: string
+          evolution?: string | null
+          id?: string
+          notes?: string | null
+          package_id?: string
+          session_date?: string
+          session_number?: number
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sessions_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sessions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sessions_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "session_packages"
             referencedColumns: ["id"]
           },
         ]
