@@ -132,15 +132,12 @@ Deno.serve(async (req) => {
 
     if (buttons.length > 0) {
       // Send with interactive buttons via /send/menu (UAZAPI v2 format)
+      // choices must be simple strings like "Texto do botão|id_botao"
       const menuBody = {
         number: targetPhone,
         type: "button",
         text: message,
-        choices: buttons.map((b: any) => ({
-          buttonId: b.id || `btn_${b.text.replace(/\s/g, '_')}`,
-          buttonText: { displayText: b.text.substring(0, 20) },
-          type: 1,
-        })),
+        choices: buttons.map((b: any) => `${b.text.substring(0, 20)}|${b.id || 'btn_' + b.text.replace(/\s/g, '_')}`),
       };
       console.log("[notify] Menu body:", JSON.stringify(menuBody));
       res = await fetch(`${baseUrl}/send/menu`, {
