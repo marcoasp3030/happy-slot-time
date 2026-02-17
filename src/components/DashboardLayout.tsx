@@ -3,18 +3,19 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/hooks/useRole';
 import {
-  LayoutDashboard, Scissors, Users, Clock, Calendar,
+  LayoutDashboard, Users, Clock, Calendar,
   Palette, MessageSquare, CreditCard, Menu, X, LogOut,
-  ChevronRight, Bell, Shield,
+  ChevronRight, Bell, Shield, Search,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import sloteraLogo from '@/assets/slotera-logo.png';
 
 const navItems = [
   { title: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
   { title: 'Agendamentos', icon: Calendar, path: '/agendamentos' },
-  { title: 'Serviços', icon: Scissors, path: '/servicos' },
+  { title: 'Serviços', icon: Clock, path: '/servicos' },
   { title: 'Profissionais', icon: Users, path: '/profissionais' },
   { title: 'Horários', icon: Clock, path: '/horarios' },
 ];
@@ -39,6 +40,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   };
 
   const userInitial = user?.email?.charAt(0)?.toUpperCase() || 'U';
+  const userName = user?.email?.split('@')[0] || 'Usuário';
 
   const NavItem = ({ item }: { item: typeof navItems[0] }) => {
     const isActive = location.pathname === item.path;
@@ -78,11 +80,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* Logo */}
         <div className="flex items-center justify-between px-5 h-16 flex-shrink-0">
           <Link to="/dashboard" className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-lg gradient-primary flex items-center justify-center shadow-sm">
-              <Calendar className="h-4 w-4 text-primary-foreground" />
-            </div>
+            <img src={sloteraLogo} alt="Slotera" className="h-8 w-auto" />
             <span className="text-base font-extrabold text-sidebar-accent-foreground tracking-tight">
-              AgendaFácil
+              Slotera
             </span>
           </Link>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors">
@@ -130,13 +130,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* User */}
         <div className="px-3 py-3 border-t border-sidebar-border flex-shrink-0">
           <div className="flex items-center gap-3 px-3 py-2">
-            <Avatar className="h-8 w-8 bg-sidebar-accent">
-              <AvatarFallback className="bg-sidebar-accent text-sidebar-primary text-sm font-bold">
+            <Avatar className="h-9 w-9 bg-sidebar-accent">
+              <AvatarFallback className="bg-gradient-to-br from-primary to-primary-glow text-primary-foreground text-sm font-bold">
                 {userInitial}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
-              <p className="text-xs text-sidebar-foreground/60 truncate">{user?.email}</p>
+              <p className="text-sm font-semibold text-sidebar-accent-foreground truncate capitalize">{userName}</p>
+              <p className="text-[11px] text-sidebar-foreground/50 truncate">{user?.email}</p>
             </div>
           </div>
           <button
@@ -157,14 +158,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <Menu className="h-5 w-5" />
           </button>
 
-          <div className="flex-1" />
+          {/* Search bar */}
+          <div className="hidden md:flex items-center gap-2 flex-1 max-w-md">
+            <div className="relative w-full">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Pesquisar..."
+                className="w-full h-9 pl-9 pr-4 rounded-lg bg-muted/60 border-0 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 transition-all"
+              />
+            </div>
+          </div>
+
+          <div className="flex-1 md:hidden" />
 
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground">
+            <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground relative">
               <Bell className="h-4.5 w-4.5" />
+              <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-primary animate-pulse" />
             </Button>
             <Avatar className="h-8 w-8 cursor-pointer">
-              <AvatarFallback className="bg-primary/10 text-primary text-sm font-bold">
+              <AvatarFallback className="bg-gradient-to-br from-primary to-primary-glow text-primary-foreground text-sm font-bold">
                 {userInitial}
               </AvatarFallback>
             </Avatar>

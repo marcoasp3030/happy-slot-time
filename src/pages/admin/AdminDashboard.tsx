@@ -52,7 +52,7 @@ export default function AdminDashboard() {
       <div className="space-y-8">
         <div className="section-header">
           <h1 className="section-title">Visão Geral da Plataforma</h1>
-          <p className="section-subtitle">Métricas gerais do SaaS AgendaFácil</p>
+          <p className="section-subtitle">Métricas gerais do SaaS Slotera</p>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

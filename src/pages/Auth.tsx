@@ -62,10 +62,8 @@ export default function Auth() {
 
         <div className="relative flex flex-col justify-center px-12 xl:px-16 text-white w-full">
           <div className="flex items-center gap-2.5 mb-10">
-            <div className="h-10 w-10 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
-              <Calendar className="h-5 w-5 text-white" />
-            </div>
-            <span className="text-xl font-extrabold tracking-tight">AgendaFácil</span>
+            <img src="/slotera-logo-white.png" alt="Slotera" className="h-10 w-auto" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+            <span className="text-xl font-extrabold tracking-tight">Slotera</span>
           </div>
 
           <h2 className="text-3xl xl:text-4xl font-extrabold leading-tight mb-4">
@@ -97,7 +95,7 @@ export default function Auth() {
             <div className="h-10 w-10 rounded-xl gradient-primary flex items-center justify-center animate-pulse-glow">
               <Calendar className="h-5 w-5 text-primary-foreground" />
             </div>
-            <span className="text-xl font-extrabold tracking-tight">AgendaFácil</span>
+            <span className="text-xl font-extrabold tracking-tight">Slotera</span>
           </div>
 
           <Card className="border-0 shadow-none bg-transparent">
