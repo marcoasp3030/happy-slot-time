@@ -13,7 +13,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { toast } from '@/hooks/use-toast';
-import { Bot, Settings, MessageSquare, Plus, Trash2, BookOpen, History, Copy, ExternalLink, BarChart3, Clock, PhoneForwarded, Mic, Zap } from 'lucide-react';
+import { Bot, Settings, MessageSquare, Plus, Trash2, BookOpen, History, Copy, ExternalLink, BarChart3, Clock, PhoneForwarded, Mic, Zap, ShieldCheck } from 'lucide-react';
+import AgentCapabilities from '@/components/AgentCapabilities';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
 import { useMemo } from 'react';
@@ -80,6 +81,16 @@ export default function WhatsAppAgent() {
         elevenlabs_voice_id: settings.elevenlabs_voice_id,
         custom_prompt: settings.custom_prompt,
         timezone: settings.timezone,
+        can_share_address: settings.can_share_address,
+        can_share_phone: settings.can_share_phone,
+        can_share_business_hours: settings.can_share_business_hours,
+        can_share_services: settings.can_share_services,
+        can_share_professionals: settings.can_share_professionals,
+        can_handle_anamnesis: settings.can_handle_anamnesis,
+        can_send_files: settings.can_send_files,
+        can_send_images: settings.can_send_images,
+        can_send_audio: settings.can_send_audio,
+        custom_business_info: settings.custom_business_info,
       })
       .eq('id', settings.id);
     setSaving(false);
@@ -184,9 +195,12 @@ export default function WhatsAppAgent() {
         </div>
 
         <Tabs defaultValue="settings" className="space-y-4">
-          <TabsList>
+          <TabsList className="flex-wrap">
             <TabsTrigger value="settings" className="gap-1.5">
               <Settings className="h-3.5 w-3.5" /> Configurações
+            </TabsTrigger>
+            <TabsTrigger value="capabilities" className="gap-1.5">
+              <ShieldCheck className="h-3.5 w-3.5" /> Capacidades
             </TabsTrigger>
             <TabsTrigger value="knowledge" className="gap-1.5">
               <BookOpen className="h-3.5 w-3.5" /> Base de Conhecimento
@@ -388,6 +402,16 @@ export default function WhatsAppAgent() {
                 </details>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* CAPABILITIES TAB */}
+          <TabsContent value="capabilities" className="space-y-4">
+            <AgentCapabilities
+              settings={settings}
+              onSettingsChange={setSettings}
+              onSave={saveSettings}
+              saving={saving}
+            />
           </TabsContent>
 
           {/* KNOWLEDGE BASE TAB */}

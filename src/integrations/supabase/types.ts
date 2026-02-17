@@ -1243,6 +1243,47 @@ export type Database = {
         }
         Relationships: []
       }
+      whatsapp_agent_files: {
+        Row: {
+          active: boolean
+          company_id: string
+          created_at: string
+          description: string | null
+          file_name: string
+          file_type: string
+          file_url: string
+          id: string
+        }
+        Insert: {
+          active?: boolean
+          company_id: string
+          created_at?: string
+          description?: string | null
+          file_name: string
+          file_type?: string
+          file_url: string
+          id?: string
+        }
+        Update: {
+          active?: boolean
+          company_id?: string
+          created_at?: string
+          description?: string | null
+          file_name?: string
+          file_type?: string
+          file_url?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_agent_files_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       whatsapp_agent_logs: {
         Row: {
           action: string
@@ -1287,9 +1328,19 @@ export type Database = {
       }
       whatsapp_agent_settings: {
         Row: {
+          can_handle_anamnesis: boolean | null
+          can_send_audio: boolean | null
+          can_send_files: boolean | null
+          can_send_images: boolean | null
+          can_share_address: boolean | null
+          can_share_business_hours: boolean | null
+          can_share_phone: boolean | null
+          can_share_professionals: boolean | null
+          can_share_services: boolean | null
           cancellation_policy_hours: number | null
           company_id: string
           created_at: string
+          custom_business_info: string | null
           custom_prompt: string | null
           elevenlabs_api_key: string | null
           elevenlabs_voice_id: string | null
@@ -1304,9 +1355,19 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          can_handle_anamnesis?: boolean | null
+          can_send_audio?: boolean | null
+          can_send_files?: boolean | null
+          can_send_images?: boolean | null
+          can_share_address?: boolean | null
+          can_share_business_hours?: boolean | null
+          can_share_phone?: boolean | null
+          can_share_professionals?: boolean | null
+          can_share_services?: boolean | null
           cancellation_policy_hours?: number | null
           company_id: string
           created_at?: string
+          custom_business_info?: string | null
           custom_prompt?: string | null
           elevenlabs_api_key?: string | null
           elevenlabs_voice_id?: string | null
@@ -1321,9 +1382,19 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          can_handle_anamnesis?: boolean | null
+          can_send_audio?: boolean | null
+          can_send_files?: boolean | null
+          can_send_images?: boolean | null
+          can_share_address?: boolean | null
+          can_share_business_hours?: boolean | null
+          can_share_phone?: boolean | null
+          can_share_professionals?: boolean | null
+          can_share_services?: boolean | null
           cancellation_policy_hours?: number | null
           company_id?: string
           created_at?: string
+          custom_business_info?: string | null
           custom_prompt?: string | null
           elevenlabs_api_key?: string | null
           elevenlabs_voice_id?: string | null
