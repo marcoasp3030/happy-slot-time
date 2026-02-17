@@ -125,6 +125,7 @@ Deno.serve(async (req) => {
         is_audio: body.is_audio || false,
         audio_media_url: body.audio_media_url || null,
         audio_message_id: body.audio_message_id || null,
+        audio_wa_msg_id: body.audio_wa_msg_id || null,
       });
       return new Response(JSON.stringify(result), { headers: jsonH, status: result.error ? 500 : 200 });
     }
@@ -379,7 +380,7 @@ async function textToSpeech(text: string, voiceId: string): Promise<Uint8Array |
 
   try {
     log("🔊 TTS generating audio for:", text.substring(0, 80));
-    const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+    const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`, {
       method: "POST",
       headers: {
         "xi-api-key": elevenLabsKey,
@@ -388,7 +389,6 @@ async function textToSpeech(text: string, voiceId: string): Promise<Uint8Array |
       body: JSON.stringify({
         text,
         model_id: "eleven_multilingual_v2",
-        output_format: "mp3_44100_128",
       }),
     });
 
@@ -432,43 +432,108 @@ async function sendAudioViaUazapi(wsSettings: any, phone: string, audioData: Uin
   await res.text();
 }
 
-// ─── Download audio from UAZAPI (using downloadMediaMessage endpoint) ───
-async function downloadAudioFromUazapi(wsSettings: any, messageId: string): Promise<string | null> {
-  if (!messageId || !wsSettings?.base_url || !wsSettings?.token) return null;
+// ─── Download audio from UAZAPI (try multiple endpoints) ───
+async function downloadAudioFromUazapi(wsSettings: any, messageId: string, waMessageId?: string): Promise<string | null> {
+  if (!wsSettings?.base_url || !wsSettings?.token) return null;
   
-  try {
-    const url = wsSettings.base_url.replace(/\/$/, "") + "/chat/downloadMediaMessage/" + messageId;
-    log("🎵 Downloading media from UAZAPI:", url);
-    const res = await fetch(url, {
-      method: "GET",
-      headers: { token: wsSettings.token },
-    });
-    
-    if (res.ok) {
-      const data = await res.json();
-      // UAZAPI returns { url: "..." } or { base64: "..." }
-      if (data.url) {
-        log("🎵 UAZAPI media URL:", data.url.substring(0, 100));
-        return data.url;
+  const baseUrl = wsSettings.base_url.replace(/\/$/, "");
+  const token = wsSettings.token;
+
+  // Strategy 1: POST /chat/downloadMediaMessage with body { messageid }
+  if (messageId) {
+    try {
+      const url = baseUrl + "/chat/downloadMediaMessage";
+      log("🎵 Try POST downloadMediaMessage:", url, "messageid:", messageId);
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", token },
+        body: JSON.stringify({ messageid: messageId }),
+      });
+      if (res.ok) {
+        const contentType = res.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          const data = await res.json();
+          if (data.url) { log("🎵 Got media URL:", data.url.substring(0, 100)); return data.url; }
+          if (data.base64) { return await uploadBase64ToStorage(data.base64); }
+          if (data.data?.url) { log("🎵 Got media URL (nested):", data.data.url.substring(0, 100)); return data.data.url; }
+        } else {
+          // Binary response - upload directly
+          const audioData = new Uint8Array(await res.arrayBuffer());
+          if (audioData.length > 100) {
+            log("🎵 Got binary audio:", audioData.length, "bytes");
+            return await uploadBinaryToStorage(audioData);
+          }
+        }
+      } else {
+        const errText = await res.text();
+        logErr("🎵 POST downloadMediaMessage error:", res.status, errText.substring(0, 200));
       }
-      if (data.base64) {
-        // Upload base64 to storage and return URL
-        const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-        const binaryData = Uint8Array.from(atob(data.base64), c => c.charCodeAt(0));
-        const path = `audio-incoming/${Date.now()}.ogg`;
-        await sb.storage.from("agent-files").upload(path, binaryData, { contentType: "audio/ogg" });
-        const { data: urlData } = sb.storage.from("agent-files").getPublicUrl(path);
-        log("🎵 Uploaded audio to storage:", urlData.publicUrl);
-        return urlData.publicUrl;
-      }
-    } else {
-      const errText = await res.text();
-      logErr("🎵 UAZAPI download error:", res.status, errText.substring(0, 200));
-    }
-  } catch (e: any) {
-    logErr("🎵 UAZAPI download exception:", e.message);
+    } catch (e: any) { logErr("🎵 POST downloadMediaMessage exception:", e.message); }
   }
+
+  // Strategy 2: GET /chat/downloadMediaMessage/{messageid}
+  if (messageId) {
+    try {
+      const url = baseUrl + "/chat/downloadMediaMessage/" + messageId;
+      log("🎵 Try GET downloadMediaMessage:", url);
+      const res = await fetch(url, { headers: { token } });
+      if (res.ok) {
+        const contentType = res.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          const data = await res.json();
+          if (data.url) return data.url;
+          if (data.base64) return await uploadBase64ToStorage(data.base64);
+        } else {
+          const audioData = new Uint8Array(await res.arrayBuffer());
+          if (audioData.length > 100) return await uploadBinaryToStorage(audioData);
+        }
+      } else {
+        logErr("🎵 GET downloadMediaMessage error:", res.status);
+      }
+    } catch (e: any) { logErr("🎵 GET downloadMediaMessage exception:", e.message); }
+  }
+
+  // Strategy 3: POST /chat/getMediaLink with { messageid }
+  if (messageId) {
+    try {
+      const url = baseUrl + "/chat/getMediaLink";
+      log("🎵 Try POST getMediaLink:", url);
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", token },
+        body: JSON.stringify({ messageid: messageId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const mediaUrl = data.url || data.link || data.mediaUrl || data.data?.url || data.data?.link;
+        if (mediaUrl) { log("🎵 Got media link:", String(mediaUrl).substring(0, 100)); return mediaUrl; }
+      } else {
+        logErr("🎵 POST getMediaLink error:", res.status);
+      }
+    } catch (e: any) { logErr("🎵 POST getMediaLink exception:", e.message); }
+  }
+
+  log("🎵 All download strategies failed for messageid:", messageId, "wa_id:", waMessageId);
   return null;
+}
+
+async function uploadBase64ToStorage(base64Data: string): Promise<string> {
+  const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+  const path = `audio-incoming/${Date.now()}.ogg`;
+  await sb.storage.from("agent-files").upload(path, binaryData, { contentType: "audio/ogg" });
+  const { data: urlData } = sb.storage.from("agent-files").getPublicUrl(path);
+  log("🎵 Uploaded base64 audio to storage:", urlData.publicUrl);
+  return urlData.publicUrl;
+}
+
+async function uploadBinaryToStorage(audioData: Uint8Array): Promise<string> {
+  const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const path = `audio-incoming/${Date.now()}.ogg`;
+  await sb.storage.from("agent-files").upload(path, audioData, { contentType: "audio/ogg" });
+  const { data: urlData } = sb.storage.from("agent-files").getPublicUrl(path);
+  log("🎵 Uploaded binary audio to storage:", urlData.publicUrl);
+  return urlData.publicUrl;
 }
 
 // ─── AI Agent Logic ───
@@ -478,6 +543,7 @@ interface AudioParams {
   is_audio: boolean;
   audio_media_url: string | null;
   audio_message_id: string | null;
+  audio_wa_msg_id?: string | null;
 }
 
 async function handleAgent(sb: any, cid: string, phone: string, msg: string, audioParams: AudioParams = { is_audio: false, audio_media_url: null, audio_message_id: null }): Promise<any> {
@@ -547,7 +613,7 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
     
     // If no direct URL, try downloading from UAZAPI
     if (!audioUrl && audioParams.audio_message_id && wsForAudio) {
-      audioUrl = await downloadAudioFromUazapi(wsForAudio, audioParams.audio_message_id);
+      audioUrl = await downloadAudioFromUazapi(wsForAudio, audioParams.audio_message_id, audioParams.audio_wa_msg_id || undefined);
     }
     
     if (audioUrl) {
