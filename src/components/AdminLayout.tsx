@@ -57,7 +57,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <div className="h-8 w-8 rounded-lg bg-destructive flex items-center justify-center shadow-sm">
               <Shield className="h-4 w-4 text-destructive-foreground" />
             </div>
-            <span className="text-base font-extrabold text-sidebar-accent-foreground tracking-tight">Super Admin</span>
+            <span className="text-base font-extrabold text-sidebar-accent-foreground tracking-tight">Slotera Admin</span>
           </div>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-sidebar-foreground/60 hover:text-sidebar-foreground">
             <X className="h-5 w-5" />

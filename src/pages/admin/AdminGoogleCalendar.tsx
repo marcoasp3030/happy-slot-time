@@ -82,7 +82,7 @@ export default function AdminGoogleCalendar() {
                 </a>
               </li>
               <li>Clique em <strong className="text-foreground">"Select a project"</strong> → <strong className="text-foreground">"New Project"</strong></li>
-              <li>Dê um nome ao projeto (ex: "AgendaFácil") e clique em <strong className="text-foreground">"Create"</strong></li>
+              <li>Dê um nome ao projeto (ex: "Slotera") e clique em <strong className="text-foreground">"Create"</strong></li>
               <li>Selecione o projeto recém-criado</li>
             </ol>
           </CardContent>
@@ -127,7 +127,7 @@ export default function AdminGoogleCalendar() {
               <li>Selecione <strong className="text-foreground">"External"</strong> como tipo de usuário</li>
               <li>Preencha os campos obrigatórios:
                 <ul className="list-disc list-inside ml-4 mt-1 space-y-1">
-                  <li><strong className="text-foreground">App name:</strong> AgendaFácil</li>
+                  <li><strong className="text-foreground">App name:</strong> Slotera</li>
                   <li><strong className="text-foreground">User support email:</strong> seu email</li>
                   <li><strong className="text-foreground">Developer contact:</strong> seu email</li>
                 </ul>

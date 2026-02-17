@@ -52,7 +52,7 @@ export default function Index() {
             <div className="h-9 w-9 rounded-xl gradient-primary flex items-center justify-center shadow-sm animate-pulse-glow">
               <Calendar className="h-4.5 w-4.5 text-primary-foreground" />
             </div>
-            <span className="text-lg font-extrabold tracking-tight">AgendaFácil</span>
+            <span className="text-lg font-extrabold tracking-tight">Slotera</span>
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" onClick={() => navigate('/login')} className="font-semibold">
@@ -199,9 +199,9 @@ export default function Index() {
           <div className="h-6 w-6 rounded-lg gradient-primary flex items-center justify-center">
             <Calendar className="h-3 w-3 text-primary-foreground" />
           </div>
-          <span className="font-bold text-foreground">AgendaFácil</span>
+          <span className="font-bold text-foreground">Slotera</span>
         </div>
-        © {new Date().getFullYear()} AgendaFácil. Todos os direitos reservados.
+        © {new Date().getFullYear()} Slotera. Todos os direitos reservados.
       </footer>
     </div>
   );
