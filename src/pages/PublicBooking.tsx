@@ -31,6 +31,7 @@ export default function PublicBooking() {
   const [businessHours, setBusinessHours] = useState<any[]>([]);
   const [companySettings, setCompanySettings] = useState<any>({ slot_interval: 30, min_advance_hours: 2, max_capacity_per_slot: 1 });
   const [existingAppointments, setExistingAppointments] = useState<any[]>([]);
+  const [timeBlocks, setTimeBlocks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [step, setStep] = useState<Step>('service');
   const [submitting, setSubmitting] = useState(false);
@@ -55,12 +56,13 @@ export default function PublicBooking() {
       if (!comp) { setLoading(false); return; }
       setCompany(comp);
 
-      const [pageRes, servicesRes, staffRes, hoursRes, settingsRes] = await Promise.all([
+      const [pageRes, servicesRes, staffRes, hoursRes, settingsRes, blocksRes] = await Promise.all([
         supabase.from('public_page_settings').select('*').eq('company_id', comp.id).single(),
         supabase.from('services').select('*').eq('company_id', comp.id).eq('active', true).order('name'),
         supabase.from('staff').select('*').eq('company_id', comp.id).eq('active', true).order('name'),
         supabase.from('business_hours').select('*').eq('company_id', comp.id).order('day_of_week'),
         supabase.from('company_settings').select('*, privacy_policy_text').eq('company_id', comp.id).single(),
+        supabase.from('time_blocks').select('*').eq('company_id', comp.id).gte('block_date', new Date().toISOString().split('T')[0]),
       ]);
 
       setPageSettings(pageRes.data);
@@ -71,6 +73,7 @@ export default function PublicBooking() {
         setCompanySettings(settingsRes.data);
         setPrivacyPolicyText(settingsRes.data.privacy_policy_text || '');
       }
+      setTimeBlocks(blocksRes.data || []);
       setLoading(false);
     };
     fetchData();
@@ -128,6 +131,19 @@ export default function PublicBooking() {
     const bh = businessHours.find((h) => h.day_of_week === dayOfWeek);
     if (!bh || !bh.is_open) return [];
 
+    // Check if entire day is blocked for all staff
+    const fullDayBlock = timeBlocks.find(b =>
+      b.block_date === selectedDate && !b.start_time && !b.end_time && !b.staff_id
+    );
+    if (fullDayBlock) return [];
+
+    // Get time-specific blocks for this date
+    const dateBlocks = timeBlocks.filter(b =>
+      b.block_date === selectedDate &&
+      b.start_time && b.end_time &&
+      (!b.staff_id || (selectedStaff && b.staff_id === selectedStaff.id) || !selectedStaff)
+    );
+
     const slots: string[] = [];
     const [openH, openM] = bh.open_time.split(':').map(Number);
     const [closeH, closeM] = bh.close_time.split(':').map(Number);
@@ -151,13 +167,23 @@ export default function PublicBooking() {
         const endHH = String(Math.floor(endMin / 60)).padStart(2, '0');
         const endMM = String(endMin % 60).padStart(2, '0');
         const endStr = `${endHH}:${endMM}`;
-        const conflicts = existingAppointments.filter((a) => {
-          const aStart = a.start_time.slice(0, 5);
-          const aEnd = a.end_time.slice(0, 5);
-          return timeStr < aEnd && endStr > aStart;
+
+        // Check if slot overlaps with any time block
+        const isBlocked = dateBlocks.some(b => {
+          const blockStart = b.start_time.slice(0, 5);
+          const blockEnd = b.end_time.slice(0, 5);
+          return timeStr < blockEnd && endStr > blockStart;
         });
-        if (conflicts.length < (companySettings.max_capacity_per_slot || 1)) {
-          slots.push(timeStr);
+
+        if (!isBlocked) {
+          const conflicts = existingAppointments.filter((a) => {
+            const aStart = a.start_time.slice(0, 5);
+            const aEnd = a.end_time.slice(0, 5);
+            return timeStr < aEnd && endStr > aStart;
+          });
+          if (conflicts.length < (companySettings.max_capacity_per_slot || 1)) {
+            slots.push(timeStr);
+          }
         }
       }
       current += interval;
@@ -238,8 +264,16 @@ export default function PublicBooking() {
     for (let i = 0; i < 30; i++) {
       const d = new Date(Date.now() + i * 86400000);
       const dayOfWeek = d.getDay();
+      const dateStr = d.toISOString().split('T')[0];
       const bh = businessHours.find((h) => h.day_of_week === dayOfWeek);
-      if (bh && bh.is_open) dates.push(d.toISOString().split('T')[0]);
+      if (!bh || !bh.is_open) continue;
+      // Check if entire day is blocked (full-day block with no staff filter or matching staff)
+      const fullDayBlock = timeBlocks.find(b =>
+        b.block_date === dateStr && !b.start_time && !b.end_time &&
+        (!b.staff_id || (selectedStaff && b.staff_id === selectedStaff.id) || !selectedStaff)
+      );
+      if (fullDayBlock && !fullDayBlock.staff_id) continue; // Skip fully blocked days for all staff
+      dates.push(dateStr);
     }
     return dates;
   };
