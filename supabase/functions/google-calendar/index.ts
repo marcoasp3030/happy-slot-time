@@ -775,6 +775,162 @@ Deno.serve(async (req) => {
       return jsonRes({ success: true });
     }
 
+    // === SYNC FROM GOOGLE (import external events as appointments) ===
+    if (action === "sync-from-google" && req.method === "POST") {
+      const body = await req.json();
+      const { companyId, staffId } = body;
+
+      if (!companyId) return jsonRes({ error: "companyId required" }, 400);
+
+      const supabase = getSupabaseAdmin();
+      const results: any[] = [];
+
+      // Determine which tokens to sync
+      let tokensQuery = supabase
+        .from("google_calendar_tokens")
+        .select("id, company_id, staff_id, calendar_id")
+        .eq("company_id", companyId);
+
+      if (staffId) {
+        tokensQuery = tokensQuery.eq("staff_id", staffId);
+      }
+
+      const { data: tokens } = await tokensQuery;
+      if (!tokens || tokens.length === 0) return jsonRes({ synced: 0, message: "No Google Calendar connected" });
+
+      const now = new Date();
+      const timeMin = now.toISOString();
+      const futureDate = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000); // 14 days ahead
+      const timeMax = futureDate.toISOString();
+
+      for (const tokenRow of tokens) {
+        try {
+          const { accessToken, calendarId } = await getValidToken(companyId, tokenRow.staff_id);
+          const encodedCalId = encodeURIComponent(calendarId);
+
+          // Fetch events from Google Calendar
+          const eventsUrl = `${GOOGLE_CALENDAR_API}/calendars/${encodedCalId}/events?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&singleEvents=true&orderBy=startTime&maxResults=250`;
+          const eventsRes = await fetch(eventsUrl, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          });
+
+          if (!eventsRes.ok) {
+            console.error(`Failed to fetch events for token ${tokenRow.id}:`, eventsRes.status);
+            continue;
+          }
+
+          const eventsData = await eventsRes.json();
+          const events = eventsData.items || [];
+
+          // Get existing external appointments for this company to handle updates/deletes
+          const { data: existingExternal } = await supabase
+            .from("appointments")
+            .select("id, google_calendar_event_id")
+            .eq("company_id", companyId)
+            .eq("source", "google_calendar")
+            .not("google_calendar_event_id", "is", null);
+
+          const existingMap = new Map((existingExternal || []).map((a: any) => [a.google_calendar_event_id, a.id]));
+          const seenEventIds = new Set<string>();
+
+          for (const event of events) {
+            if (!event.id || !event.start?.dateTime || !event.end?.dateTime) continue;
+            // Skip events created by our system (they have colorId "2" / Sage)
+            if (event.colorId === "2") continue;
+            // Skip all-day events
+            if (event.start.date && !event.start.dateTime) continue;
+
+            seenEventIds.add(event.id);
+
+            const startDt = new Date(event.start.dateTime);
+            const endDt = new Date(event.end.dateTime);
+            const appointmentDate = startDt.toISOString().split("T")[0];
+            const startTime = startDt.toTimeString().substring(0, 5);
+            const endTime = endDt.toTimeString().substring(0, 5);
+
+            if (existingMap.has(event.id)) {
+              // Update existing external appointment
+              await supabase.from("appointments").update({
+                appointment_date: appointmentDate,
+                start_time: startTime,
+                end_time: endTime,
+                client_name: event.summary || "Evento Google",
+                notes: event.description || null,
+                status: event.status === "cancelled" ? "canceled" : "confirmed",
+              }).eq("id", existingMap.get(event.id));
+            } else {
+              // Create new external appointment
+              const insertData: any = {
+                company_id: companyId,
+                appointment_date: appointmentDate,
+                start_time: startTime,
+                end_time: endTime,
+                client_name: event.summary || "Evento Google",
+                client_phone: "google-calendar",
+                status: "confirmed",
+                source: "google_calendar",
+                google_calendar_event_id: event.id,
+                notes: event.description || null,
+              };
+              if (tokenRow.staff_id) insertData.staff_id = tokenRow.staff_id;
+
+              await supabase.from("appointments").insert(insertData);
+            }
+
+            results.push({ eventId: event.id, summary: event.summary });
+          }
+
+          // Remove external appointments whose events no longer exist in Google Calendar
+          for (const [eventId, apptId] of existingMap) {
+            if (!seenEventIds.has(eventId)) {
+              await supabase.from("appointments").delete().eq("id", apptId).eq("source", "google_calendar");
+            }
+          }
+        } catch (err) {
+          console.error(`Sync error for token ${tokenRow.id}:`, err);
+        }
+      }
+
+      return jsonRes({ synced: results.length, events: results });
+    }
+
+    // === SYNC ALL COMPANIES (called by cron) ===
+    if (action === "sync-all" && req.method === "POST") {
+      const supabase = getSupabaseAdmin();
+      const { data: allTokens } = await supabase
+        .from("google_calendar_tokens")
+        .select("company_id")
+        .order("company_id");
+
+      if (!allTokens || allTokens.length === 0) return jsonRes({ synced: 0 });
+
+      // Deduplicate company IDs
+      const companyIds = [...new Set(allTokens.map((t: any) => t.company_id))];
+      const results: any[] = [];
+
+      for (const cid of companyIds) {
+        try {
+          // Call sync-from-google internally
+          const syncUrl = `${getEnv("SUPABASE_URL")}/functions/v1/google-calendar/sync-from-google`;
+          const syncRes = await fetch(syncUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${getEnv("SUPABASE_ANON_KEY")}`,
+            },
+            body: JSON.stringify({ companyId: cid }),
+          });
+          const syncData = await syncRes.json();
+          results.push({ companyId: cid, ...syncData });
+        } catch (err) {
+          console.error(`Sync-all error for company ${cid}:`, err);
+          results.push({ companyId: cid, error: String(err) });
+        }
+      }
+
+      return jsonRes({ companies: results.length, results });
+    }
+
     return jsonRes({ error: "Not found" }, 404);
   } catch (error: unknown) {
     console.error("Edge function error:", error);
