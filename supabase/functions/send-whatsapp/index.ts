@@ -320,11 +320,12 @@ function normalizeTimeForSpeech(text: string): string {
     const displayH = h > 12 ? h - 12 : h;
     const hourWord = displayH === 1 ? "uma" : displayH === 2 ? "duas" : String(displayH);
 
-    if (m === 0) return `${hStr}:${mStr} (às ${hourWord}${period})`;
-    if (m === 30) return `${hStr}:${mStr} (às ${hourWord} e meia${period})`;
-    if (m === 15) return `${hStr}:${mStr} (às ${hourWord} e quinze${period})`;
-    if (m === 45) return `${hStr}:${mStr} (às ${hourWord} e quarenta e cinco${period})`;
-    return `${hStr}:${mStr} (às ${hourWord} e ${m}${period})`;
+    // Return ONLY the natural form — no numeric prefix
+    if (m === 0) return `${hourWord}${period}`;
+    if (m === 30) return `${hourWord} e meia${period}`;
+    if (m === 15) return `${hourWord} e quinze${period}`;
+    if (m === 45) return `${hourWord} e quarenta e cinco${period}`;
+    return `${hourWord} e ${m}${period}`;
   });
 }
 
@@ -1172,10 +1173,10 @@ REGRA ANTI-REPETIÇÃO (CRÍTICO):
 - Analise o histórico antes de responder para não repetir informações
 
 NORMALIZAÇÃO DE HORÁRIOS (OBRIGATÓRIO):
-- Ao mencionar horários, SEMPRE escreva de forma natural em PT-BR junto ao formato numérico
-- Converta qualquer padrão HH:MM em fala natural: 09:00 = "09:00 (às nove horas)", 09:30 = "09:30 (às nove e meia)", 12:00 = "meio-dia", 18:00 = "18:00 (às seis da tarde)"
-- PROIBIDO falar dígitos separados ("zero nove zero zero"). Sempre use fala natural.
-- Se for listar múltiplos horários, pode manter só o formato numérico (09:00, 10:30) pois será convertido automaticamente
+- SEMPRE escreva horários por extenso, de forma natural e direta. Exemplos: "nove da manhã", "nove e meia", "meio-dia", "seis da tarde", "das nove às seis da tarde"
+- NUNCA use formato numérico como "09:00" ou "18:00" na resposta. Escreva TUDO por extenso.
+- PROIBIDO falar dígitos separados ("zero nove zero zero")
+- Seja direto: "a gente funciona das nove da manhã às seis da tarde" em vez de frases longas
 
 FLUXO DE AGENDAMENTO (IMPORTANTE):
 - Quando o cliente quiser agendar, pergunte: 1) Qual serviço? 2) Qual data/horário de preferência?
