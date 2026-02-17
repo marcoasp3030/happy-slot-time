@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Pencil, Trash2, User, Link2, Copy, CheckCircle2, Calendar, Loader2, ShieldCheck } from 'lucide-react';
+import { Plus, Pencil, Trash2, User, Link2, Copy, CheckCircle2, Calendar, Loader2, ShieldCheck, Unlink } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Staff() {
@@ -20,6 +20,7 @@ export default function Staff() {
   const [name, setName] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [connectingStaffId, setConnectingStaffId] = useState<string | null>(null);
+  const [disconnectingStaffId, setDisconnectingStaffId] = useState<string | null>(null);
   const [staffCalendarStatus, setStaffCalendarStatus] = useState<Record<string, string | null>>({});
 
   const fetchStaff = async () => {
@@ -130,6 +131,24 @@ export default function Staff() {
     }
   };
 
+  const handleDisconnectCalendar = async (staffId: string) => {
+    if (!confirm('Desconectar a agenda Google deste profissional?')) return;
+    setDisconnectingStaffId(staffId);
+    try {
+      const { error } = await supabase.functions.invoke('google-calendar/owner-disconnect-staff', {
+        method: 'POST',
+        body: { staffId },
+      });
+      if (error) throw error;
+      toast.success('Agenda desconectada!');
+      fetchCalendarStatuses();
+    } catch (err) {
+      toast.error('Erro ao desconectar agenda');
+    } finally {
+      setDisconnectingStaffId(null);
+    }
+  };
+
   const getInviteStatusBadge = (s: any) => {
     if (s.invite_status === 'accepted') {
       return <Badge variant="default" className="text-xs">Conectado</Badge>;
@@ -211,7 +230,7 @@ export default function Staff() {
                         </Button>
                       )
                     )}
-                    {!staffCalendarStatus[s.id] && (
+                    {!staffCalendarStatus[s.id] ? (
                       <Button
                         size="sm"
                         variant="outline"
@@ -225,6 +244,21 @@ export default function Staff() {
                           <Calendar className="h-3 w-3 mr-1" />
                         )}
                         Conectar Agenda
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleDisconnectCalendar(s.id)}
+                        disabled={disconnectingStaffId === s.id}
+                        className="text-xs h-8 text-destructive hover:text-destructive"
+                      >
+                        {disconnectingStaffId === s.id ? (
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                        ) : (
+                          <Unlink className="h-3 w-3 mr-1" />
+                        )}
+                        Desconectar Agenda
                       </Button>
                     )}
                     <Button size="sm" variant="outline" onClick={() => handleDelete(s.id)} className="text-xs h-8 text-destructive hover:text-destructive">
