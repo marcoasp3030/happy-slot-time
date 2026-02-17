@@ -264,6 +264,20 @@ Deno.serve(async (req) => {
 
             console.log(`[whatsapp-connect] ✅ Webhook configured automatically`);
 
+            // Set presence to available (online) via UAZAPI /send/presence
+            try {
+              await callUazapi(
+                baseUrl,
+                "/send/presence",
+                "POST",
+                { name: "token", value: settings.token },
+                { phone: "", presence: "available" }
+              );
+              console.log(`[whatsapp-connect] ✅ Presence set to available (online)`);
+            } catch (presErr: any) {
+              console.log(`[whatsapp-connect] ⚠️ Could not set presence via /send/presence:`, presErr?.status);
+            }
+
             await supabase.from("audit_logs").insert({
               company_id: companyId,
               user_id: userId,
@@ -370,11 +384,25 @@ Deno.serve(async (req) => {
           { url: webhookUrl, enabled: true, events: ["Message"] }
         );
 
+        // Also set presence to available (online) via UAZAPI /send/presence
+        try {
+          await callUazapi(
+            baseUrl,
+            "/send/presence",
+            "POST",
+            { name: "token", value: settings.token },
+            { phone: "", presence: "available" }
+          );
+          console.log(`[whatsapp-connect] ✅ Presence set to available (online)`);
+        } catch (presErr: any) {
+          console.log(`[whatsapp-connect] ⚠️ Could not set presence:`, presErr?.status);
+        }
+
         await supabase.from("audit_logs").insert({
           company_id: companyId,
           user_id: userId,
           user_email: userEmail,
-          action: "WhatsApp: Webhook reconfigurado",
+          action: "WhatsApp: Webhook reconfigurado e presença online",
           category: "whatsapp",
           details: { webhookUrl },
         });
