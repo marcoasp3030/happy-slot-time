@@ -45,7 +45,7 @@ function extractMessageText(body: any): string | null {
   return null;
 }
 
-function detectAudioMessage(body: any): { isAudio: boolean; mediaUrl: string | null; messageId: string | null; whatsappMsgId: string | null; chatId: string | null } {
+function detectAudioMessage(body: any): { isAudio: boolean; mediaUrl: string | null; mediaKey: string | null; messageId: string | null; whatsappMsgId: string | null; chatId: string | null } {
   const msg = body.message;
   if (msg && typeof msg === "object") {
     // UAZAPI: messageType or type indicates audio
@@ -57,8 +57,10 @@ function detectAudioMessage(body: any): { isAudio: boolean; mediaUrl: string | n
     
     if (isAudioType) {
       // Try to get media URL from various UAZAPI fields
-      // UAZAPI stores the URL inside msg.content.URL for audio messages
+      // UAZAPI stores the URL inside msg.content.URL for audio messages (encrypted WhatsApp CDN)
       const mediaUrl = msg.content?.URL || msg.content?.url || msg.mediaUrl || msg.media_url || msg.url || msg.audioMessage?.url || msg.audioMessage?.mediaUrl || null;
+      // Extract mediaKey for WhatsApp E2E decryption
+      const mediaKey = msg.content?.mediaKey || msg.audioMessage?.mediaKey || null;
       // UAZAPI internal ID (hex format)
       const messageId = msg.messageid || msg.messageId || null;
       // WhatsApp message ID (format like "5511...:3EB0...")
@@ -71,16 +73,17 @@ function detectAudioMessage(body: any): { isAudio: boolean; mediaUrl: string | n
       
       log("🎵 Audio detected! msgType:", msgType, "mediaType:", mediaType, 
         "mediaUrl:", mediaUrl ? "yes" : "no", 
+        "mediaKey:", mediaKey ? "yes" : "no",
         "messageid:", messageId, "wa_id:", whatsappMsgId,
         "chatid:", chatId,
         "content_type:", typeof msg.content, 
         "content_keys:", contentKeys,
         "content_len:", typeof msg.content === "string" ? msg.content.length : 0);
       
-      return { isAudio: true, mediaUrl: typeof mediaUrl === "string" ? mediaUrl : null, messageId, whatsappMsgId, chatId };
+      return { isAudio: true, mediaUrl: typeof mediaUrl === "string" ? mediaUrl : null, mediaKey: typeof mediaKey === "string" ? mediaKey : null, messageId, whatsappMsgId, chatId };
     }
   }
-  return { isAudio: false, mediaUrl: null, messageId: null, whatsappMsgId: null, chatId: null };
+  return { isAudio: false, mediaUrl: null, mediaKey: null, messageId: null, whatsappMsgId: null, chatId: null };
 }
 
 function extractPhone(body: any): string | null {
@@ -241,6 +244,7 @@ Deno.serve(async (req) => {
     if (audioInfo.isAudio) {
       forwardBody.is_audio = true;
       forwardBody.audio_media_url = audioInfo.mediaUrl;
+      forwardBody.audio_media_key = audioInfo.mediaKey;
       forwardBody.audio_message_id = audioInfo.messageId;
       forwardBody.audio_wa_msg_id = audioInfo.whatsappMsgId;
       forwardBody.audio_chat_id = audioInfo.chatId;
