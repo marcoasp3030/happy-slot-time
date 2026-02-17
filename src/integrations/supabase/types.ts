@@ -1338,9 +1338,17 @@ export type Database = {
           can_share_professionals: boolean | null
           can_share_services: boolean | null
           cancellation_policy_hours: number | null
+          collect_area: boolean | null
+          collect_client_email: boolean | null
+          collect_client_name: boolean | null
+          collect_client_phone: boolean | null
+          collect_company_name: boolean | null
+          collect_region: boolean | null
+          collect_segment: boolean | null
           company_id: string
           created_at: string
           custom_business_info: string | null
+          custom_collect_fields: Json | null
           custom_prompt: string | null
           elevenlabs_api_key: string | null
           elevenlabs_voice_id: string | null
@@ -1365,9 +1373,17 @@ export type Database = {
           can_share_professionals?: boolean | null
           can_share_services?: boolean | null
           cancellation_policy_hours?: number | null
+          collect_area?: boolean | null
+          collect_client_email?: boolean | null
+          collect_client_name?: boolean | null
+          collect_client_phone?: boolean | null
+          collect_company_name?: boolean | null
+          collect_region?: boolean | null
+          collect_segment?: boolean | null
           company_id: string
           created_at?: string
           custom_business_info?: string | null
+          custom_collect_fields?: Json | null
           custom_prompt?: string | null
           elevenlabs_api_key?: string | null
           elevenlabs_voice_id?: string | null
@@ -1392,9 +1408,17 @@ export type Database = {
           can_share_professionals?: boolean | null
           can_share_services?: boolean | null
           cancellation_policy_hours?: number | null
+          collect_area?: boolean | null
+          collect_client_email?: boolean | null
+          collect_client_name?: boolean | null
+          collect_client_phone?: boolean | null
+          collect_company_name?: boolean | null
+          collect_region?: boolean | null
+          collect_segment?: boolean | null
           company_id?: string
           created_at?: string
           custom_business_info?: string | null
+          custom_collect_fields?: Json | null
           custom_prompt?: string | null
           elevenlabs_api_key?: string | null
           elevenlabs_voice_id?: string | null

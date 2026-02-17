@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
-import { MapPin, Phone, Clock, Scissors, Users, FileText, Image, Mic, Upload, Trash2, Info, ShieldCheck } from 'lucide-react';
+import { MapPin, Phone, Clock, Scissors, Users, FileText, Image, Mic, Upload, Trash2, Info, ShieldCheck, UserCheck, Mail, Building2, Globe, MapPinned, Briefcase } from 'lucide-react';
 
 interface AgentCapabilitiesProps {
   settings: any;
@@ -212,6 +212,95 @@ export default function AgentCapabilities({ settings, onSettingsChange, onSave, 
               </div>
             </div>
             <Switch checked={settings?.can_handle_anamnesis ?? false} onCheckedChange={(v) => u('can_handle_anamnesis', v)} />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Data Collection from Client */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <UserCheck className="h-4.5 w-4.5 text-primary" />
+            Coleta de Dados do Cliente
+          </CardTitle>
+          <CardDescription>Defina quais informações o agente deve solicitar ao cliente durante a conversa</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/40">
+            <div className="flex items-center gap-3">
+              <Users className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <Label className="font-medium text-sm">Nome</Label>
+                <p className="text-xs text-muted-foreground">Solicitar o nome completo do cliente</p>
+              </div>
+            </div>
+            <Switch checked={settings?.collect_client_name ?? true} onCheckedChange={(v) => u('collect_client_name', v)} />
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/40">
+            <div className="flex items-center gap-3">
+              <Phone className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <Label className="font-medium text-sm">Telefone</Label>
+                <p className="text-xs text-muted-foreground">Solicitar número de telefone (além do WhatsApp)</p>
+              </div>
+            </div>
+            <Switch checked={settings?.collect_client_phone ?? true} onCheckedChange={(v) => u('collect_client_phone', v)} />
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/40">
+            <div className="flex items-center gap-3">
+              <Mail className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <Label className="font-medium text-sm">E-mail</Label>
+                <p className="text-xs text-muted-foreground">Solicitar endereço de e-mail</p>
+              </div>
+            </div>
+            <Switch checked={settings?.collect_client_email ?? false} onCheckedChange={(v) => u('collect_client_email', v)} />
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/40">
+            <div className="flex items-center gap-3">
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <Label className="font-medium text-sm">Nome da Empresa</Label>
+                <p className="text-xs text-muted-foreground">Solicitar o nome da empresa do cliente</p>
+              </div>
+            </div>
+            <Switch checked={settings?.collect_company_name ?? false} onCheckedChange={(v) => u('collect_company_name', v)} />
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/40">
+            <div className="flex items-center gap-3">
+              <Globe className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <Label className="font-medium text-sm">Segmento</Label>
+                <p className="text-xs text-muted-foreground">Solicitar o segmento de atuação do cliente</p>
+              </div>
+            </div>
+            <Switch checked={settings?.collect_segment ?? false} onCheckedChange={(v) => u('collect_segment', v)} />
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/40">
+            <div className="flex items-center gap-3">
+              <MapPinned className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <Label className="font-medium text-sm">Região</Label>
+                <p className="text-xs text-muted-foreground">Solicitar a região ou cidade do cliente</p>
+              </div>
+            </div>
+            <Switch checked={settings?.collect_region ?? false} onCheckedChange={(v) => u('collect_region', v)} />
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/40">
+            <div className="flex items-center gap-3">
+              <Briefcase className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <Label className="font-medium text-sm">Área de Atuação</Label>
+                <p className="text-xs text-muted-foreground">Solicitar qual a área de atuação profissional do cliente</p>
+              </div>
+            </div>
+            <Switch checked={settings?.collect_area ?? false} onCheckedChange={(v) => u('collect_area', v)} />
           </div>
         </CardContent>
       </Card>

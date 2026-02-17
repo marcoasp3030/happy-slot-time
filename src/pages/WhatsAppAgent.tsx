@@ -91,6 +91,13 @@ export default function WhatsAppAgent() {
         can_send_images: settings.can_send_images,
         can_send_audio: settings.can_send_audio,
         custom_business_info: settings.custom_business_info,
+        collect_client_name: settings.collect_client_name,
+        collect_client_phone: settings.collect_client_phone,
+        collect_client_email: settings.collect_client_email,
+        collect_company_name: settings.collect_company_name,
+        collect_segment: settings.collect_segment,
+        collect_region: settings.collect_region,
+        collect_area: settings.collect_area,
       })
       .eq('id', settings.id);
     setSaving(false);
