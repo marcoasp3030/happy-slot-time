@@ -176,7 +176,7 @@ export default function WhatsAppConnectionCard({ hasCredentials, hasAdminToken, 
         </CardHeader>
         <CardContent className="px-4 sm:px-6">
           <p className="text-sm text-muted-foreground">
-            Configure a URL base e o Admin Token da UAZAPI acima antes de conectar o WhatsApp.
+            Configure as credenciais da API na seção acima antes de conectar o WhatsApp.
           </p>
         </CardContent>
       </Card>
@@ -288,7 +288,7 @@ export default function WhatsAppConnectionCard({ hasCredentials, hasAdminToken, 
               </div>
             )}
             <p className="text-sm text-muted-foreground">
-              Conecte seu WhatsApp com um clique. A instância será criada automaticamente se necessário.
+              Conecte seu WhatsApp para habilitar o envio automático de notificações, lembretes e o agente de IA. A instância será criada automaticamente se necessário.
             </p>
             <Button
               onClick={startConnection}
@@ -308,7 +308,7 @@ export default function WhatsAppConnectionCard({ hasCredentials, hasAdminToken, 
               )}
             </Button>
             {!hasAdminToken && (
-              <p className="text-xs text-destructive">Configure o Admin Token nas credenciais abaixo para conectar.</p>
+              <p className="text-xs text-destructive">Configure o Token de Administração nas credenciais para conectar.</p>
             )}
           </div>
         )}
