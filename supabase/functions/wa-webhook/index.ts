@@ -45,14 +45,14 @@ function extractMessageText(body: any): string | null {
   return null;
 }
 
-function detectAudioMessage(body: any): { isAudio: boolean; mediaUrl: string | null; messageId: string | null; whatsappMsgId: string | null } {
+function detectAudioMessage(body: any): { isAudio: boolean; mediaUrl: string | null; messageId: string | null; whatsappMsgId: string | null; chatId: string | null } {
   const msg = body.message;
   if (msg && typeof msg === "object") {
     // UAZAPI: messageType or type indicates audio
     const msgType = msg.messageType || msg.type || "";
     const mediaType = msg.mediaType || "";
     
-    const isAudioType = msgType === "audioMessage" || msgType === "pttMessage" || msgType === "audio" || msgType === "ptt" 
+    const isAudioType = msgType === "audioMessage" || msgType === "AudioMessage" || msgType === "pttMessage" || msgType === "audio" || msgType === "ptt" 
       || mediaType === "audio" || mediaType === "ptt" || !!msg.audioMessage;
     
     if (isAudioType) {
@@ -62,16 +62,24 @@ function detectAudioMessage(body: any): { isAudio: boolean; mediaUrl: string | n
       const messageId = msg.messageid || msg.messageId || null;
       // WhatsApp message ID (format like "5511...:3EB0...")
       const whatsappMsgId = msg.id || body.key?.id || null;
+      // Chat ID for download endpoint
+      const chatId = msg.chatid || msg.sender || body.key?.remoteJid || null;
+      
+      // Log content details for debugging
+      const contentKeys = msg.content && typeof msg.content === "object" ? Object.keys(msg.content).join(",") : "N/A";
       
       log("🎵 Audio detected! msgType:", msgType, "mediaType:", mediaType, 
         "mediaUrl:", mediaUrl ? "yes" : "no", 
         "messageid:", messageId, "wa_id:", whatsappMsgId,
-        "content_type:", typeof msg.content, "content_len:", typeof msg.content === "string" ? msg.content.length : 0);
+        "chatid:", chatId,
+        "content_type:", typeof msg.content, 
+        "content_keys:", contentKeys,
+        "content_len:", typeof msg.content === "string" ? msg.content.length : 0);
       
-      return { isAudio: true, mediaUrl: typeof mediaUrl === "string" ? mediaUrl : null, messageId, whatsappMsgId };
+      return { isAudio: true, mediaUrl: typeof mediaUrl === "string" ? mediaUrl : null, messageId, whatsappMsgId, chatId };
     }
   }
-  return { isAudio: false, mediaUrl: null, messageId: null, whatsappMsgId: null };
+  return { isAudio: false, mediaUrl: null, messageId: null, whatsappMsgId: null, chatId: null };
 }
 
 function extractPhone(body: any): string | null {
@@ -234,6 +242,7 @@ Deno.serve(async (req) => {
       forwardBody.audio_media_url = audioInfo.mediaUrl;
       forwardBody.audio_message_id = audioInfo.messageId;
       forwardBody.audio_wa_msg_id = audioInfo.whatsappMsgId;
+      forwardBody.audio_chat_id = audioInfo.chatId;
     }
 
     const res = await fetch(forwardUrl, {
