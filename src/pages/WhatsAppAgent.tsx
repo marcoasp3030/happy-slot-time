@@ -170,6 +170,22 @@ export default function WhatsAppAgent() {
     fetchAll();
   }
 
+  async function finishConversation(convId: string) {
+    const confirmed = window.confirm('Finalizar este atendimento? O próximo contato do cliente será tratado como um novo atendimento.');
+    if (!confirmed) return;
+
+    await supabase.from('whatsapp_messages').delete().eq('conversation_id', convId);
+    await supabase.from('whatsapp_agent_logs').delete().eq('conversation_id', convId);
+    await supabase.from('whatsapp_conversations').delete().eq('id', convId);
+
+    if (selectedConversation?.id === convId) {
+      setSelectedConversation(null);
+      setConversationMessages([]);
+    }
+    toast({ title: 'Atendimento finalizado!', description: 'O próximo contato será como primeiro atendimento.' });
+    fetchAll();
+  }
+
   async function resetAllConversations() {
     if (!companyId) return;
     const confirmed = window.confirm('Tem certeza? Isso apagará TODAS as conversas e mensagens do agente. Esta ação não pode ser desfeita.');
@@ -756,21 +772,21 @@ export default function WhatsAppAgent() {
                             selectedConversation?.id === conv.id ? 'bg-muted/60' : ''
                           }`}
                         >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <span className="font-medium text-sm">{conv.client_name || conv.phone}</span>
-                              {conv.client_name && <span className="text-[11px] text-muted-foreground ml-1.5">{conv.phone}</span>}
+                            <div className="flex items-center gap-1.5">
+                              <div>
+                                <span className="font-medium text-sm">{conv.client_name || conv.phone}</span>
+                                {conv.client_name && <span className="text-[11px] text-muted-foreground ml-1.5">{conv.phone}</span>}
+                              </div>
+                              {conv.handoff_requested && <Badge variant="destructive" className="text-[10px]">Humano</Badge>}
                             </div>
-                            {conv.handoff_requested && <Badge variant="destructive" className="text-[10px]">Humano</Badge>}
-                          </div>
-                          <div className="flex items-center justify-between mt-0.5">
-                            <span className="text-[11px] text-muted-foreground">
-                              {conv.current_intent || conv.status}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground">
-                              {new Date(conv.last_message_at).toLocaleDateString('pt-BR')}
-                            </span>
-                          </div>
+                            <div className="flex items-center justify-between mt-0.5">
+                              <span className="text-[11px] text-muted-foreground">
+                                {conv.current_intent || conv.status}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground">
+                                {new Date(conv.last_message_at).toLocaleDateString('pt-BR')}
+                              </span>
+                            </div>
                         </button>
                       ))
                     )}
@@ -782,13 +798,21 @@ export default function WhatsAppAgent() {
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base">
-                      {selectedConversation ? `Chat: ${selectedConversation.phone}` : 'Selecione uma conversa'}
+                      {selectedConversation ? `Chat: ${selectedConversation.client_name || selectedConversation.phone}` : 'Selecione uma conversa'}
                     </CardTitle>
-                    {selectedConversation?.handoff_requested && (
-                      <Button size="sm" variant="outline" onClick={() => resolveHandoff(selectedConversation.id)}>
-                        Resolver Handoff
-                      </Button>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {selectedConversation?.handoff_requested && (
+                        <Button size="sm" variant="outline" onClick={() => resolveHandoff(selectedConversation.id)}>
+                          Resolver Handoff
+                        </Button>
+                      )}
+                      {selectedConversation && (
+                        <Button size="sm" variant="destructive" onClick={() => finishConversation(selectedConversation.id)} className="gap-1">
+                          <PhoneForwarded className="h-3.5 w-3.5" />
+                          Finalizar Atendimento
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="p-0">
