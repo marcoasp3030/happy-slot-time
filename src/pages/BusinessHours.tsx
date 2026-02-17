@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
+import { logAudit } from '@/lib/auditLog';
 import { Clock, Settings } from 'lucide-react';
 
 const dayNames = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
@@ -31,6 +32,8 @@ export default function BusinessHours() {
 
   const updateHour = async (id: string, field: string, value: any) => {
     await supabase.from('business_hours').update({ [field]: value }).eq('id', id);
+    const h = hours.find(x => x.id === id);
+    logAudit({ companyId, action: 'Horário alterado', category: 'settings', entityType: 'business_hours', entityId: id, details: { day: dayNames[h?.day_of_week], field, value } });
     fetchData();
   };
 
@@ -43,6 +46,7 @@ export default function BusinessHours() {
       max_capacity_per_slot: settings.max_capacity_per_slot,
     }, { onConflict: 'company_id' });
     toast.success('Configurações salvas');
+    logAudit({ companyId, action: 'Regras de agendamento atualizadas', category: 'settings', entityType: 'company_settings', details: { slot_interval: settings.slot_interval, min_advance_hours: settings.min_advance_hours, max_capacity: settings.max_capacity_per_slot } });
   };
 
   return (

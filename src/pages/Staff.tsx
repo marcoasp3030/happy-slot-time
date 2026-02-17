@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Pencil, Trash2, User, Link2, Copy, CheckCircle2, Calendar, Loader2, ShieldCheck, Unlink } from 'lucide-react';
 import { toast } from 'sonner';
+import { logAudit } from '@/lib/auditLog';
 
 interface GoogleCalendarItem {
   id: string;
@@ -72,13 +73,15 @@ export default function Staff() {
     if (editing) {
       await supabase.from('staff').update({ name: name.trim() }).eq('id', editing.id);
       toast.success('Profissional atualizado');
+      logAudit({ companyId, action: 'Profissional atualizado', category: 'staff', entityType: 'staff', entityId: editing.id, details: { name: name.trim() } });
     } else {
-      await supabase.from('staff').insert({
+      const { data: newStaff } = await supabase.from('staff').insert({
         company_id: companyId,
         name: name.trim(),
         invite_token: generateToken(),
-      });
+      }).select('id').single();
       toast.success('Profissional adicionado');
+      logAudit({ companyId, action: 'Profissional adicionado', category: 'staff', entityType: 'staff', entityId: newStaff?.id, details: { name: name.trim() } });
     }
     setOpen(false);
     fetchStaff();
@@ -91,8 +94,10 @@ export default function Staff() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Excluir?')) return;
+    const s = staff.find(x => x.id === id);
     await supabase.from('staff').delete().eq('id', id);
     toast.success('Excluído');
+    logAudit({ companyId, action: 'Profissional excluído', category: 'staff', entityType: 'staff', entityId: id, details: { name: s?.name } });
     fetchStaff();
   };
 
