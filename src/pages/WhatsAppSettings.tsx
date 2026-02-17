@@ -14,7 +14,7 @@ import WhatsAppConnectionCard from '@/components/WhatsAppConnectionCard';
 
 export default function WhatsAppSettings() {
   const { companyId } = useAuth();
-  const [settings, setSettings] = useState({ base_url: '', instance_id: '', token: '', from_number: '', active: false });
+  const [settings, setSettings] = useState({ base_url: '', instance_id: '', token: '', admin_token: '', from_number: '', active: false });
   const [templates, setTemplates] = useState<any[]>([]);
   const [rules, setRules] = useState<any[]>([]);
   const [testPhone, setTestPhone] = useState('');
@@ -40,6 +40,7 @@ export default function WhatsAppSettings() {
       base_url: settings.base_url,
       instance_id: settings.instance_id,
       token: settings.token,
+      admin_token: settings.admin_token,
       from_number: settings.from_number,
       active: settings.active,
     }, { onConflict: 'company_id' });
@@ -113,8 +114,13 @@ export default function WhatsAppSettings() {
                 <Input value={settings.instance_id} onChange={(e) => setSettings({ ...settings, instance_id: e.target.value })} placeholder="sua-instancia" className="h-10" />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-sm font-semibold">Token/API Key</Label>
-                <Input type="password" value={settings.token} onChange={(e) => setSettings({ ...settings, token: e.target.value })} placeholder="Seu token" className="h-10" />
+                <Label className="text-sm font-semibold">Token da Instância</Label>
+                <Input type="password" value={settings.token} onChange={(e) => setSettings({ ...settings, token: e.target.value })} placeholder="Token para envio de mensagens" className="h-10" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-semibold">Admin Token</Label>
+                <Input type="password" value={settings.admin_token} onChange={(e) => setSettings({ ...settings, admin_token: e.target.value })} placeholder="Token de gerenciamento da instância" className="h-10" />
+                <p className="text-xs text-muted-foreground">Usado para conectar/desconectar a instância (QR Code)</p>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-sm font-semibold">Número de envio</Label>
