@@ -11,8 +11,12 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Search, Users, ClipboardList, Layers, Plus, Camera, Trash2,
-  Phone, ChevronRight, ChevronLeft, ImageIcon, ArrowLeft
+  Phone, ChevronRight, ChevronLeft, ImageIcon, ArrowLeft, Pencil
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Progress } from '@/components/ui/progress';
@@ -40,6 +44,7 @@ export default function ClientRecords() {
   const [templates, setTemplates] = useState<any[]>([]);
   const [anamnesisOpen, setAnamnesisOpen] = useState(false);
   const [anamnesisForm, setAnamnesisForm] = useState<any>({ client_name: '', client_phone: '', service_id: '', responses: {}, notes: '' });
+  const [editingAnamnesis, setEditingAnamnesis] = useState<any>(null);
 
   // Sessions state
   const [packages, setPackages] = useState<any[]>([]);
@@ -50,6 +55,10 @@ export default function ClientRecords() {
   const [sessionOpen, setSessionOpen] = useState(false);
   const [packageForm, setPackageForm] = useState({ client_name: '', client_phone: '', service_id: '', total_sessions: '', notes: '' });
   const [sessionForm, setSessionForm] = useState({ notes: '', evolution: '', session_date: new Date().toISOString().split('T')[0] });
+  const [editingPackage, setEditingPackage] = useState<any>(null);
+
+  // Delete confirmation state
+  const [deleteTarget, setDeleteTarget] = useState<{ type: 'anamnesis' | 'package'; id: string; name: string } | null>(null);
 
   // Photos state
   const [photos, setPhotos] = useState<any[]>([]);
@@ -155,12 +164,30 @@ export default function ClientRecords() {
 
   // Anamnesis actions
   const openNewAnamnesis = () => {
+    setEditingAnamnesis(null);
     setAnamnesisForm({
       client_name: selectedClient?.client_name || '',
       client_phone: selectedClient?.client_phone || '',
       service_id: '', responses: {}, notes: ''
     });
     setTemplates([]);
+    setAnamnesisOpen(true);
+  };
+
+  const openEditAnamnesis = async (r: any) => {
+    setEditingAnamnesis(r);
+    setAnamnesisForm({
+      client_name: r.client_name,
+      client_phone: r.client_phone,
+      service_id: r.service_id || '',
+      responses: r.responses || {},
+      notes: r.notes || '',
+    });
+    if (r.service_id) {
+      await fetchTemplatesForService(r.service_id);
+    } else {
+      setTemplates([]);
+    }
     setAnamnesisOpen(true);
   };
 
@@ -173,23 +200,48 @@ export default function ClientRecords() {
     if (!companyId || !anamnesisForm.client_name.trim() || !anamnesisForm.client_phone.trim()) {
       toast.error('Preencha nome e telefone'); return;
     }
-    const { error } = await supabase.from('anamnesis_responses').insert({
-      company_id: companyId,
-      client_name: anamnesisForm.client_name.trim(),
-      client_phone: anamnesisForm.client_phone.trim(),
-      service_id: anamnesisForm.service_id || null,
-      responses: anamnesisForm.responses,
-      notes: anamnesisForm.notes || null,
-      filled_by: 'professional',
-    });
-    if (error) { toast.error('Erro: ' + error.message); return; }
-    toast.success('Anamnese salva');
+    if (editingAnamnesis) {
+      const { error } = await supabase.from('anamnesis_responses').update({
+        client_name: anamnesisForm.client_name.trim(),
+        client_phone: anamnesisForm.client_phone.trim(),
+        service_id: anamnesisForm.service_id || null,
+        responses: anamnesisForm.responses,
+        notes: anamnesisForm.notes || null,
+      }).eq('id', editingAnamnesis.id);
+      if (error) { toast.error('Erro: ' + error.message); return; }
+      toast.success('Anamnese atualizada');
+    } else {
+      const { error } = await supabase.from('anamnesis_responses').insert({
+        company_id: companyId,
+        client_name: anamnesisForm.client_name.trim(),
+        client_phone: anamnesisForm.client_phone.trim(),
+        service_id: anamnesisForm.service_id || null,
+        responses: anamnesisForm.responses,
+        notes: anamnesisForm.notes || null,
+        filled_by: 'professional',
+      });
+      if (error) { toast.error('Erro: ' + error.message); return; }
+      toast.success('Anamnese salva');
+    }
     setAnamnesisOpen(false);
+    setEditingAnamnesis(null);
+    setSelectedResponse(null);
     fetchResponses();
   };
 
-  // Session actions
+  const deleteAnamnesis = async (id: string) => {
+    // Delete related photos first
+    await supabase.from('client_photos').delete().eq('anamnesis_response_id', id);
+    const { error } = await supabase.from('anamnesis_responses').delete().eq('id', id);
+    if (error) { toast.error('Erro: ' + error.message); return; }
+    toast.success('Ficha de anamnese excluída');
+    setSelectedResponse(null);
+    fetchResponses();
+  };
+
+  // Package actions
   const openNewPackage = () => {
+    setEditingPackage(null);
     setPackageForm({
       client_name: selectedClient?.client_name || '',
       client_phone: selectedClient?.client_phone || '',
@@ -198,22 +250,68 @@ export default function ClientRecords() {
     setPackageOpen(true);
   };
 
+  const openEditPackage = (pkg: any) => {
+    setEditingPackage(pkg);
+    setPackageForm({
+      client_name: pkg.client_name,
+      client_phone: pkg.client_phone,
+      service_id: pkg.service_id || '',
+      total_sessions: pkg.total_sessions ? String(pkg.total_sessions) : '',
+      notes: pkg.notes || '',
+    });
+    setPackageOpen(true);
+  };
+
   const savePackage = async () => {
     if (!companyId || !packageForm.client_name.trim() || !packageForm.client_phone.trim()) {
       toast.error('Preencha nome e telefone'); return;
     }
-    const { error } = await supabase.from('session_packages').insert({
-      company_id: companyId,
-      client_name: packageForm.client_name.trim(),
-      client_phone: packageForm.client_phone.trim(),
-      service_id: packageForm.service_id || null,
-      total_sessions: packageForm.total_sessions ? parseInt(packageForm.total_sessions) : null,
-      notes: packageForm.notes || null,
-    });
-    if (error) { toast.error('Erro: ' + error.message); return; }
-    toast.success('Pacote criado');
+    if (editingPackage) {
+      const { error } = await supabase.from('session_packages').update({
+        client_name: packageForm.client_name.trim(),
+        client_phone: packageForm.client_phone.trim(),
+        service_id: packageForm.service_id || null,
+        total_sessions: packageForm.total_sessions ? parseInt(packageForm.total_sessions) : null,
+        notes: packageForm.notes || null,
+      }).eq('id', editingPackage.id);
+      if (error) { toast.error('Erro: ' + error.message); return; }
+      toast.success('Pacote atualizado');
+    } else {
+      const { error } = await supabase.from('session_packages').insert({
+        company_id: companyId,
+        client_name: packageForm.client_name.trim(),
+        client_phone: packageForm.client_phone.trim(),
+        service_id: packageForm.service_id || null,
+        total_sessions: packageForm.total_sessions ? parseInt(packageForm.total_sessions) : null,
+        notes: packageForm.notes || null,
+      });
+      if (error) { toast.error('Erro: ' + error.message); return; }
+      toast.success('Pacote criado');
+    }
     setPackageOpen(false);
+    setEditingPackage(null);
     fetchPackages();
+  };
+
+  const deletePackage = async (id: string) => {
+    // Delete related sessions and photos first
+    await supabase.from('client_photos').delete().eq('package_id', id);
+    await supabase.from('sessions').delete().eq('package_id', id);
+    const { error } = await supabase.from('session_packages').delete().eq('id', id);
+    if (error) { toast.error('Erro: ' + error.message); return; }
+    toast.success('Pacote excluído');
+    setSelectedPackage(null);
+    fetchPackages();
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    if (deleteTarget.type === 'anamnesis') {
+      await deleteAnamnesis(deleteTarget.id);
+    } else {
+      await deletePackage(deleteTarget.id);
+    }
+    setDeleteTarget(null);
   };
 
   const openPackageDetail = (pkg: any) => {
@@ -289,11 +387,23 @@ export default function ClientRecords() {
           </Button>
 
           <div className="section-header mb-0">
-            <h1 className="section-title flex items-center gap-2 text-lg">
-              <Layers className="h-5 w-5 text-primary" />
-              Pacote de {selectedPackage.client_name}
-            </h1>
-            <p className="section-subtitle">{selectedPackage.services?.name || 'Geral'}</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="section-title flex items-center gap-2 text-lg">
+                  <Layers className="h-5 w-5 text-primary" />
+                  Pacote de {selectedPackage.client_name}
+                </h1>
+                <p className="section-subtitle">{selectedPackage.services?.name || 'Geral'}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => openEditPackage(selectedPackage)}>
+                  <Pencil className="h-3 w-3" />Editar
+                </Button>
+                <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 text-destructive hover:text-destructive" onClick={() => setDeleteTarget({ type: 'package', id: selectedPackage.id, name: selectedPackage.client_name })}>
+                  <Trash2 className="h-3 w-3" />Excluir
+                </Button>
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -403,6 +513,64 @@ export default function ClientRecords() {
               </div>
             </DialogContent>
           </Dialog>
+
+          {/* Package edit dialog */}
+          <Dialog open={packageOpen} onOpenChange={setPackageOpen}>
+            <DialogContent className="max-w-[95vw] sm:max-w-md">
+              <DialogHeader><DialogTitle className="font-bold">{editingPackage ? 'Editar Pacote' : 'Novo Pacote de Sessões'}</DialogTitle></DialogHeader>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="font-semibold text-sm">Nome *</Label>
+                    <Input value={packageForm.client_name} onChange={(e) => setPackageForm({ ...packageForm, client_name: e.target.value })} className="h-10" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="font-semibold text-sm">Telefone *</Label>
+                    <Input value={packageForm.client_phone} onChange={(e) => setPackageForm({ ...packageForm, client_phone: e.target.value })} className="h-10" />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="font-semibold text-sm">Serviço</Label>
+                  <Select value={packageForm.service_id || 'none'} onValueChange={(v) => setPackageForm({ ...packageForm, service_id: v === 'none' ? '' : v })}>
+                    <SelectTrigger className="h-10"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Geral</SelectItem>
+                      {services.filter(s => s.requires_sessions).map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="font-semibold text-sm">Quantidade de sessões</Label>
+                  <Input type="number" value={packageForm.total_sessions} onChange={(e) => setPackageForm({ ...packageForm, total_sessions: e.target.value })} placeholder="Deixe vazio para ilimitado" className="h-10" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="font-semibold text-sm">Observações</Label>
+                  <Textarea value={packageForm.notes} onChange={(e) => setPackageForm({ ...packageForm, notes: e.target.value })} rows={2} />
+                </div>
+                <Button onClick={savePackage} className="w-full gradient-primary border-0 font-semibold h-10">{editingPackage ? 'Salvar alterações' : 'Criar pacote'}</Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Delete confirmation */}
+          <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {deleteTarget?.type === 'anamnesis'
+                    ? 'Tem certeza que deseja excluir esta ficha de anamnese? Todas as fotos associadas também serão removidas. Esta ação não pode ser desfeita.'
+                    : 'Tem certeza que deseja excluir este pacote? Todas as sessões e fotos associadas também serão removidas. Esta ação não pode ser desfeita.'}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                  Excluir
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </DashboardLayout>
     );
@@ -462,17 +630,23 @@ export default function ClientRecords() {
             ) : (
               <div className="space-y-2 mb-4">
                 {clientResponses.map(r => (
-                  <Card key={r.id} className="rounded-xl hover:shadow-sm transition-all cursor-pointer" onClick={() => { setSelectedResponse(r); fetchPhotos({ responseId: r.id }); }}>
+                  <Card key={r.id} className="rounded-xl hover:shadow-sm transition-all">
                     <CardContent className="p-3 flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 cursor-pointer" onClick={() => { setSelectedResponse(r); fetchPhotos({ responseId: r.id }); }}>
                         <ClipboardList className="h-3.5 w-3.5 text-primary" />
                       </div>
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { setSelectedResponse(r); fetchPhotos({ responseId: r.id }); }}>
                         <p className="font-semibold text-sm truncate">{r.services?.name || 'Geral'}</p>
                         <p className="text-xs text-muted-foreground">{formatDate(r.created_at)}</p>
                       </div>
                       <Badge variant="secondary" className="text-[10px]">{r.filled_by === 'client' ? 'Cliente' : 'Profissional'}</Badge>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      <button onClick={(e) => { e.stopPropagation(); openEditAnamnesis(r); }} className="h-7 w-7 rounded-md flex items-center justify-center hover:bg-accent transition-colors" title="Editar">
+                        <Pencil className="h-3 w-3 text-muted-foreground" />
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: 'anamnesis', id: r.id, name: r.client_name }); }} className="h-7 w-7 rounded-md flex items-center justify-center hover:bg-destructive/10 transition-colors" title="Excluir">
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </button>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground cursor-pointer" onClick={() => { setSelectedResponse(r); fetchPhotos({ responseId: r.id }); }} />
                     </CardContent>
                   </Card>
                 ))}
@@ -497,13 +671,13 @@ export default function ClientRecords() {
                   const total = pkg.total_sessions;
                   const progressPct = total ? Math.min((completed / total) * 100, 100) : null;
                   return (
-                    <Card key={pkg.id} className="rounded-xl hover:shadow-sm transition-all cursor-pointer" onClick={() => openPackageDetail(pkg)}>
+                    <Card key={pkg.id} className="rounded-xl hover:shadow-sm transition-all">
                       <CardContent className="p-3.5">
                         <div className="flex items-center gap-3">
-                          <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 cursor-pointer" onClick={() => openPackageDetail(pkg)}>
                             <Layers className="h-3.5 w-3.5 text-primary" />
                           </div>
-                          <div className="flex-1 min-w-0">
+                          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openPackageDetail(pkg)}>
                             <p className="font-semibold text-sm truncate">{pkg.services?.name || 'Geral'}</p>
                             <p className="text-xs text-muted-foreground">
                               {total ? `${completed}/${total} sessões` : `${completed} sessões`}
@@ -512,7 +686,13 @@ export default function ClientRecords() {
                           <Badge variant={pkg.status === 'active' ? 'default' : 'secondary'} className="text-[10px]">
                             {pkg.status === 'active' ? 'Ativo' : pkg.status === 'completed' ? 'Concluído' : 'Cancelado'}
                           </Badge>
-                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                          <button onClick={(e) => { e.stopPropagation(); openEditPackage(pkg); }} className="h-7 w-7 rounded-md flex items-center justify-center hover:bg-accent transition-colors" title="Editar">
+                            <Pencil className="h-3 w-3 text-muted-foreground" />
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: 'package', id: pkg.id, name: pkg.client_name }); }} className="h-7 w-7 rounded-md flex items-center justify-center hover:bg-destructive/10 transition-colors" title="Excluir">
+                            <Trash2 className="h-3 w-3 text-destructive" />
+                          </button>
+                          <ChevronRight className="h-4 w-4 text-muted-foreground cursor-pointer" onClick={() => openPackageDetail(pkg)} />
                         </div>
                         {total && (
                           <div className="mt-2 pl-11">
@@ -532,10 +712,20 @@ export default function ClientRecords() {
         <Dialog open={!!selectedResponse} onOpenChange={() => setSelectedResponse(null)}>
           <DialogContent className="max-w-[95vw] sm:max-w-lg max-h-[85vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle className="font-bold flex items-center gap-2">
-                <ClipboardList className="h-4 w-4 text-primary" />
-                Ficha de {selectedResponse?.client_name}
-              </DialogTitle>
+              <div className="flex items-center justify-between pr-8">
+                <DialogTitle className="font-bold flex items-center gap-2">
+                  <ClipboardList className="h-4 w-4 text-primary" />
+                  Ficha de {selectedResponse?.client_name}
+                </DialogTitle>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => { setSelectedResponse(null); openEditAnamnesis(selectedResponse); }} className="h-7 w-7 rounded-md flex items-center justify-center hover:bg-accent transition-colors" title="Editar">
+                    <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
+                  <button onClick={() => { setDeleteTarget({ type: 'anamnesis', id: selectedResponse.id, name: selectedResponse.client_name }); }} className="h-7 w-7 rounded-md flex items-center justify-center hover:bg-destructive/10 transition-colors" title="Excluir">
+                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                  </button>
+                </div>
+              </div>
             </DialogHeader>
             {selectedResponse && (
               <div className="space-y-4">
@@ -590,10 +780,10 @@ export default function ClientRecords() {
           </DialogContent>
         </Dialog>
 
-        {/* NEW ANAMNESIS DIALOG */}
+        {/* NEW/EDIT ANAMNESIS DIALOG */}
         <Dialog open={anamnesisOpen} onOpenChange={setAnamnesisOpen}>
           <DialogContent className="max-w-[95vw] sm:max-w-md max-h-[85vh] overflow-y-auto">
-            <DialogHeader><DialogTitle className="font-bold">Nova Ficha de Anamnese</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle className="font-bold">{editingAnamnesis ? 'Editar Ficha de Anamnese' : 'Nova Ficha de Anamnese'}</DialogTitle></DialogHeader>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
@@ -655,15 +845,15 @@ export default function ClientRecords() {
                 <Label className="font-semibold text-sm">Observações</Label>
                 <Textarea value={anamnesisForm.notes} onChange={(e) => setAnamnesisForm({ ...anamnesisForm, notes: e.target.value })} rows={2} />
               </div>
-              <Button onClick={saveAnamnesis} className="w-full gradient-primary border-0 font-semibold h-10">Salvar ficha</Button>
+              <Button onClick={saveAnamnesis} className="w-full gradient-primary border-0 font-semibold h-10">{editingAnamnesis ? 'Salvar alterações' : 'Salvar ficha'}</Button>
             </div>
           </DialogContent>
         </Dialog>
 
-        {/* NEW PACKAGE DIALOG */}
+        {/* NEW/EDIT PACKAGE DIALOG */}
         <Dialog open={packageOpen} onOpenChange={setPackageOpen}>
           <DialogContent className="max-w-[95vw] sm:max-w-md">
-            <DialogHeader><DialogTitle className="font-bold">Novo Pacote de Sessões</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle className="font-bold">{editingPackage ? 'Editar Pacote' : 'Novo Pacote de Sessões'}</DialogTitle></DialogHeader>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
@@ -693,10 +883,30 @@ export default function ClientRecords() {
                 <Label className="font-semibold text-sm">Observações</Label>
                 <Textarea value={packageForm.notes} onChange={(e) => setPackageForm({ ...packageForm, notes: e.target.value })} rows={2} />
               </div>
-              <Button onClick={savePackage} className="w-full gradient-primary border-0 font-semibold h-10">Criar pacote</Button>
+              <Button onClick={savePackage} className="w-full gradient-primary border-0 font-semibold h-10">{editingPackage ? 'Salvar alterações' : 'Criar pacote'}</Button>
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* DELETE CONFIRMATION */}
+        <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
+              <AlertDialogDescription>
+                {deleteTarget?.type === 'anamnesis'
+                  ? 'Tem certeza que deseja excluir esta ficha de anamnese? Todas as fotos associadas também serão removidas. Esta ação não pode ser desfeita.'
+                  : 'Tem certeza que deseja excluir este pacote? Todas as sessões e fotos associadas também serão removidas. Esta ação não pode ser desfeita.'}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                Excluir
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DashboardLayout>
     );
   }
