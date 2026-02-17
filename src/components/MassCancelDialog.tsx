@@ -11,9 +11,10 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
   DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { toast } from 'sonner';
 import { logAudit } from '@/lib/auditLog';
-import { AlertTriangle, Ban, Loader2, CalendarCheck, ArrowRight } from 'lucide-react';
+import { AlertTriangle, Ban, Loader2, CalendarCheck, ArrowRight, CalendarDays } from 'lucide-react';
 
 interface RescheduledDetail {
   client: string;
@@ -30,6 +31,8 @@ export default function MassCancelDialog() {
   const [reason, setReason] = useState('');
   const [sendWhatsApp, setSendWhatsApp] = useState(true);
   const [reschedule, setReschedule] = useState(false);
+  const [rescheduleMode, setRescheduleMode] = useState<'auto' | 'manual'>('auto');
+  const [targetDate, setTargetDate] = useState('');
   const [loading, setLoading] = useState(false);
   const [previewCount, setPreviewCount] = useState<number | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -72,6 +75,11 @@ export default function MassCancelDialog() {
       return;
     }
 
+    if (reschedule && rescheduleMode === 'manual' && !targetDate) {
+      toast.error('Selecione a data de destino para remarcação');
+      return;
+    }
+
     setLoading(true);
     try {
       const { data: res, error } = await supabase.functions.invoke('mass-cancel-appointments', {
@@ -81,6 +89,7 @@ export default function MassCancelDialog() {
           reason: reason || undefined,
           send_whatsapp: sendWhatsApp,
           reschedule,
+          target_date: reschedule && rescheduleMode === 'manual' ? targetDate : undefined,
         },
       });
 
@@ -89,10 +98,10 @@ export default function MassCancelDialog() {
       const r = res as any;
       if (r?.success) {
         if (r.rescheduled > 0) {
-          toast.success(`${r.rescheduled} agendamento(s) remarcado(s) automaticamente`);
+          toast.success(`${r.rescheduled} agendamento(s) remarcado(s)`);
         }
         if (r.canceled > 0) {
-          toast.warning(`${r.canceled} agendamento(s) cancelado(s) (sem horário alternativo)`);
+          toast.warning(`${r.canceled} agendamento(s) cancelado(s) (sem horário disponível)`);
         }
         if (r.whatsapp_sent > 0) {
           toast.info(`${r.whatsapp_sent} notificação(ões) enviada(s) via WhatsApp`);
@@ -109,6 +118,7 @@ export default function MassCancelDialog() {
           details: {
             date,
             reason,
+            target_date: rescheduleMode === 'manual' ? targetDate : 'auto',
             canceled: r.canceled,
             rescheduled: r.rescheduled,
             whatsapp_sent: r.whatsapp_sent,
@@ -116,7 +126,6 @@ export default function MassCancelDialog() {
           },
         });
 
-        // Show results if there were rescheduled appointments
         if (r.rescheduled > 0 && r.rescheduled_details?.length > 0) {
           setResult(r);
         } else {
@@ -137,9 +146,11 @@ export default function MassCancelDialog() {
   const resetForm = () => {
     setDate('');
     setReason('');
+    setTargetDate('');
     setPreviewCount(null);
     setResult(null);
     setReschedule(false);
+    setRescheduleMode('auto');
   };
 
   const handleClose = () => {
@@ -187,7 +198,7 @@ export default function MassCancelDialog() {
 
               {result.canceled > 0 && (
                 <div className="rounded-lg p-3 bg-destructive/10 text-sm text-destructive font-medium">
-                  ⚠️ {result.canceled} agendamento(s) não puderam ser remarcados (sem horário disponível nos próximos 30 dias)
+                  ⚠️ {result.canceled} agendamento(s) não puderam ser remarcados (sem horário disponível)
                 </div>
               )}
 
@@ -212,13 +223,13 @@ export default function MassCancelDialog() {
                 Cancelar / Remarcar Agendamentos
               </DialogTitle>
               <DialogDescription>
-                Cancele ou remarque automaticamente todos os agendamentos de um dia. Os clientes serão notificados.
+                Cancele ou remarque todos os agendamentos de um dia. Os clientes serão notificados.
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4 py-2">
               <div className="space-y-1.5">
-                <Label className="text-sm font-semibold">Data</Label>
+                <Label className="text-sm font-semibold">Data a cancelar</Label>
                 <Input type="date" value={date} onChange={(e) => handleDateChange(e.target.value)} className="h-10" />
               </div>
 
@@ -248,14 +259,61 @@ export default function MassCancelDialog() {
                 />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between rounded-lg border border-primary/30 p-3 bg-primary/5">
                   <div>
-                    <p className="text-sm font-semibold">Remarcar automaticamente</p>
-                    <p className="text-xs text-muted-foreground">Buscar próximo horário disponível para cada cliente</p>
+                    <p className="text-sm font-semibold">Remarcar agendamentos</p>
+                    <p className="text-xs text-muted-foreground">Mover os clientes para outro horário disponível</p>
                   </div>
                   <Switch checked={reschedule} onCheckedChange={setReschedule} />
                 </div>
+
+                {reschedule && (
+                  <div className="rounded-lg border border-border/60 p-3 space-y-3">
+                    <Label className="text-sm font-semibold flex items-center gap-1.5">
+                      <CalendarDays className="h-3.5 w-3.5 text-primary" />
+                      Modo de remarcação
+                    </Label>
+                    <RadioGroup
+                      value={rescheduleMode}
+                      onValueChange={(v) => setRescheduleMode(v as 'auto' | 'manual')}
+                      className="space-y-2"
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <RadioGroupItem value="auto" id="mode-auto" className="mt-0.5" />
+                        <label htmlFor="mode-auto" className="cursor-pointer">
+                          <p className="text-sm font-medium">Automático</p>
+                          <p className="text-xs text-muted-foreground">Buscar o próximo horário disponível (até 30 dias)</p>
+                        </label>
+                      </div>
+                      <div className="flex items-start gap-2.5">
+                        <RadioGroupItem value="manual" id="mode-manual" className="mt-0.5" />
+                        <label htmlFor="mode-manual" className="cursor-pointer">
+                          <p className="text-sm font-medium">Data específica</p>
+                          <p className="text-xs text-muted-foreground">Escolher uma data fixa para remarcar todos</p>
+                        </label>
+                      </div>
+                    </RadioGroup>
+
+                    {rescheduleMode === 'manual' && (
+                      <div className="space-y-1.5 pt-1">
+                        <Label className="text-xs font-semibold text-muted-foreground">Data de destino</Label>
+                        <Input
+                          type="date"
+                          value={targetDate}
+                          onChange={(e) => setTargetDate(e.target.value)}
+                          min={date || undefined}
+                          className="h-9 text-sm"
+                        />
+                        {targetDate && targetDate <= date && (
+                          <p className="text-xs text-destructive font-medium">
+                            A data de destino deve ser posterior à data cancelada
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="flex items-center justify-between rounded-lg border border-border/60 p-3">
                   <div>
@@ -278,7 +336,7 @@ export default function MassCancelDialog() {
               <Button
                 variant={reschedule ? 'default' : 'destructive'}
                 onClick={handleMassCancel}
-                disabled={loading || !date || previewCount === 0}
+                disabled={loading || !date || previewCount === 0 || (reschedule && rescheduleMode === 'manual' && (!targetDate || targetDate <= date))}
                 className="font-semibold"
               >
                 {loading ? (
