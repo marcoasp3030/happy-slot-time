@@ -559,10 +559,10 @@ Deno.serve(async (req) => {
 
       const supabase = getSupabaseAdmin();
 
-      // Check sync mode
+      // Check sync mode and meet link setting
       const { data: settings } = await supabase
         .from("company_settings")
-        .select("google_calendar_sync_mode")
+        .select("google_calendar_sync_mode, generate_meet_link")
         .eq("company_id", companyId)
         .single();
 
@@ -612,20 +612,33 @@ Deno.serve(async (req) => {
       const startDateTime = `${appointment.appointment_date}T${appointment.start_time}`;
       const endDateTime = `${appointment.appointment_date}T${appointment.end_time}`;
       const encodedCalId = encodeURIComponent(calendarId);
+      const generateMeetLink = settings?.generate_meet_link || false;
 
-      const eventRes = await fetch(`${GOOGLE_CALENDAR_API}/calendars/${encodedCalId}/events`, {
+      const eventBody: any = {
+        summary,
+        description,
+        start: { dateTime: startDateTime, timeZone: "America/Sao_Paulo" },
+        end: { dateTime: endDateTime, timeZone: "America/Sao_Paulo" },
+        colorId: "2",
+      };
+
+      if (generateMeetLink) {
+        eventBody.conferenceData = {
+          createRequest: {
+            requestId: `meet-${appointmentId}`,
+            conferenceSolutionKey: { type: "hangoutsMeet" },
+          },
+        };
+      }
+
+      const conferenceParam = generateMeetLink ? "?conferenceDataVersion=1" : "";
+      const eventRes = await fetch(`${GOOGLE_CALENDAR_API}/calendars/${encodedCalId}/events${conferenceParam}`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          summary,
-          description,
-          start: { dateTime: startDateTime, timeZone: "America/Sao_Paulo" },
-          end: { dateTime: endDateTime, timeZone: "America/Sao_Paulo" },
-          colorId: "2",
-        }),
+        body: JSON.stringify(eventBody),
       });
 
       const event = await eventRes.json();
@@ -634,12 +647,18 @@ Deno.serve(async (req) => {
         throw new Error(`Google Calendar API error: ${eventRes.status}`);
       }
 
+      // Extract Meet link if available
+      const meetLink = event.hangoutLink || null;
+
       await supabase
         .from("appointments")
-        .update({ google_calendar_event_id: event.id })
+        .update({
+          google_calendar_event_id: event.id,
+          ...(meetLink ? { meet_link: meetLink } : {}),
+        })
         .eq("id", appointmentId);
 
-      return jsonRes({ eventId: event.id });
+      return jsonRes({ eventId: event.id, meetLink });
     }
 
     // === DELETE EVENT INTERNAL (called by DB trigger on cancel) ===

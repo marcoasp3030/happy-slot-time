@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Calendar, Clock, CheckCircle, ArrowLeft, ArrowRight, User, Sparkles, MapPin, Phone, Star } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, ArrowLeft, ArrowRight, User, Sparkles, MapPin, Phone, Star, Video } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -37,6 +37,7 @@ export default function PublicBooking() {
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
   const [notes, setNotes] = useState('');
+  const [meetLink, setMeetLink] = useState<string | null>(null);
 
   useEffect(() => {
     if (!slug) return;
@@ -125,7 +126,7 @@ export default function PublicBooking() {
     const endMin = h * 60 + m + duration;
     const endTime = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
 
-    const { error } = await supabase.from('appointments').insert({
+    const { data: inserted, error } = await supabase.from('appointments').insert({
       company_id: company.id,
       service_id: selectedService.id,
       staff_id: selectedStaff?.id || null,
@@ -135,10 +136,23 @@ export default function PublicBooking() {
       start_time: selectedTime,
       end_time: endTime,
       notes: notes.trim() || null,
-    });
+    }).select('id').single();
 
     setSubmitting(false);
     if (error) { toast.error('Erro ao agendar. Tente novamente.'); return; }
+
+    // Check for meet link after a delay (Google Calendar sync is async)
+    if (inserted?.id) {
+      setTimeout(async () => {
+        const { data: appt } = await supabase
+          .from('appointments')
+          .select('meet_link')
+          .eq('id', inserted.id)
+          .single();
+        if (appt?.meet_link) setMeetLink(appt.meet_link);
+      }, 3000);
+    }
+
     setStep('success');
   };
 
@@ -697,13 +711,28 @@ export default function PublicBooking() {
                   </span>
                 </div>
               </div>
+              {meetLink && (
+                <motion.a
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.5 }}
+                  href={meetLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm text-white shadow-lg hover:shadow-xl transition-all duration-300"
+                  style={{ backgroundColor: primaryColor }}
+                >
+                  <Video className="h-4 w-4" />
+                  Entrar na reunião online (Google Meet)
+                </motion.a>
+              )}
               <p className="text-sm text-muted-foreground">
                 Você receberá uma confirmação por WhatsApp 📱
               </p>
               <Button
                 onClick={() => {
                   setStep('service'); setSelectedService(null); setSelectedStaff(null);
-                  setSelectedDate(''); setSelectedTime(''); setClientName(''); setClientPhone(''); setNotes('');
+                  setSelectedDate(''); setSelectedTime(''); setClientName(''); setClientPhone(''); setNotes(''); setMeetLink(null);
                 }}
                 variant="outline"
                 className="font-bold mt-2 h-11 px-6"
