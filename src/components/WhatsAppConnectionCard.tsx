@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Wifi, WifiOff, QrCode, RefreshCw, Smartphone, CheckCircle2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 type ConnectionStatus = 'idle' | 'connecting' | 'polling' | 'connected' | 'error';
 
@@ -207,10 +208,21 @@ export default function WhatsAppConnectionCard({ hasCredentials, hasAdminToken, 
                 )}
               </div>
             </div>
-            <Button variant="outline" onClick={handleDisconnect} className="text-destructive hover:text-destructive">
-              <WifiOff className="h-4 w-4 mr-2" />
-              Desconectar
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={async () => {
+                toast.loading('Verificando status e reconfigurando webhook...');
+                await checkStatus();
+                toast.dismiss();
+                toast.success('Status verificado e webhook reconfigurado!');
+              }}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Verificar Status
+              </Button>
+              <Button variant="outline" onClick={handleDisconnect} className="text-destructive hover:text-destructive">
+                <WifiOff className="h-4 w-4 mr-2" />
+                Desconectar
+              </Button>
+            </div>
           </div>
         ) : status === 'polling' ? (
           <div className="space-y-4">
