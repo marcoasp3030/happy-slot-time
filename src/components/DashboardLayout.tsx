@@ -5,7 +5,7 @@ import { useRole } from '@/hooks/useRole';
 import {
   LayoutDashboard, Scissors, Users, Clock, Calendar,
   Palette, MessageSquare, CreditCard, Menu, X, LogOut,
-  ChevronRight, Bell, Search, Shield,
+  ChevronRight, Bell, Shield,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -22,6 +22,7 @@ const navItems = [
 const settingsItems = [
   { title: 'Aparência', icon: Palette, path: '/aparencia' },
   { title: 'WhatsApp', icon: MessageSquare, path: '/whatsapp' },
+  { title: 'Google Agenda', icon: Calendar, path: '/google-calendar' },
   { title: 'Plano', icon: CreditCard, path: '/plano' },
 ];
 

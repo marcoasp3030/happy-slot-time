@@ -52,6 +52,7 @@ export type Database = {
           company_id: string
           created_at: string
           end_time: string
+          google_calendar_event_id: string | null
           id: string
           notes: string | null
           service_id: string | null
@@ -67,6 +68,7 @@ export type Database = {
           company_id: string
           created_at?: string
           end_time: string
+          google_calendar_event_id?: string | null
           id?: string
           notes?: string | null
           service_id?: string | null
@@ -82,6 +84,7 @@ export type Database = {
           company_id?: string
           created_at?: string
           end_time?: string
+          google_calendar_event_id?: string | null
           id?: string
           notes?: string | null
           service_id?: string | null
@@ -258,6 +261,50 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "company_settings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      google_calendar_tokens: {
+        Row: {
+          access_token: string
+          calendar_id: string
+          company_id: string
+          connected_email: string | null
+          created_at: string
+          id: string
+          refresh_token: string
+          token_expires_at: string
+          updated_at: string
+        }
+        Insert: {
+          access_token: string
+          calendar_id?: string
+          company_id: string
+          connected_email?: string | null
+          created_at?: string
+          id?: string
+          refresh_token: string
+          token_expires_at: string
+          updated_at?: string
+        }
+        Update: {
+          access_token?: string
+          calendar_id?: string
+          company_id?: string
+          connected_email?: string | null
+          created_at?: string
+          id?: string
+          refresh_token?: string
+          token_expires_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "google_calendar_tokens_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: true
             referencedRelation: "companies"
