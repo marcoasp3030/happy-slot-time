@@ -86,11 +86,14 @@ function isFromMe(body: any): boolean {
   if (body.data?.key?.fromMe === true) return true;
   // UAZAPI: event.IsFromMe
   if (body.event?.IsFromMe === true) return true;
+  // UAZAPI: message object has fromMe directly (most common UAZAPI format)
+  if (body.message?.fromMe === true) return true;
+  // UAZAPI: message sent via API
+  if (body.message?.wasSentByApi === true) return true;
   // UAZAPI: check if sender matches the instance owner (business number)
   const owner = body.owner;
   if (owner) {
     const phone = extractPhone(body);
-    // If the phone extracted is the same as the owner, it's our own message
     if (phone && owner.replace(/\D/g, "") === phone.replace(/\D/g, "")) return true;
   }
   // UAZAPI: message sent by instance has "fromMe" in nested message key
@@ -154,6 +157,8 @@ Deno.serve(async (req) => {
     log("🔵 fromMe check:", 
       "body.fromMe:", body.fromMe, 
       "key.fromMe:", body.key?.fromMe,
+      "msg.fromMe:", body.message?.fromMe,
+      "msg.wasSentByApi:", body.message?.wasSentByApi,
       "event.IsFromMe:", body.event?.IsFromMe,
       "owner:", body.owner
     );
