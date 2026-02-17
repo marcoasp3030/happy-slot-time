@@ -11,7 +11,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Calendar, Filter, Search, Clock, Phone, User, CheckCircle2, Layers,
   XCircle, AlertCircle, MoreHorizontal, ChevronLeft, ChevronRight,
-  CalendarDays, Users, RefreshCw
+  CalendarDays, Users, RefreshCw, Video
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator
@@ -358,6 +358,17 @@ export default function Appointments() {
                                         <Layers className="h-2.5 w-2.5" />
                                         Sessões
                                       </span>
+                                    )}
+                                    {apt.meet_link && (
+                                      <a
+                                        href={apt.meet_link}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1 font-medium hover:underline"
+                                      >
+                                        <Video className="h-2.5 w-2.5" />
+                                        Meet
+                                      </a>
                                     )}
                                   </div>
                                   <div className="flex items-center gap-1 mt-1">
