@@ -99,6 +99,12 @@ export default function WhatsAppAgent() {
         collect_segment: settings.collect_segment,
         collect_region: settings.collect_region,
         collect_area: settings.collect_area,
+        can_send_payment_link: settings.can_send_payment_link,
+        payment_link_url: settings.payment_link_url,
+        can_send_pix: settings.can_send_pix,
+        pix_key: settings.pix_key,
+        pix_name: settings.pix_name,
+        pix_instructions: settings.pix_instructions,
       })
       .eq('id', settings.id);
     setSaving(false);

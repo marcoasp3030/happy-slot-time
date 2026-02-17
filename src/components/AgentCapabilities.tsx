@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
-import { MapPin, Phone, Clock, Scissors, Users, FileText, Image, Mic, Upload, Trash2, Info, ShieldCheck, UserCheck, Mail, Building2, Globe, MapPinned, Briefcase } from 'lucide-react';
+import { MapPin, Phone, Clock, Scissors, Users, FileText, Image, Mic, Upload, Trash2, Info, ShieldCheck, UserCheck, Mail, Building2, Globe, MapPinned, Briefcase, CreditCard, QrCode, Link } from 'lucide-react';
 
 interface AgentCapabilitiesProps {
   settings: any;
@@ -302,6 +302,81 @@ export default function AgentCapabilities({ settings, onSettingsChange, onSave, 
             </div>
             <Switch checked={settings?.collect_area ?? false} onCheckedChange={(v) => u('collect_area', v)} />
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Payment Options */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <CreditCard className="h-4.5 w-4.5 text-primary" />
+            Pagamento
+          </CardTitle>
+          <CardDescription>Configure se o agente pode enviar links de pagamento e dados PIX aos clientes</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/40">
+            <div className="flex items-center gap-3">
+              <Link className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <Label className="font-medium text-sm">Link de Pagamento</Label>
+                <p className="text-xs text-muted-foreground">O agente pode enviar um link para pagamento online</p>
+              </div>
+            </div>
+            <Switch checked={settings?.can_send_payment_link ?? false} onCheckedChange={(v) => u('can_send_payment_link', v)} />
+          </div>
+
+          {settings?.can_send_payment_link && (
+            <div className="space-y-2 pl-7">
+              <Label className="font-medium text-sm">URL do link de pagamento</Label>
+              <Input
+                value={settings?.payment_link_url || ''}
+                onChange={(e) => u('payment_link_url', e.target.value)}
+                placeholder="https://pay.exemplo.com/pagamento"
+              />
+            </div>
+          )}
+
+          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/40">
+            <div className="flex items-center gap-3">
+              <QrCode className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <Label className="font-medium text-sm">PIX</Label>
+                <p className="text-xs text-muted-foreground">O agente pode enviar a chave PIX para pagamento</p>
+              </div>
+            </div>
+            <Switch checked={settings?.can_send_pix ?? false} onCheckedChange={(v) => u('can_send_pix', v)} />
+          </div>
+
+          {settings?.can_send_pix && (
+            <div className="space-y-3 pl-7">
+              <div className="space-y-2">
+                <Label className="font-medium text-sm">Chave PIX</Label>
+                <Input
+                  value={settings?.pix_key || ''}
+                  onChange={(e) => u('pix_key', e.target.value)}
+                  placeholder="CPF, CNPJ, e-mail, telefone ou chave aleatória"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="font-medium text-sm">Nome do titular</Label>
+                <Input
+                  value={settings?.pix_name || ''}
+                  onChange={(e) => u('pix_name', e.target.value)}
+                  placeholder="Nome que aparece ao pagar"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="font-medium text-sm">Instruções de pagamento</Label>
+                <Textarea
+                  value={settings?.pix_instructions || ''}
+                  onChange={(e) => u('pix_instructions', e.target.value)}
+                  rows={2}
+                  placeholder="Ex: Envie o comprovante após o pagamento para confirmar seu agendamento."
+                />
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

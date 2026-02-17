@@ -1333,6 +1333,8 @@ export type Database = {
           can_send_audio: boolean | null
           can_send_files: boolean | null
           can_send_images: boolean | null
+          can_send_payment_link: boolean | null
+          can_send_pix: boolean | null
           can_share_address: boolean | null
           can_share_business_hours: boolean | null
           can_share_phone: boolean | null
@@ -1359,6 +1361,10 @@ export type Database = {
           id: string
           max_reschedule_suggestions: number | null
           openai_api_key: string | null
+          payment_link_url: string | null
+          pix_instructions: string | null
+          pix_key: string | null
+          pix_name: string | null
           respond_audio_with_audio: boolean | null
           timezone: string | null
           updated_at: string
@@ -1369,6 +1375,8 @@ export type Database = {
           can_send_audio?: boolean | null
           can_send_files?: boolean | null
           can_send_images?: boolean | null
+          can_send_payment_link?: boolean | null
+          can_send_pix?: boolean | null
           can_share_address?: boolean | null
           can_share_business_hours?: boolean | null
           can_share_phone?: boolean | null
@@ -1395,6 +1403,10 @@ export type Database = {
           id?: string
           max_reschedule_suggestions?: number | null
           openai_api_key?: string | null
+          payment_link_url?: string | null
+          pix_instructions?: string | null
+          pix_key?: string | null
+          pix_name?: string | null
           respond_audio_with_audio?: boolean | null
           timezone?: string | null
           updated_at?: string
@@ -1405,6 +1417,8 @@ export type Database = {
           can_send_audio?: boolean | null
           can_send_files?: boolean | null
           can_send_images?: boolean | null
+          can_send_payment_link?: boolean | null
+          can_send_pix?: boolean | null
           can_share_address?: boolean | null
           can_share_business_hours?: boolean | null
           can_share_phone?: boolean | null
@@ -1431,6 +1445,10 @@ export type Database = {
           id?: string
           max_reschedule_suggestions?: number | null
           openai_api_key?: string | null
+          payment_link_url?: string | null
+          pix_instructions?: string | null
+          pix_key?: string | null
+          pix_name?: string | null
           respond_audio_with_audio?: boolean | null
           timezone?: string | null
           updated_at?: string
