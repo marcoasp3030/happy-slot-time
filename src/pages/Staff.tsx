@@ -9,8 +9,16 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Pencil, Trash2, User, Link2, Copy, CheckCircle2, Calendar, Loader2, ShieldCheck, Unlink } from 'lucide-react';
 import { toast } from 'sonner';
+
+interface GoogleCalendarItem {
+  id: string;
+  summary: string;
+  primary: boolean;
+  backgroundColor: string | null;
+}
 
 export default function Staff() {
   const { companyId } = useAuth();
@@ -21,7 +29,10 @@ export default function Staff() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [connectingStaffId, setConnectingStaffId] = useState<string | null>(null);
   const [disconnectingStaffId, setDisconnectingStaffId] = useState<string | null>(null);
-  const [staffCalendarStatus, setStaffCalendarStatus] = useState<Record<string, string | null>>({});
+  const [staffCalendarStatus, setStaffCalendarStatus] = useState<Record<string, { email: string | null; calendarId: string }>>({});
+  const [staffCalendars, setStaffCalendars] = useState<Record<string, GoogleCalendarItem[]>>({});
+  const [loadingCalendarsFor, setLoadingCalendarsFor] = useState<string | null>(null);
+  const [savingCalendarFor, setSavingCalendarFor] = useState<string | null>(null);
 
   const fetchStaff = async () => {
     if (!companyId) return;
@@ -33,13 +44,13 @@ export default function Staff() {
     if (!companyId) return;
     const { data: tokens } = await supabase
       .from('google_calendar_tokens')
-      .select('staff_id, connected_email')
+      .select('staff_id, connected_email, calendar_id')
       .eq('company_id', companyId)
       .not('staff_id', 'is', null);
 
-    const map: Record<string, string | null> = {};
+    const map: Record<string, { email: string | null; calendarId: string }> = {};
     (tokens || []).forEach(t => {
-      if (t.staff_id) map[t.staff_id] = t.connected_email;
+      if (t.staff_id) map[t.staff_id] = { email: t.connected_email, calendarId: t.calendar_id || 'primary' };
     });
     setStaffCalendarStatus(map);
   };
@@ -117,9 +128,10 @@ export default function Staff() {
       if (error) throw error;
       if (data?.url) {
         window.open(data.url, '_blank', 'width=600,height=700');
-        // Listen for focus to refresh status
         const onFocus = () => {
-          fetchCalendarStatuses();
+          fetchCalendarStatuses().then(() => {
+            fetchStaffCalendars(staffId);
+          });
           setConnectingStaffId(null);
           window.removeEventListener('focus', onFocus);
         };
@@ -141,6 +153,7 @@ export default function Staff() {
       });
       if (error) throw error;
       toast.success('Agenda desconectada!');
+      setStaffCalendars(prev => { const n = { ...prev }; delete n[staffId]; return n; });
       fetchCalendarStatuses();
     } catch (err) {
       toast.error('Erro ao desconectar agenda');
@@ -148,6 +161,49 @@ export default function Staff() {
       setDisconnectingStaffId(null);
     }
   };
+
+  const fetchStaffCalendars = async (staffId: string) => {
+    setLoadingCalendarsFor(staffId);
+    try {
+      const { data, error } = await supabase.functions.invoke('google-calendar/owner-staff-calendars', {
+        method: 'POST',
+        body: { staffId },
+      });
+      if (error) throw error;
+      setStaffCalendars(prev => ({ ...prev, [staffId]: data?.calendars || [] }));
+    } catch (err) {
+      console.error('Failed to fetch staff calendars:', err);
+    } finally {
+      setLoadingCalendarsFor(null);
+    }
+  };
+
+  const handleStaffCalendarChange = async (staffId: string, calendarId: string) => {
+    setSavingCalendarFor(staffId);
+    try {
+      const { error } = await supabase.functions.invoke('google-calendar/owner-staff-set-calendar', {
+        method: 'POST',
+        body: { staffId, calendarId },
+      });
+      if (error) throw error;
+      setStaffCalendarStatus(prev => ({
+        ...prev,
+        [staffId]: { ...prev[staffId], calendarId },
+      }));
+      toast.success('Agenda selecionada!');
+    } catch (err) {
+      toast.error('Erro ao salvar agenda');
+    } finally {
+      setSavingCalendarFor(null);
+    }
+  };
+
+  // Load calendars for connected staff on mount
+  useEffect(() => {
+    Object.keys(staffCalendarStatus).forEach(sid => {
+      if (!staffCalendars[sid]) fetchStaffCalendars(sid);
+    });
+  }, [staffCalendarStatus]);
 
   const getInviteStatusBadge = (s: any) => {
     if (s.invite_status === 'accepted') {
@@ -184,90 +240,143 @@ export default function Staff() {
           </Card>
         ) : (
           <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-            {staff.map((s) => (
-              <Card key={s.id} className={`glass-card rounded-2xl ${!s.active ? 'opacity-50' : ''}`}>
-                <CardContent className="p-5">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center flex-shrink-0">
-                      <User className="h-5 w-5 text-primary" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-sm truncate">{s.name}</h3>
-                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        <p className="text-xs text-muted-foreground">{s.active ? 'Ativo' : 'Inativo'}</p>
-                        {getInviteStatusBadge(s)}
-                        {staffCalendarStatus[s.id] && (
-                          <Badge variant="outline" className="text-xs gap-1">
-                            <Calendar className="h-3 w-3" />
-                            Agenda
-                          </Badge>
-                        )}
+            {staff.map((s) => {
+              const calStatus = staffCalendarStatus[s.id];
+              const calendars = staffCalendars[s.id] || [];
+              return (
+                <Card key={s.id} className={`glass-card rounded-2xl ${!s.active ? 'opacity-50' : ''}`}>
+                  <CardContent className="p-5">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center flex-shrink-0">
+                        <User className="h-5 w-5 text-primary" />
                       </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-bold text-sm truncate">{s.name}</h3>
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          <p className="text-xs text-muted-foreground">{s.active ? 'Ativo' : 'Inativo'}</p>
+                          {getInviteStatusBadge(s)}
+                          {calStatus && (
+                            <Badge variant="outline" className="text-xs gap-1">
+                              <Calendar className="h-3 w-3" />
+                              Agenda
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      <Switch checked={s.active} onCheckedChange={() => handleToggle(s)} />
                     </div>
-                    <Switch checked={s.active} onCheckedChange={() => handleToggle(s)} />
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button size="sm" variant="outline" onClick={() => openEdit(s)} className="text-xs h-8">
-                      <Pencil className="h-3 w-3 mr-1" />Editar
-                    </Button>
-                    {s.invite_status !== 'accepted' && (
-                      s.invite_token ? (
-                        <>
-                          <Button size="sm" variant="outline" onClick={() => copyInviteLink(s)} className="text-xs h-8">
-                            {copiedId === s.id ? (
-                              <><CheckCircle2 className="h-3 w-3 mr-1 text-primary" />Copiado</>
-                            ) : (
-                              <><Copy className="h-3 w-3 mr-1" />Copiar link</>
+
+                    {/* Google Calendar connection info */}
+                    {calStatus && (
+                      <div className="mb-3 space-y-2">
+                        <div className="flex items-start gap-2 p-3 rounded-lg bg-primary/5 border border-primary/10">
+                          <CheckCircle2 className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium">Google Agenda conectado</p>
+                            {calStatus.email && (
+                              <p className="text-xs text-muted-foreground truncate">{calStatus.email}</p>
                             )}
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium text-foreground">Agenda</label>
+                          {loadingCalendarsFor === s.id ? (
+                            <div className="flex items-center gap-2 py-1">
+                              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                              <span className="text-xs text-muted-foreground">Carregando...</span>
+                            </div>
+                          ) : calendars.length > 0 ? (
+                            <Select
+                              value={calStatus.calendarId || 'primary'}
+                              onValueChange={(val) => handleStaffCalendarChange(s.id, val)}
+                              disabled={savingCalendarFor === s.id}
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue placeholder="Selecione" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {calendars.map((cal) => (
+                                  <SelectItem key={cal.id} value={cal.id}>
+                                    <div className="flex items-center gap-2">
+                                      {cal.backgroundColor && (
+                                        <div className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: cal.backgroundColor }} />
+                                      )}
+                                      <span className="text-xs">{cal.summary}</span>
+                                      {cal.primary && <span className="text-[10px] text-muted-foreground">(principal)</span>}
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : null}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" variant="outline" onClick={() => openEdit(s)} className="text-xs h-8">
+                        <Pencil className="h-3 w-3 mr-1" />Editar
+                      </Button>
+                      {s.invite_status !== 'accepted' && (
+                        s.invite_token ? (
+                          <>
+                            <Button size="sm" variant="outline" onClick={() => copyInviteLink(s)} className="text-xs h-8">
+                              {copiedId === s.id ? (
+                                <><CheckCircle2 className="h-3 w-3 mr-1 text-primary" />Copiado</>
+                              ) : (
+                                <><Copy className="h-3 w-3 mr-1" />Copiar link</>
+                              )}
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => handleValidateInvite(s)} className="text-xs h-8 text-primary hover:text-primary">
+                              <ShieldCheck className="h-3 w-3 mr-1" />Validar
+                            </Button>
+                          </>
+                        ) : (
+                          <Button size="sm" variant="outline" onClick={() => handleGenerateInvite(s)} className="text-xs h-8">
+                            <Link2 className="h-3 w-3 mr-1" />Gerar convite
                           </Button>
-                          <Button size="sm" variant="outline" onClick={() => handleValidateInvite(s)} className="text-xs h-8 text-primary hover:text-primary">
-                            <ShieldCheck className="h-3 w-3 mr-1" />Validar
-                          </Button>
-                        </>
-                      ) : (
-                        <Button size="sm" variant="outline" onClick={() => handleGenerateInvite(s)} className="text-xs h-8">
-                          <Link2 className="h-3 w-3 mr-1" />Gerar convite
+                        )
+                      )}
+                      {!calStatus ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleConnectCalendar(s.id)}
+                          disabled={connectingStaffId === s.id}
+                          className="text-xs h-8"
+                        >
+                          {connectingStaffId === s.id ? (
+                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          ) : (
+                            <Calendar className="h-3 w-3 mr-1" />
+                          )}
+                          Conectar Agenda
                         </Button>
-                      )
-                    )}
-                    {!staffCalendarStatus[s.id] ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleConnectCalendar(s.id)}
-                        disabled={connectingStaffId === s.id}
-                        className="text-xs h-8"
-                      >
-                        {connectingStaffId === s.id ? (
-                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                        ) : (
-                          <Calendar className="h-3 w-3 mr-1" />
-                        )}
-                        Conectar Agenda
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleDisconnectCalendar(s.id)}
+                          disabled={disconnectingStaffId === s.id}
+                          className="text-xs h-8 text-destructive hover:text-destructive"
+                        >
+                          {disconnectingStaffId === s.id ? (
+                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          ) : (
+                            <Unlink className="h-3 w-3 mr-1" />
+                          )}
+                          Desconectar Agenda
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline" onClick={() => handleDelete(s.id)} className="text-xs h-8 text-destructive hover:text-destructive">
+                        <Trash2 className="h-3 w-3" />
                       </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleDisconnectCalendar(s.id)}
-                        disabled={disconnectingStaffId === s.id}
-                        className="text-xs h-8 text-destructive hover:text-destructive"
-                      >
-                        {disconnectingStaffId === s.id ? (
-                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                        ) : (
-                          <Unlink className="h-3 w-3 mr-1" />
-                        )}
-                        Desconectar Agenda
-                      </Button>
-                    )}
-                    <Button size="sm" variant="outline" onClick={() => handleDelete(s.id)} className="text-xs h-8 text-destructive hover:text-destructive">
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         )}
 
