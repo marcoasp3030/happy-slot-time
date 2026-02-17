@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Plus, Pencil, Trash2, ClipboardList, Layers, ImageIcon, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { logAudit } from '@/lib/auditLog';
 import { Badge } from '@/components/ui/badge';
 import { AspectRatio } from '@/components/ui/aspect-ratio';
 
@@ -142,10 +143,12 @@ export default function Services() {
       const { error } = await supabase.from('services').update(payload).eq('id', editing.id);
       if (error) { toast.error('Erro ao atualizar'); setUploading(false); return; }
       toast.success('Serviço atualizado');
+      logAudit({ companyId, action: 'Serviço atualizado', category: 'service', entityType: 'service', entityId: editing.id, details: { name: form.name } });
     } else {
-      const { error } = await supabase.from('services').insert(payload);
+      const { data: newSvc, error } = await supabase.from('services').insert(payload).select('id').single();
       if (error) { toast.error('Erro ao criar'); setUploading(false); return; }
       toast.success('Serviço criado');
+      logAudit({ companyId, action: 'Serviço criado', category: 'service', entityType: 'service', entityId: newSvc?.id, details: { name: form.name, duration: form.duration } });
     }
     setUploading(false);
     setOpen(false);
@@ -154,13 +157,16 @@ export default function Services() {
 
   const handleToggle = async (s: Service) => {
     await supabase.from('services').update({ active: !s.active }).eq('id', s.id);
+    logAudit({ companyId, action: s.active ? 'Serviço desativado' : 'Serviço ativado', category: 'service', entityType: 'service', entityId: s.id, details: { name: s.name } });
     fetchServices();
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Excluir este serviço?')) return;
+    const svc = services.find(s => s.id === id);
     await supabase.from('services').delete().eq('id', id);
     toast.success('Serviço excluído');
+    logAudit({ companyId, action: 'Serviço excluído', category: 'service', entityType: 'service', entityId: id, details: { name: svc?.name } });
     fetchServices();
   };
 
