@@ -3,18 +3,29 @@ import DashboardLayout from '@/components/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Calendar, CheckCircle2, Loader2, Unlink, ExternalLink } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 
+interface GoogleCalendar {
+  id: string;
+  summary: string;
+  primary: boolean;
+  backgroundColor: string | null;
+}
+
 export default function GoogleCalendarSettings() {
   const { session } = useAuth();
   const { toast } = useToast();
-  const [status, setStatus] = useState<{ connected: boolean; email: string | null; connectedAt: string | null } | null>(null);
+  const [status, setStatus] = useState<{ connected: boolean; email: string | null; connectedAt: string | null; calendarId: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [calendars, setCalendars] = useState<GoogleCalendar[]>([]);
+  const [loadingCalendars, setLoadingCalendars] = useState(false);
+  const [savingCalendar, setSavingCalendar] = useState(false);
 
   const fetchStatus = async () => {
     try {
@@ -25,15 +36,37 @@ export default function GoogleCalendarSettings() {
       setStatus(data);
     } catch (err) {
       console.error('Failed to fetch status:', err);
-      setStatus({ connected: false, email: null, connectedAt: null });
+      setStatus({ connected: false, email: null, connectedAt: null, calendarId: 'primary' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCalendars = async () => {
+    setLoadingCalendars(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('google-calendar/calendars', {
+        method: 'GET',
+      });
+      if (error) throw error;
+      setCalendars(data?.calendars || []);
+    } catch (err) {
+      console.error('Failed to fetch calendars:', err);
+    } finally {
+      setLoadingCalendars(false);
     }
   };
 
   useEffect(() => {
     if (session) fetchStatus();
   }, [session]);
+
+  // Fetch calendars when connected
+  useEffect(() => {
+    if (status?.connected) {
+      fetchCalendars();
+    }
+  }, [status?.connected]);
 
   // Poll for connection after returning from OAuth
   useEffect(() => {
@@ -70,13 +103,32 @@ export default function GoogleCalendarSettings() {
         method: 'POST',
       });
       if (error) throw error;
-      setStatus({ connected: false, email: null, connectedAt: null });
+      setStatus({ connected: false, email: null, connectedAt: null, calendarId: 'primary' });
+      setCalendars([]);
       toast({ title: 'Desconectado', description: 'Google Agenda desconectado com sucesso.' });
     } catch (err) {
       console.error('Failed to disconnect:', err);
       toast({ title: 'Erro', description: 'Não foi possível desconectar.', variant: 'destructive' });
     } finally {
       setDisconnecting(false);
+    }
+  };
+
+  const handleCalendarChange = async (calendarId: string) => {
+    setSavingCalendar(true);
+    try {
+      const { error } = await supabase.functions.invoke('google-calendar/set-calendar', {
+        method: 'POST',
+        body: { calendarId },
+      });
+      if (error) throw error;
+      setStatus(prev => prev ? { ...prev, calendarId } : prev);
+      toast({ title: 'Salvo', description: 'Agenda selecionada com sucesso.' });
+    } catch (err) {
+      console.error('Failed to set calendar:', err);
+      toast({ title: 'Erro', description: 'Não foi possível salvar a agenda.', variant: 'destructive' });
+    } finally {
+      setSavingCalendar(false);
     }
   };
 
@@ -129,6 +181,48 @@ export default function GoogleCalendarSettings() {
                       </p>
                     )}
                   </div>
+                </div>
+
+                {/* Calendar selector */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Agenda para sincronização</label>
+                  <p className="text-xs text-muted-foreground">
+                    Escolha em qual agenda do Google os agendamentos serão criados
+                  </p>
+                  {loadingCalendars ? (
+                    <div className="flex items-center gap-2 py-2">
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">Carregando agendas...</span>
+                    </div>
+                  ) : (
+                    <Select
+                      value={status.calendarId || 'primary'}
+                      onValueChange={handleCalendarChange}
+                      disabled={savingCalendar}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione uma agenda" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {calendars.map((cal) => (
+                          <SelectItem key={cal.id} value={cal.id}>
+                            <div className="flex items-center gap-2">
+                              {cal.backgroundColor && (
+                                <div
+                                  className="h-3 w-3 rounded-full flex-shrink-0"
+                                  style={{ backgroundColor: cal.backgroundColor }}
+                                />
+                              )}
+                              <span>{cal.summary}</span>
+                              {cal.primary && (
+                                <span className="text-xs text-muted-foreground">(principal)</span>
+                              )}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
 
                 <div className="space-y-2 text-sm text-muted-foreground">
