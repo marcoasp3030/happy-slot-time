@@ -887,14 +887,33 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
         if (ws?.active && ws?.base_url && ws?.token) {
           try {
             const svcs = ctx.svcs;
-            // First send the AI text reply, then follow up with the services menu
-            // Send the text reply first
+            // First send the AI text reply (as audio if applicable), then follow up with the services menu
             const cleanPhone = phone.replace(/\D/g, "");
-            await sendHumanizedReply(
-              { base_url: ws.base_url, instance_id: ws.instance_id || "", token: ws.token },
-              cleanPhone, reply
-            );
-            log("🔘 Text reply sent before services menu");
+            
+            // Check if we should respond with audio
+            let sentAsAudio = false;
+            if (isAudioMsg && ag?.respond_audio_with_audio && ag?.elevenlabs_voice_id) {
+              log("🔊 Scheduling flow: Responding with audio before menu...");
+              try {
+                const ttsText = normalizeTimeForSpeech(reply);
+                const audioData = await textToSpeech(ttsText, ag.elevenlabs_voice_id);
+                if (audioData) {
+                  await sendAudioViaUazapi(ws, cleanPhone, audioData);
+                  sentAsAudio = true;
+                  log("🔊 ✅ Audio response sent before services menu!");
+                }
+              } catch (e: any) {
+                logErr("🔊 Audio response failed in scheduling flow, falling back to text:", e.message);
+              }
+            }
+            
+            if (!sentAsAudio) {
+              await sendHumanizedReply(
+                { base_url: ws.base_url, instance_id: ws.instance_id || "", token: ws.token },
+                cleanPhone, reply
+              );
+            }
+            log("🔘 Reply sent before services menu (audio:", sentAsAudio, ")");
 
             // Now send the services menu
             const headerText = "Escolha o serviço que deseja agendar: 👇";
