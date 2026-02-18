@@ -1655,24 +1655,63 @@ async function handleAgent(
           // Split: remove PIX key from audio reply, build a clean text message with PIX info
           const pixName = caps.pix_name || ag?.pix_name || null;
           const pixInstructions = caps.pix_instructions || ag?.pix_instructions || null;
+          const escapedPixKey = pixKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-          // Build rich PIX text message — formatted for easy copy
-          let pixBody = `🔑 *${pixKey}*`;
-          if (pixName) pixBody += `\n👤 Titular: ${pixName}`;
-          if (pixInstructions) pixBody += `\n\nℹ️ ${pixInstructions}`;
+          // ── Build modern, professional PIX card ──
+          // Detect PIX key type for better labeling
+          const detectPixType = (key: string): string => {
+            if (/^\d{11}$/.test(key.replace(/\D/g, ''))) return "📱 CPF";
+            if (/^\d{14}$/.test(key.replace(/\D/g, ''))) return "🏢 CNPJ";
+            if (/^[\w.-]+@[\w.-]+\.\w+$/.test(key)) return "📧 E-mail";
+            if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key)) return "🔑 Chave aleatória";
+            if (/^\+?\d{10,15}$/.test(key.replace(/\D/g, ''))) return "📞 Telefone";
+            return "🔑 Chave PIX";
+          };
+          const pixTypeLabel = detectPixType(pixKey);
+
+          // Build the card body — clean, easy to copy, professional
+          const divider = "━━━━━━━━━━━━━━━━━━━━";
+          let cardLines: string[] = [];
+          cardLines.push(`💳 *DADOS PARA PAGAMENTO VIA PIX*`);
+          cardLines.push(divider);
+          cardLines.push(`${pixTypeLabel}`);
+          cardLines.push(`\`${pixKey}\``);
+          if (pixName) {
+            cardLines.push(``);
+            cardLines.push(`👤 *Favorecido:* ${pixName}`);
+          }
+          if (pixInstructions) {
+            cardLines.push(``);
+            cardLines.push(`ℹ️ ${pixInstructions}`);
+          }
+          cardLines.push(divider);
+          cardLines.push(`_Toque e segure a chave para copiar_`);
+
+          pixTextMessage = cardLines.join("\n");
+
+          // ── Strip ALL PIX key occurrences from the audio/text reply ──
+          // Strategy: aggressive multi-pass removal to guarantee the key never reaches TTS
+          const safePhrase = "os dados de pagamento foram enviados em mensagem separada";
           
-          // Store as structured object so we can send as button below
-          pixTextMessage = JSON.stringify({
-            header: "💳 Dados para pagamento PIX",
-            body: pixBody,
-            footer: "Copie a chave acima para realizar o pagamento",
-          });
-          
-          // Remove PIX details from the reply that will go to TTS (to avoid robotic reading of keys)
+          // Pass 1: remove "Chave PIX: <key>" patterns (bold, with colon, with spaces, etc.)
           audioReply = reply
-            .replace(new RegExp(`\\*?Chave PIX\\*?[:\\s]+${pixKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi'), 'os dados completos de pagamento foram enviados como texto abaixo para facilitar a cópia')
-            .replace(new RegExp(pixKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), 'os dados de pagamento');
-          log("💳 PIX key detected — will send PIX data as separate button message");
+            .replace(new RegExp(`\\*?(?:Chave\\s+PIX|chave\\s+pix|PIX)[\\s:*]+${escapedPixKey}\\*?`, 'gi'), safePhrase)
+            // Pass 2: remove any remaining literal occurrence of the key
+            .replace(new RegExp(escapedPixKey, 'g'), '')
+            // Pass 3: remove blocks like "pix_key:" or "pix:" followed by whitespace
+            .replace(/pix[_\s]*(?:key)?[:\s]+/gi, '')
+            // Pass 4: collapse multiple spaces/newlines left by removals
+            .replace(/[ \t]{2,}/g, ' ')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+
+          // Final safety: if the key somehow still appears, replace aggressively
+          if (audioReply.includes(pixKey)) {
+            audioReply = audioReply.split(pixKey).join(safePhrase);
+            log("💳 ⚠️ PIX key found after multi-pass strip — applied final safety replacement");
+          }
+
+          log("💳 PIX key detected — building modern card and stripping key from audio");
         }
         
         // Check if we should respond with audio (when incoming was audio and setting is enabled)
@@ -1712,34 +1751,31 @@ async function handleAgent(
           }
         }
 
-        // ── Send PIX info as a separate button message (always text, never audio) ──
+        // ── Send PIX card — always as text/button, NEVER audio ──
         if (pixTextMessage) {
           try {
-            log("💳 Sending PIX as button message...");
-            const pixData = JSON.parse(pixTextMessage);
-            // Try to send as button with a "Copiar chave" style button
-            // The button action just echoes the key so the client can see it clearly
+            log("💳 Sending modern PIX card...");
+            // Try button format first (best UX — shows key prominently with confirm button)
             try {
               await sendMenuViaUazapi(
                 { base_url: ws.base_url, token: ws.token },
                 cleanPhone,
                 {
                   type: "button",
-                  text: `${pixData.header}\n\n${pixData.body}`,
-                  footerText: pixData.footer,
-                  choices: [`✅ Entendido|pix_ok`],
+                  text: pixTextMessage,
+                  footerText: "Toque e segure a chave para copiar",
+                  choices: [`✅ Recebi os dados|pix_ok`],
                 }
               );
-              log("💳 ✅ PIX button message sent!");
+              log("💳 ✅ PIX modern card (button) sent!");
             } catch (btnErr: any) {
-              // Fallback: send as plain text if button fails
-              log("💳 Button failed, falling back to text:", btnErr.message);
-              const plainText = `${pixData.header}\n\n${pixData.body}\n\n_${pixData.footer}_`;
-              await sendUazapiMessage(ws, cleanPhone, plainText);
-              log("💳 ✅ PIX fallback text sent!");
+              // Fallback: plain text — still professional, just no interactive button
+              log("💳 Button fallback — sending as plain text:", btnErr.message);
+              await sendUazapiMessage(ws, cleanPhone, pixTextMessage);
+              log("💳 ✅ PIX plain text card sent!");
             }
           } catch (e: any) {
-            logErr("💳 ❌ PIX message failed:", e.message);
+            logErr("💳 ❌ PIX card failed entirely:", e.message);
           }
         }
       } else {
@@ -2074,7 +2110,7 @@ ${!hasCustomPrompt && caps.custom_business_info ? "Info do estabelecimento: " + 
 Agendamentos do cliente: ${appts || "nenhum"}
 ${fileParts.join("\n")}
 ${caps.can_send_payment_link && caps.payment_link_url ? "\nPAGAMENTO - LINK:\nQuando o cliente perguntar sobre pagamento ou após confirmar agendamento, envie o link: " + caps.payment_link_url : ""}
-${caps.can_send_pix && caps.pix_key ? ("\nPAGAMENTO - PIX:\nChave PIX: " + caps.pix_key + (caps.pix_name ? " | Titular: " + caps.pix_name : "") + (caps.pix_instructions ? "\nInstruções: " + caps.pix_instructions : "") + (caps.pix_send_as_text !== false ? "\n\nREGRA OBRIGATÓRIA - CHAVE PIX:\nSempre que mencionar pagamento via PIX ou quando o cliente pedir a chave, inclua o valor literal da chave na sua resposta (ex: 'A chave PIX é " + caps.pix_key + "'). O sistema detectará a chave e a enviará em mensagem separada para o cliente copiar facilmente.\nAo falar sobre o PIX, encerre com a frase exata: 'Os dados completos de pagamento foram enviados como texto abaixo para facilitar a cópia.' Isso sinaliza ao cliente que a chave chegará em formato copiável logo abaixo." : "")) : ""}`;
+${caps.can_send_pix && caps.pix_key ? ("\nPAGAMENTO - PIX:\nChave PIX: " + caps.pix_key + (caps.pix_name ? " | Titular: " + caps.pix_name : "") + (caps.pix_instructions ? "\nInstruções: " + caps.pix_instructions : "") + "\n\n⚠️ REGRA CRÍTICA — CHAVE PIX NO ÁUDIO:\nJAMÁIS leia ou mencione a chave PIX em voz alta ou por extenso no corpo da sua resposta textual. A chave PIX é enviada automaticamente pelo sistema em um card separado e formatado para o cliente copiar com facilidade.\nAo falar sobre PIX, diga APENAS: 'Os dados completos para pagamento via PIX foram enviados em mensagem separada para facilitar a cópia. Qualquer dúvida, estou à disposição!'\nO sistema detectará a chave na sua resposta e a exibirá em formato profissional. Por isso INCLUA o valor literal '" + caps.pix_key + "' em algum ponto do texto (o sistema remove antes do áudio). Exemplo correto: 'Claro! A chave PIX para pagamento é " + caps.pix_key + ". Os dados completos foram enviados em mensagem separada para facilitar a cópia.'") : ""}`;
 
 
   const messages: any[] = [{ role: "system", content: sys }];
