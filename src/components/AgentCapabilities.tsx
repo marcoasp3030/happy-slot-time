@@ -576,7 +576,7 @@ export default function AgentCapabilities({ settings, onSettingsChange, onSave, 
             Leitura de Imagens e PDFs
           </CardTitle>
           <CardDescription>
-            Permite que o agente analise imagens e documentos PDF enviados pelos clientes e responda com base no conteúdo
+            Permite que o agente analise imagens e documentos PDF enviados pelos clientes com verificação rigorosa do conteúdo
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -595,7 +595,7 @@ export default function AgentCapabilities({ settings, onSettingsChange, onSave, 
             <div className="space-y-3 pl-7">
               <div className="space-y-2">
                 <Label className="font-medium text-sm">Modelo de visão</Label>
-                <p className="text-xs text-muted-foreground">Escolha o modelo de IA que irá analisar as imagens e PDFs. Modelos mais avançados têm maior precisão.</p>
+                <p className="text-xs text-muted-foreground">Escolha o modelo de IA que irá analisar as imagens e PDFs. Modelos mais avançados têm maior precisão e menos chance de erro.</p>
                 <Select
                   value={settings?.media_vision_model || 'google/gemini-2.5-flash'}
                   onValueChange={(v) => u('media_vision_model', v)}
@@ -620,11 +620,16 @@ export default function AgentCapabilities({ settings, onSettingsChange, onSave, 
                 </Select>
               </div>
 
-              <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-muted-foreground space-y-1">
+              <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-muted-foreground space-y-1.5">
                 <p className="font-medium text-foreground">Como funciona:</p>
-                <p>• <strong>Imagens:</strong> O cliente envia uma foto (ex: exame, referência de serviço) e o agente descreve e responde sobre o conteúdo.</p>
-                <p>• <strong>PDFs:</strong> O cliente envia um documento (ex: laudo, orçamento) e o agente extrai e interpreta as informações.</p>
-                <p>• A análise é feita automaticamente e o agente responde no contexto da conversa.</p>
+                <p>• <strong>Fotos de referência:</strong> O cliente envia uma foto de estilo/look e o agente sugere o serviço mais adequado.</p>
+                <p>• <strong>Exames e laudos:</strong> O agente lê e interpreta os dados do documento médico.</p>
+                <p>• <strong>PDFs e orçamentos:</strong> O agente extrai e responde sobre as informações do documento.</p>
+              </div>
+
+              <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-xs space-y-1.5">
+                <p className="font-medium text-destructive flex items-center gap-1.5">⚠️ Segurança contra fraudes</p>
+                <p className="text-muted-foreground">O agente usa análise rigorosa para comprovantes de pagamento. Ele <strong>não confirmará pagamento</strong> a não ser que identifique claramente: banco, valor, data, destinatário/chave PIX e número de transação. Em caso de dúvida, pedirá uma imagem melhor.</p>
               </div>
             </div>
           )}
