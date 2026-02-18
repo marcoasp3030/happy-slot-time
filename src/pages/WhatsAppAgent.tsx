@@ -97,8 +97,23 @@ export default function WhatsAppAgent() {
     }
 
     // No row found — create one
-    const insertData: any = { company_id: companyId };
-    if (instanceId) insertData.instance_id = instanceId;
+    // If creating for a specific instance, inherit settings from the global (null instance_id) record
+    let insertData: any = { company_id: companyId };
+    if (instanceId) {
+      insertData.instance_id = instanceId;
+      // Inherit from global settings so the new instance starts with the same config
+      const { data: globalSettings } = await supabase
+        .from('whatsapp_agent_settings')
+        .select('*')
+        .eq('company_id', companyId)
+        .is('instance_id', null)
+        .maybeSingle();
+      if (globalSettings) {
+        // Copy all settings except id, created_at, updated_at, instance_id, company_id
+        const { id: _id, created_at: _ca, updated_at: _ua, instance_id: _iid, company_id: _cid, ...inherited } = globalSettings;
+        insertData = { ...inherited, company_id: companyId, instance_id: instanceId };
+      }
+    }
 
     const { data: newSettings, error: insertError } = await supabase
       .from('whatsapp_agent_settings')
