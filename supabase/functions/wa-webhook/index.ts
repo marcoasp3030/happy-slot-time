@@ -627,6 +627,43 @@ Deno.serve(async (req) => {
       );
     }
 
+    // ── Extract the unique WhatsApp message ID from the payload ──
+    // This is the canonical ID assigned by WhatsApp/UAZAPI to each message.
+    // It is used as the primary key for deduplication across the entire pipeline.
+    const waMessageId: string | null =
+      body.message?.messageid ||   // UAZAPI hex internal ID (most reliable)
+      body.message?.id ||           // UAZAPI wa_message_id string
+      body.key?.id ||               // raw WhatsApp key
+      body.data?.key?.id ||
+      body.data?.messageId ||
+      null;
+
+    log("📩 wa_message_id:", waMessageId);
+
+    // ── DEDUPLICATION GATE — check at the very entry point of the pipeline ──
+    // If we already have this wa_message_id in the DB (incoming direction), it
+    // means a previous webhook call (provider retry / duplicate delivery) already
+    // processed this exact message. Short-circuit immediately.
+    if (waMessageId) {
+      const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
+      const dedupSb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+      const { data: existingMsg } = await dedupSb
+        .from("whatsapp_messages")
+        .select("id")
+        .eq("wa_message_id", waMessageId)
+        .eq("direction", "incoming")
+        .limit(1)
+        .maybeSingle();
+
+      if (existingMsg) {
+        log("🔁 wa_message_id already in DB — duplicate webhook delivery, skipping:", waMessageId);
+        return new Response(JSON.stringify({ ok: true, skipped: "duplicate_wa_id", wa_message_id: waMessageId }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     // Forward to send-whatsapp
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -676,7 +713,7 @@ Deno.serve(async (req) => {
           const convId = conv.id;
           const arrivalMs = Date.now();
 
-          // Save this message as pending
+          // Save this message as pending — include wa_message_id so later deduplication works
           await sb.from("whatsapp_messages").insert({
             conversation_id: convId,
             company_id: companyId,
@@ -684,9 +721,10 @@ Deno.serve(async (req) => {
             message_type: "text",
             content: effectiveMsg,
             delivery_status: "pending",
-            metadata: { buffered: true, arrival_ms: arrivalMs },
+            wa_message_id: waMessageId,
+            metadata: { buffered: true, arrival_ms: arrivalMs, wa_message_id: waMessageId },
           });
-          log("⏳ Message saved as pending");
+          log("⏳ Message saved as pending, wa_message_id:", waMessageId);
 
           // Try to acquire processing LOCK
           const lockWindowStart = new Date(arrivalMs - (delaySeconds + 60) * 1000).toISOString();
@@ -725,11 +763,11 @@ Deno.serve(async (req) => {
             // Wait the debounce delay
             await new Promise(r => setTimeout(r, delaySeconds * 1000));
 
-            // Collect all pending messages
+            // Collect all pending messages — order by created_at ASC to preserve arrival order
             const bufferWindowStart = new Date(arrivalMs - 5000).toISOString();
             const { data: bufferedMsgs } = await sb
               .from("whatsapp_messages")
-              .select("id, content, created_at")
+              .select("id, content, created_at, wa_message_id")
               .eq("conversation_id", convId)
               .eq("direction", "incoming")
               .eq("delivery_status", "pending")
@@ -737,7 +775,7 @@ Deno.serve(async (req) => {
               .order("created_at", { ascending: true });
 
             // Release lock
-            await sb.from("whatsapp_messages").delete().eq("id", lockId);
+            try { await sb.from("whatsapp_messages").delete().eq("id", lockId); } catch {}
             log("⏳ 🔓 Lock released. Buffered msgs:", bufferedMsgs?.length || 0);
 
             if (!bufferedMsgs || bufferedMsgs.length === 0) {
@@ -746,18 +784,23 @@ Deno.serve(async (req) => {
               });
             }
 
-            // Mark all as processed
+            // Mark all as processed (read) — keep individual wa_message_ids in metadata
             const msgIds = bufferedMsgs.map((m: any) => m.id);
+            const aggregatedWaIds = bufferedMsgs.map((m: any) => m.wa_message_id).filter(Boolean);
             await sb.from("whatsapp_messages")
-              .update({ delivery_status: "read", metadata: { buffered: false, aggregated: true, source_count: bufferedMsgs.length } })
+              .update({
+                delivery_status: "read",
+                metadata: { buffered: false, aggregated: true, source_count: bufferedMsgs.length, wa_message_ids: aggregatedWaIds },
+              })
               .in("id", msgIds);
 
-            // Concatenate all messages
+            // Concatenate all messages in arrival order (separated by newline)
             const concatenatedMsg = bufferedMsgs
               .map((m: any) => m.content?.trim())
               .filter(Boolean)
               .join("\n");
             log("⏳ Aggregated (", bufferedMsgs.length, "msgs):", concatenatedMsg.substring(0, 200));
+            log("⏳ Aggregated wa_ids:", aggregatedWaIds.join(", "));
 
             // Forward aggregated message to send-whatsapp with skipIncomingSave
             const aggregatedBody = {
@@ -765,7 +808,8 @@ Deno.serve(async (req) => {
               company_id: companyId,
               phone,
               message: concatenatedMsg,
-              wa_message_id: body.message?.messageid || body.message?.id || null,
+              wa_message_id: waMessageId, // primary ID (first message that triggered the lock)
+              wa_message_ids: aggregatedWaIds, // all IDs in this burst
               skip_incoming_save: true,
               existing_conv_id: convId,
             };
@@ -800,13 +844,13 @@ Deno.serve(async (req) => {
       company_id: companyId,
       phone,
       message: effectiveMsg,
-      wa_message_id: body.message?.messageid || body.message?.id || null,
+      wa_message_id: waMessageId,
     };
 
     if (btnResponse) {
       forwardBody.button_response_id = btnResponse.buttonId;
       forwardBody.button_response_text = btnResponse.buttonText;
-      log("🔘 Forwarding button response: id:", btnResponse.buttonId, "text:", btnResponse.buttonText);
+      log("🔘 Forwarding button response: id:", btnResponse.buttonId, "text:", btnResponse.buttonText, "wa_id:", waMessageId);
     }
 
     if (audioInfo.isAudio) {
