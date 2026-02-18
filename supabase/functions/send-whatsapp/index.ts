@@ -899,10 +899,28 @@ async function analyzeMedia(
   const base64Data = btoa(String.fromCharCode(...mediaData));
   const dataUri = `data:${mimeType};base64,${base64Data}`;
 
-  // Build the prompt
-  const analysisPrompt = caption
-    ? `O cliente enviou ${mediaType === "image" ? "uma imagem" : "um documento PDF"} com a legenda: "${caption}". Descreva o conteúdo ${mediaType === "image" ? "da imagem" : "do documento"} de forma detalhada e objetiva em português, extraindo todas as informações relevantes (texto, dados, descrições, etc.).`
-    : `O cliente enviou ${mediaType === "image" ? "uma imagem" : "um documento PDF"}. Descreva o conteúdo de forma detalhada e objetiva em português, extraindo todas as informações relevantes (texto, dados, descrições, etc.).`;
+  // Build the prompt with strict objective analysis instructions
+  const captionContext = caption ? ` com a legenda: "${caption}"` : "";
+  const analysisPrompt = `Analise objetivamente o conteúdo desta ${mediaType === "image" ? "imagem" : "documento PDF"}${captionContext} enviada por um cliente de um estabelecimento.
+
+INSTRUÇÕES CRÍTICAS DE ANÁLISE:
+1. Descreva EXATAMENTE o que você vê/lê, de forma objetiva e detalhada em português.
+2. Classifique o tipo de conteúdo de forma EXPLÍCITA. Use uma destas classificações:
+   - COMPROVANTE_PAGAMENTO: apenas se claramente identificar banco, valor, data, chave/destinatário E número de transação visíveis
+   - DOCUMENTO_MEDICO: laudo, exame, receita, prescrição médica
+   - FOTO_REFERENCIA: foto de estilo, look, referência para serviço
+   - DOCUMENTO_GERAL: contrato, orçamento, nota fiscal, outro documento
+   - FOTO_GERAL: foto pessoal, de local, produto, ou imagem genérica
+   - PDF_GERAL: documento PDF sem categoria específica
+3. NUNCA classifique como COMPROVANTE_PAGAMENTO se não estiver 100% claro. Na dúvida, classifique como FOTO_GERAL ou DOCUMENTO_GERAL.
+4. Liste todos os textos/números legíveis que encontrar.
+5. Se for identificado como possível comprovante, extraia: banco emissor, valor, data/hora, destinatário/chave, ID da transação.
+
+Responda no formato:
+TIPO: [classificação]
+CONTEÚDO: [descrição objetiva do que é visível]
+TEXTOS_LEGÍVEIS: [todos os textos/números identificados]
+OBSERVAÇÕES: [outras informações relevantes ou dúvidas sobre a classificação]`;
 
   // Build multimodal message
   const content: any[] = [
@@ -919,7 +937,7 @@ async function analyzeMedia(
   const requestBody: any = {
     model: visionModel,
     messages: [{ role: "user", content }],
-    max_tokens: 1024,
+    max_tokens: 1500,
   };
 
   log("🔍 Calling vision model:", visionModel, "via:", apiUrl);
@@ -937,7 +955,7 @@ async function analyzeMedia(
 
   const aiData = await aiRes.json();
   const analysis = aiData.choices?.[0]?.message?.content?.trim() || "";
-  log("🔍 Vision analysis result:", analysis.substring(0, 200));
+  log("🔍 Vision analysis result (first 400):", analysis.substring(0, 400));
   return analysis;
 }
 
@@ -1602,13 +1620,16 @@ NORMALIZAÇÃO DE HORÁRIOS (OBRIGATÓRIO):
 - Seja direto: "a gente funciona das nove da manhã às seis da tarde" em vez de frases longas
 
 ${caps.can_read_media ? `LEITURA DE IMAGENS E DOCUMENTOS (CAPACIDADE ATIVA):
-- Quando a mensagem contém "[O cliente enviou uma imagem" ou "[O cliente enviou um documento PDF", significa que o cliente enviou uma mídia que foi analisada automaticamente pelo sistema.
-- O conteúdo analisado estará disponível na mensagem como "CONTEÚDO ANALISADO:". Use essas informações para responder de forma contextualizada.
-- Exemplos de situações:
-  * Cliente enviou foto de exame/laudo → analise e responda com base nos dados do exame
-  * Cliente enviou foto de referência de serviço → descreva o que viu e sugira o serviço mais adequado
-  * Cliente enviou PDF de orçamento → extraia os dados e responda sobre os valores
-- Responda de forma natural, como se tivesse realmente visto a imagem/documento.` : ""}
+- Quando a mensagem contém "[O cliente enviou uma imagem" ou "[O cliente enviou um documento PDF", significa que o cliente enviou uma mídia que foi analisada pelo sistema de visão.
+- O conteúdo analisado estará na seção "CONTEÚDO ANALISADO:" e inclui TIPO, CONTEÚDO, TEXTOS_LEGÍVEIS e OBSERVAÇÕES.
+
+⚠️ REGRAS CRÍTICAS — NUNCA IGNORE:
+1. APENAS confirme recebimento de comprovante se TIPO for exatamente "COMPROVANTE_PAGAMENTO" E todos os dados estiverem presentes: banco, valor, data, destinatário/chave PIX e ID da transação.
+2. Se TIPO for "FOTO_GERAL", "DOCUMENTO_GERAL" ou qualquer outro que não seja "COMPROVANTE_PAGAMENTO", NÃO trate como comprovante. Descreva o que foi visto e pergunte o que o cliente precisa.
+3. NUNCA confirme agendamento ou pagamento baseado em uma imagem cuja classificação tenha qualquer dúvida. Em caso de dúvida, responda: "Recebi a imagem, mas não consegui identificar claramente um comprovante de pagamento. Pode me enviar novamente em melhor qualidade ou descrever o que enviou?"
+4. Se for um comprovante válido, informe que foi recebido e registrado, mas NÃO confirme o serviço automaticamente — a confirmação depende de verificação interna.
+5. Para outros tipos de imagem, responda de forma contextualizada: foto de referência → sugira o serviço mais adequado; exame/laudo → responda com base nos dados; orçamento/documento → extraia e responda sobre os valores.
+- Responda de forma natural, como se tivesse realmente visto a imagem/documento, mas NUNCA presuma algo que não foi explicitamente classificado pelo sistema.` : ""}
 
 FLUXO DE AGENDAMENTO (IMPORTANTE):
 - Quando o cliente quiser agendar, pergunte: 1) Qual serviço? 2) Qual data/horário de preferência?
