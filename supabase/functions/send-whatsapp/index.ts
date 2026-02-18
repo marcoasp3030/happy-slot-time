@@ -294,7 +294,7 @@ Deno.serve(async (req) => {
 
     // ─── Agent processing route (internal call) ───
     if (body.action === "agent-process") {
-      log("🔵 agent-process route, is_audio:", body.is_audio, "is_media:", body.is_media, "media_type:", body.media_type, "button_response:", body.button_response_id || "none");
+      log("🔵 agent-process route, is_audio:", body.is_audio, "is_media:", body.is_media, "media_type:", body.media_type, "button_response:", body.button_response_id || "none", "wa_message_id:", body.wa_message_id || "none");
       
       // If this is a button/list response, enrich the message with context
       let agentMessage = body.message;
@@ -318,6 +318,9 @@ Deno.serve(async (req) => {
         media_message_id: body.media_message_id || null,
         media_mime_type: body.media_mime_type || null,
         media_caption: body.media_caption || null,
+      }, {
+        skipIncomingSave: body.skip_incoming_save || false,
+        existingConvId: body.existing_conv_id || undefined,
       });
       return new Response(JSON.stringify(result), { headers: jsonH, status: result.error ? 500 : 200 });
     }
@@ -1174,13 +1177,33 @@ async function handleAgent(
     return { ok: true, skipped: "handoff" };
   }
 
+  // ── wa_message_id deduplication (second gate, after conversation is resolved) ──
+  // The webhook already did a global check, but if the same wa_message_id somehow
+  // sneaks through (e.g. concurrent requests that passed the first gate simultaneously),
+  // we catch it here at the conversation level.
+  const incomingWaId: string | null = audioParams.wa_message_id || null;
+  if (!agentOptions.skipIncomingSave && incomingWaId) {
+    const { data: existingByWaId } = await sb.from("whatsapp_messages")
+      .select("id")
+      .eq("conversation_id", conv.id)
+      .eq("wa_message_id", incomingWaId)
+      .eq("direction", "incoming")
+      .limit(1)
+      .maybeSingle();
+
+    if (existingByWaId) {
+      log("🤖 ⚠️ wa_message_id already processed:", incomingWaId, "→ skipping duplicate");
+      return { ok: true, skipped: "duplicate_wa_id", conversation_id: conv.id, wa_message_id: incomingWaId };
+    }
+  }
+
   // ── Concurrency lock: prevent parallel executions for the same conversation ──
   // This is the primary guard when debounce is disabled. It checks for an active
   // 'processing' lock row within the last 60s. Only ONE call proceeds at a time.
   if (!agentOptions.skipIncomingSave) {
     const lockWindowStart = new Date(Date.now() - 60000).toISOString();
     const { data: recentOutgoing } = await sb.from("whatsapp_messages")
-      .select("id, created_at")
+      .select("id, created_at, metadata")
       .eq("conversation_id", conv.id)
       .eq("direction", "outgoing")
       .eq("delivery_status", "processing")
@@ -1188,11 +1211,12 @@ async function handleAgent(
       .limit(1);
 
     if (recentOutgoing && recentOutgoing.length > 0) {
-      log("🤖 ⚠️ CONCURRENT PROCESSING LOCK: another call is already handling this conversation. Skipping.");
+      log("🤖 ⚠️ CONCURRENT PROCESSING LOCK: another call is already handling this conversation. Skipping.", "lock_id:", recentOutgoing[0].id);
       return { ok: true, skipped: "concurrent_lock", conversation_id: conv.id };
     }
 
     // Acquire lock: insert a processing placeholder message immediately
+    // Store wa_message_id in metadata so we can trace which message triggered this lock
     const { data: lockMsg, error: lockInsertErr } = await sb.from("whatsapp_messages").insert({
       conversation_id: conv.id,
       company_id: cid,
@@ -1200,6 +1224,7 @@ async function handleAgent(
       message_type: "text",
       content: "__PROCESSING__",
       delivery_status: "processing",
+      metadata: { lock: true, triggered_by_wa_id: incomingWaId },
     }).select("id").single();
 
     if (lockInsertErr) {
@@ -1210,12 +1235,13 @@ async function handleAgent(
     // Register cleanup at end of execution
     if (lockMsg?.id) {
       agentOptions._lockMsgId = lockMsg.id;
-      log("🔒 Processing lock acquired. lockMsgId:", lockMsg.id);
+      log("🔒 Processing lock acquired. lockMsgId:", lockMsg.id, "triggered_by_wa_id:", incomingWaId);
     }
   }
 
-  // ── Deduplication: only run if NOT a pre-aggregated message (those are already in DB) ──
-  if (!agentOptions.skipIncomingSave) {
+  // ── Fallback content-based deduplication (for messages without wa_message_id) ──
+  // Only runs if we don't have a wa_message_id, as the ID-based check above is preferred.
+  if (!agentOptions.skipIncomingSave && !incomingWaId) {
     const fifteenSecsAgo = new Date(Date.now() - 15000).toISOString();
     const { data: recentDups } = await sb.from("whatsapp_messages")
       .select("id")
@@ -1227,14 +1253,14 @@ async function handleAgent(
       .limit(1);
 
     if (recentDups && recentDups.length > 0) {
-      log("🤖 ⚠️ DUPLICATE detected, skipping. Existing msg:", recentDups[0].id);
-      // Release lock
+      log("🤖 ⚠️ Content-based DUPLICATE detected, skipping. Existing msg:", recentDups[0].id);
       if (agentOptions._lockMsgId) {
         try { await sb.from("whatsapp_messages").delete().eq("id", agentOptions._lockMsgId); } catch {}
       }
-      return { ok: true, skipped: "duplicate", conversation_id: conv.id };
+      return { ok: true, skipped: "duplicate_content", conversation_id: conv.id };
     }
   }
+
 
 
   // ── Audio transcription: convert audio to text ──
