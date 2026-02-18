@@ -1625,93 +1625,86 @@ async function handleAgent(
         const cleanPhone = phone.replace(/\D/g, "");
         const caps = ctx?.caps || {};
 
-        // ── Detect if the reply contains PIX key and pix_send_as_text is enabled ──
-        // When active, we strip the PIX block from the audio/text reply and send it as a separate text message
+        // ── PIX key handling ──
+        // pixKey is the configured key; pixSendAsText means "send as card, not inline"
         const pixKey = caps.pix_key || ag?.pix_key || null;
         const pixSendAsText = caps.pix_send_as_text ?? ag?.pix_send_as_text ?? true;
         const replyContainsPix = pixKey && reply.includes(pixKey);
 
-        // ── PIX deduplication: don't resend PIX if already sent in this conversation recently ──
-        let pixAlreadySentRecently = false;
-        if (replyContainsPix && pixKey) {
+        // Helper: detect PIX key type for display label
+        const detectPixType = (key: string): string => {
+          if (/^[\w.+-]+@[\w.-]+\.\w+$/.test(key)) return "📧 E-mail";
+          if (/^\d{11}$/.test(key.replace(/\D/g, ''))) return "📱 CPF";
+          if (/^\d{14}$/.test(key.replace(/\D/g, ''))) return "🏢 CNPJ";
+          if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key)) return "🔑 Chave aleatória";
+          if (/^\+?\d{10,15}$/.test(key.replace(/\D/g, ''))) return "📞 Telefone";
+          return "🔑 Chave PIX";
+        };
+
+        // ── STEP 1: Always strip the PIX key from the text that goes to TTS or text reply ──
+        // This must happen REGARDLESS of deduplication — the key must NEVER be read aloud
+        let audioReply = reply;
+        if (pixKey && replyContainsPix) {
+          const escapedPixKey = pixKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const safeAudioPhrase = "os dados de pagamento foram enviados em mensagem separada";
+
+          audioReply = reply
+            // Pass 1: "Chave PIX: <key>" pattern (with optional bold markers)
+            .replace(new RegExp(`\\*?(?:chave\\s+pix|pix)[\\s:é*]+${escapedPixKey}\\*?`, 'gi'), safeAudioPhrase)
+            // Pass 2: any remaining literal key occurrence
+            .replace(new RegExp(escapedPixKey, 'gi'), '')
+            // Pass 3: orphan "pix:" or "pix_key:" labels left after removal
+            .replace(/pix[_\s]*(?:key)?[:\s]+/gi, '')
+            // Pass 4: collapse extra spaces and blank lines
+            .replace(/[ \t]{2,}/g, ' ')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+
+          // Final safety net — if key is still present somehow, blast it
+          if (audioReply.includes(pixKey)) {
+            audioReply = audioReply.split(pixKey).join(safeAudioPhrase);
+            log("💳 ⚠️ PIX key survived multi-pass strip — applied emergency replacement");
+          }
+          log("💳 PIX key stripped from audioReply (TTS-safe)");
+        }
+
+        // ── STEP 2: Build the PIX card — only send if not recently sent ──
+        let pixTextMessage: string | null = null;
+        if (replyContainsPix && pixSendAsText) {
+          // Deduplication: skip card if same key was sent in the last 5 min
+          let pixAlreadySentRecently = false;
           const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
           const { data: recentPixMsg } = await sb.from("whatsapp_messages")
             .select("id")
             .eq("conversation_id", conv.id)
             .eq("direction", "outgoing")
             .gte("created_at", fiveMinutesAgo)
-            .ilike("content", `%${pixKey.substring(0, 10)}%`)
+            .ilike("content", `%${pixKey!.substring(0, 12)}%`)
             .limit(1);
           if (recentPixMsg && recentPixMsg.length > 0) {
             pixAlreadySentRecently = true;
-            log("💳 PIX key already sent in last 5 minutes — skipping PIX resend");
-          }
-        }
-
-        let audioReply = reply;
-        let pixTextMessage: string | null = null;
-
-        if (replyContainsPix && pixSendAsText && !pixAlreadySentRecently) {
-          // Split: remove PIX key from audio reply, build a clean text message with PIX info
-          const pixName = caps.pix_name || ag?.pix_name || null;
-          const pixInstructions = caps.pix_instructions || ag?.pix_instructions || null;
-          const escapedPixKey = pixKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-          // ── Build modern, professional PIX card ──
-          // Detect PIX key type for better labeling
-          const detectPixType = (key: string): string => {
-            if (/^\d{11}$/.test(key.replace(/\D/g, ''))) return "📱 CPF";
-            if (/^\d{14}$/.test(key.replace(/\D/g, ''))) return "🏢 CNPJ";
-            if (/^[\w.-]+@[\w.-]+\.\w+$/.test(key)) return "📧 E-mail";
-            if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key)) return "🔑 Chave aleatória";
-            if (/^\+?\d{10,15}$/.test(key.replace(/\D/g, ''))) return "📞 Telefone";
-            return "🔑 Chave PIX";
-          };
-          const pixTypeLabel = detectPixType(pixKey);
-
-          // Build the card body — clean, easy to copy, professional
-          const divider = "━━━━━━━━━━━━━━━━━━━━";
-          let cardLines: string[] = [];
-          cardLines.push(`💳 *DADOS PARA PAGAMENTO VIA PIX*`);
-          cardLines.push(divider);
-          cardLines.push(`${pixTypeLabel}`);
-          cardLines.push(`\`${pixKey}\``);
-          if (pixName) {
-            cardLines.push(``);
-            cardLines.push(`👤 *Favorecido:* ${pixName}`);
-          }
-          if (pixInstructions) {
-            cardLines.push(``);
-            cardLines.push(`ℹ️ ${pixInstructions}`);
-          }
-          cardLines.push(divider);
-          cardLines.push(`_Toque e segure a chave para copiar_`);
-
-          pixTextMessage = cardLines.join("\n");
-
-          // ── Strip ALL PIX key occurrences from the audio/text reply ──
-          // Strategy: aggressive multi-pass removal to guarantee the key never reaches TTS
-          const safePhrase = "os dados de pagamento foram enviados em mensagem separada";
-          
-          // Pass 1: remove "Chave PIX: <key>" patterns (bold, with colon, with spaces, etc.)
-          audioReply = reply
-            .replace(new RegExp(`\\*?(?:Chave\\s+PIX|chave\\s+pix|PIX)[\\s:*]+${escapedPixKey}\\*?`, 'gi'), safePhrase)
-            // Pass 2: remove any remaining literal occurrence of the key
-            .replace(new RegExp(escapedPixKey, 'g'), '')
-            // Pass 3: remove blocks like "pix_key:" or "pix:" followed by whitespace
-            .replace(/pix[_\s]*(?:key)?[:\s]+/gi, '')
-            // Pass 4: collapse multiple spaces/newlines left by removals
-            .replace(/[ \t]{2,}/g, ' ')
-            .replace(/\n{3,}/g, '\n\n')
-            .trim();
-
-          // Final safety: if the key somehow still appears, replace aggressively
-          if (audioReply.includes(pixKey)) {
-            audioReply = audioReply.split(pixKey).join(safePhrase);
-            log("💳 ⚠️ PIX key found after multi-pass strip — applied final safety replacement");
+            log("💳 PIX card already sent in last 5 minutes — skipping card resend (but key is still stripped from audio)");
           }
 
-          log("💳 PIX key detected — building modern card and stripping key from audio");
+          if (!pixAlreadySentRecently) {
+            const pixName = caps.pix_name || ag?.pix_name || null;
+            const pixInstructions = caps.pix_instructions || ag?.pix_instructions || null;
+            const pixTypeLabel = detectPixType(pixKey!);
+            const divider = "━━━━━━━━━━━━━━━━━━━━";
+
+            const cardLines: string[] = [
+              `💳 *DADOS PARA PAGAMENTO VIA PIX*`,
+              divider,
+              pixTypeLabel,
+              `\`${pixKey}\``,
+            ];
+            if (pixName) cardLines.push(``, `👤 *Favorecido:* ${pixName}`);
+            if (pixInstructions) cardLines.push(``, `ℹ️ ${pixInstructions}`);
+            cardLines.push(divider, `_Toque e segure a chave para copiar_`);
+
+            pixTextMessage = cardLines.join("\n");
+            log("💳 PIX card built — will send as separate message");
+          }
         }
         
         // Check if we should respond with audio (when incoming was audio and setting is enabled)
