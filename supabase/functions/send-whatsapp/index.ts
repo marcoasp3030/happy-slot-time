@@ -1230,7 +1230,7 @@ async function handleAgent(
       log("🤖 ⚠️ DUPLICATE detected, skipping. Existing msg:", recentDups[0].id);
       // Release lock
       if (agentOptions._lockMsgId) {
-        await sb.from("whatsapp_messages").delete().eq("id", agentOptions._lockMsgId).catch(() => {});
+        try { await sb.from("whatsapp_messages").delete().eq("id", agentOptions._lockMsgId); } catch {}
       }
       return { ok: true, skipped: "duplicate", conversation_id: conv.id };
     }
@@ -1769,7 +1769,7 @@ async function handleAgent(
     logErr("🤖 ❌ AI call FAILED:", aiErr.message, aiErr.stack);
     // Release processing lock on error so next message isn't blocked
     if (agentOptions._lockMsgId) {
-      await sb.from("whatsapp_messages").delete().eq("id", agentOptions._lockMsgId).catch(() => {});
+      try { await sb.from("whatsapp_messages").delete().eq("id", agentOptions._lockMsgId); } catch {}
       log("🔓 Processing lock released (error path)");
     }
     return { error: aiErr.message, conversation_id: conv?.id };
@@ -2156,6 +2156,19 @@ ${caps.can_send_pix && caps.pix_key ? ("\nPAGAMENTO - PIX:\nChave PIX: " + caps.
       "google/gemini-3-pro-preview": "gemini-3-pro-preview",
     };
     requestModel = geminiMap[aiModel] || aiModel.replace("google/", "");
+  } else if (providerLabel === "lovable") {
+    // Lovable gateway: if model starts with "openai/" map to valid lovable model IDs
+    // The Lovable gateway uses the same model IDs as configured (openai/gpt-5, google/gemini-*)
+    // If an invalid/legacy model was saved, fall back to a safe default
+    const validLovableModels = [
+      "openai/gpt-5", "openai/gpt-5-mini", "openai/gpt-5-nano", "openai/gpt-5.2",
+      "google/gemini-2.5-pro", "google/gemini-2.5-flash", "google/gemini-2.5-flash-lite",
+      "google/gemini-3-pro-preview", "google/gemini-3-flash-preview",
+    ];
+    if (!validLovableModels.includes(requestModel)) {
+      log("🧠 ⚠️ Invalid model for lovable gateway:", requestModel, "→ falling back to google/gemini-3-flash-preview");
+      requestModel = "google/gemini-3-flash-preview";
+    }
   }
 
   log("🧠 Sending request to", providerLabel, "provider, model:", requestModel);
