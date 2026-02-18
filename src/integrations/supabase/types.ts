@@ -1320,6 +1320,8 @@ export type Database = {
           company_id: string
           created_at: string
           id: string
+          max_whatsapp_instances: number
+          plan_name: string | null
           status: string
           trial_end: string
           updated_at: string
@@ -1328,6 +1330,8 @@ export type Database = {
           company_id: string
           created_at?: string
           id?: string
+          max_whatsapp_instances?: number
+          plan_name?: string | null
           status?: string
           trial_end?: string
           updated_at?: string
@@ -1336,6 +1340,8 @@ export type Database = {
           company_id?: string
           created_at?: string
           id?: string
+          max_whatsapp_instances?: number
+          plan_name?: string | null
           status?: string
           trial_end?: string
           updated_at?: string
@@ -1755,6 +1761,56 @@ export type Database = {
             columns: ["current_appointment_id"]
             isOneToOne: false
             referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_instances: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          instance_id: string | null
+          instance_name: string
+          is_primary: boolean
+          label: string | null
+          phone_number: string | null
+          status: string
+          token: string | null
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          instance_id?: string | null
+          instance_name: string
+          is_primary?: boolean
+          label?: string | null
+          phone_number?: string | null
+          status?: string
+          token?: string | null
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          instance_id?: string | null
+          instance_name?: string
+          is_primary?: boolean
+          label?: string | null
+          phone_number?: string | null
+          status?: string
+          token?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_instances_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
         ]
