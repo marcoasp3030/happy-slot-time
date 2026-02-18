@@ -468,7 +468,7 @@ export default function WhatsAppAgent() {
                   </div>
 
                   {settings?.respond_audio_with_audio && (
-                    <div className="space-y-3 pl-4 border-l-2 border-primary/20">
+                    <div className="space-y-4 pl-4 border-l-2 border-primary/20">
                       <div className="space-y-2">
                         <Label>Voz do Agente (ElevenLabs)</Label>
                         <select
@@ -500,11 +500,79 @@ export default function WhatsAppAgent() {
                           <optgroup label="✨ Vozes Especiais">
                             <option value="SAz9YHcvj6GT2YYXdXww">River (Não-binária)</option>
                           </optgroup>
+                          <optgroup label="🎨 Voz Personalizada">
+                            <option value="custom">Usar Voice ID personalizado...</option>
+                          </optgroup>
                         </select>
                         <p className="text-xs text-muted-foreground">
                           Todas as vozes suportam português via modelo multilingual.{' '}
                           <a href="https://elevenlabs.io/voice-library" target="_blank" rel="noopener noreferrer" className="text-primary underline">
                             Explorar mais vozes
+                          </a>
+                        </p>
+                      </div>
+
+                      {/* Custom Voice ID input */}
+                      <div className="space-y-2 p-3 bg-muted/40 rounded-lg border border-border/50">
+                        <Label className="text-sm font-medium flex items-center gap-2">
+                          <Mic className="w-4 h-4 text-primary" />
+                          Voice ID Personalizado
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          Cole aqui o Voice ID de uma voz clonada ou customizada do seu ElevenLabs. Este campo tem prioridade sobre o seletor acima.
+                        </p>
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="Ex: abc123XyzVoiceId..."
+                            value={
+                              (() => {
+                                const knownIds = [
+                                  'EXAVITQu4vr4xnSDxMaL','FGY2WhTYpPnrIDTdsKH5','XrExE9yKIg1WjnnlVkGX',
+                                  'pFZP5JQG7iQjIQuC4Bku','Xb7hH8MSUJpSbSDYk0k2','cgSgspJ2msm6clMCkdW9',
+                                  'CwhRBWXzGAHq8TQ4Fs17','IKne3meq5aSn9XLyUdCD','JBFqnCBsd6RMkjVDRZzb',
+                                  'N2lVS1w4EtoT3dr4eOWO','TX3LPaxmHKxFdv7VOQHJ','onwK4e9ZLuTAKqWW03F9',
+                                  'nPczCjzI2devNBz1zQrb','cjVigY5qzO86Huf0OWal','pqHfZKP75CvOlQylNhV4',
+                                  'iP95p4xoKVk53GoZ742B','bIHbv24MWmeRgasZH58o','SAz9YHcvj6GT2YYXdXww',
+                                ];
+                                const current = settings?.elevenlabs_voice_id || '';
+                                return knownIds.includes(current) ? '' : current;
+                              })()
+                            }
+                            onChange={(e) => {
+                              const val = e.target.value.trim();
+                              if (val) {
+                                setSettings({ ...settings, elevenlabs_voice_id: val });
+                              } else {
+                                setSettings({ ...settings, elevenlabs_voice_id: 'EXAVITQu4vr4xnSDxMaL' });
+                              }
+                            }}
+                            className="font-mono text-xs"
+                          />
+                        </div>
+                        {(() => {
+                          const knownIds = [
+                            'EXAVITQu4vr4xnSDxMaL','FGY2WhTYpPnrIDTdsKH5','XrExE9yKIg1WjnnlVkGX',
+                            'pFZP5JQG7iQjIQuC4Bku','Xb7hH8MSUJpSbSDYk0k2','cgSgspJ2msm6clMCkdW9',
+                            'CwhRBWXzGAHq8TQ4Fs17','IKne3meq5aSn9XLyUdCD','JBFqnCBsd6RMkjVDRZzb',
+                            'N2lVS1w4EtoT3dr4eOWO','TX3LPaxmHKxFdv7VOQHJ','onwK4e9ZLuTAKqWW03F9',
+                            'nPczCjzI2devNBz1zQrb','cjVigY5qzO86Huf0OWal','pqHfZKP75CvOlQylNhV4',
+                            'iP95p4xoKVk53GoZ742B','bIHbv24MWmeRgasZH58o','SAz9YHcvj6GT2YYXdXww',
+                          ];
+                          const current = settings?.elevenlabs_voice_id || '';
+                          if (!knownIds.includes(current) && current) {
+                            return (
+                              <div className="flex items-center gap-2 text-xs text-primary">
+                                <span className="w-2 h-2 rounded-full bg-primary inline-block" />
+                                Voz personalizada ativa: <span className="font-mono font-medium">{current}</span>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
+                        <p className="text-xs text-muted-foreground">
+                          Encontre o Voice ID em{' '}
+                          <a href="https://elevenlabs.io/app/voice-lab" target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                            ElevenLabs → My Voices
                           </a>
                         </p>
                       </div>
