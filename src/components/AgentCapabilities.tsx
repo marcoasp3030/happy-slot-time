@@ -10,7 +10,8 @@ import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
-import { MapPin, Phone, Clock, Scissors, Users, FileText, Image, Mic, Upload, Trash2, Info, ShieldCheck, UserCheck, Mail, Building2, Globe, MapPinned, Briefcase, CreditCard, QrCode, Link, Sparkles, Loader2, UsersRound } from 'lucide-react';
+import { MapPin, Phone, Clock, Scissors, Users, FileText, Image, Mic, Upload, Trash2, Info, ShieldCheck, UserCheck, Mail, Building2, Globe, MapPinned, Briefcase, CreditCard, QrCode, Link, Sparkles, Loader2, UsersRound, ScanLine } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface AgentCapabilitiesProps {
   settings: any;
@@ -563,6 +564,69 @@ export default function AgentCapabilities({ settings, onSettingsChange, onSave, 
                 )}
               </div>
             </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Media Reading */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <ScanLine className="h-4.5 w-4.5 text-primary" />
+            Leitura de Imagens e PDFs
+          </CardTitle>
+          <CardDescription>
+            Permite que o agente analise imagens e documentos PDF enviados pelos clientes e responda com base no conteúdo
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/40">
+            <div className="flex items-center gap-3">
+              <ScanLine className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <Label className="font-medium text-sm">Ativar leitura de mídia</Label>
+                <p className="text-xs text-muted-foreground">O agente irá analisar imagens (JPG, PNG, WEBP) e documentos PDF enviados pelos clientes</p>
+              </div>
+            </div>
+            <Switch checked={settings?.can_read_media ?? false} onCheckedChange={(v) => u('can_read_media', v)} />
+          </div>
+
+          {settings?.can_read_media && (
+            <div className="space-y-3 pl-7">
+              <div className="space-y-2">
+                <Label className="font-medium text-sm">Modelo de visão</Label>
+                <p className="text-xs text-muted-foreground">Escolha o modelo de IA que irá analisar as imagens e PDFs. Modelos mais avançados têm maior precisão.</p>
+                <Select
+                  value={settings?.media_vision_model || 'google/gemini-2.5-flash'}
+                  onValueChange={(v) => u('media_vision_model', v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o modelo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="google/gemini-2.5-flash">
+                      Gemini 2.5 Flash — Rápido e eficiente (recomendado)
+                    </SelectItem>
+                    <SelectItem value="google/gemini-2.5-pro">
+                      Gemini 2.5 Pro — Maior precisão em documentos complexos
+                    </SelectItem>
+                    <SelectItem value="openai/gpt-5-mini">
+                      GPT-5 Mini — Alternativa OpenAI balanceada
+                    </SelectItem>
+                    <SelectItem value="openai/gpt-5">
+                      GPT-5 — Maior precisão OpenAI
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-muted-foreground space-y-1">
+                <p className="font-medium text-foreground">Como funciona:</p>
+                <p>• <strong>Imagens:</strong> O cliente envia uma foto (ex: exame, referência de serviço) e o agente descreve e responde sobre o conteúdo.</p>
+                <p>• <strong>PDFs:</strong> O cliente envia um documento (ex: laudo, orçamento) e o agente extrai e interpreta as informações.</p>
+                <p>• A análise é feita automaticamente e o agente responde no contexto da conversa.</p>
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>

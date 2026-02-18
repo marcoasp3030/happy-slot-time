@@ -120,7 +120,7 @@ Deno.serve(async (req) => {
 
     // ─── Agent processing route (internal call) ───
     if (body.action === "agent-process") {
-      log("🔵 agent-process route, is_audio:", body.is_audio, "button_response:", body.button_response_id || "none");
+      log("🔵 agent-process route, is_audio:", body.is_audio, "is_media:", body.is_media, "media_type:", body.media_type, "button_response:", body.button_response_id || "none");
       
       // If this is a button/list response, enrich the message with context
       let agentMessage = body.message;
@@ -137,6 +137,13 @@ Deno.serve(async (req) => {
         audio_wa_msg_id: body.audio_wa_msg_id || null,
         audio_chat_id: body.audio_chat_id || null,
         wa_message_id: body.wa_message_id || null,
+        is_media: body.is_media || false,
+        media_type: body.media_type || null,
+        media_url: body.media_url || null,
+        media_key: body.media_key || null,
+        media_message_id: body.media_message_id || null,
+        media_mime_type: body.media_mime_type || null,
+        media_caption: body.media_caption || null,
       });
       return new Response(JSON.stringify(result), { headers: jsonH, status: result.error ? 500 : 200 });
     }
@@ -864,6 +871,76 @@ async function uploadBinaryToStorage(audioData: Uint8Array): Promise<string> {
   return urlData.publicUrl;
 }
 
+// ─── Analyze image or PDF using a vision model ───
+async function analyzeMedia(
+  mediaUrl: string,
+  mediaType: "image" | "document",
+  mimeType: string,
+  caption: string | null,
+  visionModel: string,
+  apiKey: string,
+  apiUrl: string,
+): Promise<string> {
+  log("🔍 analyzeMedia START type:", mediaType, "mimeType:", mimeType, "model:", visionModel);
+
+  // Download the media
+  let mediaData: Uint8Array;
+  try {
+    const res = await fetch(mediaUrl);
+    if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+    mediaData = new Uint8Array(await res.arrayBuffer());
+    log("🔍 Media downloaded:", mediaData.length, "bytes");
+  } catch (e: any) {
+    logErr("🔍 Media download error:", e.message);
+    throw new Error("media_download_failed: " + e.message);
+  }
+
+  // Convert to base64
+  const base64Data = btoa(String.fromCharCode(...mediaData));
+  const dataUri = `data:${mimeType};base64,${base64Data}`;
+
+  // Build the prompt
+  const analysisPrompt = caption
+    ? `O cliente enviou ${mediaType === "image" ? "uma imagem" : "um documento PDF"} com a legenda: "${caption}". Descreva o conteúdo ${mediaType === "image" ? "da imagem" : "do documento"} de forma detalhada e objetiva em português, extraindo todas as informações relevantes (texto, dados, descrições, etc.).`
+    : `O cliente enviou ${mediaType === "image" ? "uma imagem" : "um documento PDF"}. Descreva o conteúdo de forma detalhada e objetiva em português, extraindo todas as informações relevantes (texto, dados, descrições, etc.).`;
+
+  // Build multimodal message
+  const content: any[] = [
+    { type: "text", text: analysisPrompt },
+  ];
+
+  if (mediaType === "image") {
+    content.push({ type: "image_url", image_url: { url: dataUri } });
+  } else {
+    // For PDFs, Gemini supports document type; for others use image_url with mime_type
+    content.push({ type: "image_url", image_url: { url: dataUri } });
+  }
+
+  const requestBody: any = {
+    model: visionModel,
+    messages: [{ role: "user", content }],
+    max_tokens: 1024,
+  };
+
+  log("🔍 Calling vision model:", visionModel, "via:", apiUrl);
+  const aiRes = await fetch(apiUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!aiRes.ok) {
+    const errText = await aiRes.text();
+    logErr("🔍 Vision API error:", aiRes.status, errText.substring(0, 300));
+    throw new Error(`vision_api_error: ${aiRes.status}`);
+  }
+
+  const aiData = await aiRes.json();
+  const analysis = aiData.choices?.[0]?.message?.content?.trim() || "";
+  log("🔍 Vision analysis result:", analysis.substring(0, 200));
+  return analysis;
+}
+
 // ─── AI Agent Logic ───
 const DN = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"];
 
@@ -875,6 +952,14 @@ interface AudioParams {
   audio_wa_msg_id?: string | null;
   audio_chat_id?: string | null;
   wa_message_id?: string | null;
+  // Media (image / document)
+  is_media?: boolean;
+  media_type?: "image" | "document" | null;
+  media_url?: string | null;
+  media_key?: string | null;
+  media_message_id?: string | null;
+  media_mime_type?: string | null;
+  media_caption?: string | null;
 }
 
 async function handleAgent(sb: any, cid: string, phone: string, msg: string, audioParams: AudioParams = { is_audio: false, audio_media_url: null, audio_media_key: null, audio_message_id: null }): Promise<any> {
@@ -961,14 +1046,72 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
     }
   }
 
+  // ── Media analysis: analyze image or document if feature is enabled ──
+  let mediaAnalysis: string | null = null;
+  if (audioParams.is_media && audioParams.media_url && audioParams.media_type) {
+    if (ag?.can_read_media) {
+      log("🔍 Media message detected, attempting analysis...");
+      const visionModel = ag?.media_vision_model || "google/gemini-2.5-flash";
+
+      // Determine API endpoint and key for vision model
+      let visionApiUrl = "https://ai.gateway.lovable.dev/v1/chat/completions";
+      let visionApiKey = Deno.env.get("LOVABLE_API_KEY");
+
+      // If lojista uses their own key and it's a compatible provider, use it
+      const preferredProvider = ag?.preferred_provider || "lovable";
+      if (preferredProvider === "openai" && ag?.openai_api_key) {
+        visionApiUrl = "https://api.openai.com/v1/chat/completions";
+        visionApiKey = ag.openai_api_key;
+      } else if (preferredProvider === "gemini" && ag?.gemini_api_key) {
+        visionApiUrl = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+        visionApiKey = ag.gemini_api_key;
+      }
+
+      if (visionApiKey) {
+        try {
+          mediaAnalysis = await analyzeMedia(
+            audioParams.media_url,
+            audioParams.media_type,
+            audioParams.media_mime_type || (audioParams.media_type === "image" ? "image/jpeg" : "application/pdf"),
+            audioParams.media_caption || null,
+            visionModel,
+            visionApiKey,
+            visionApiUrl,
+          );
+
+          const mediaLabel = audioParams.media_type === "image" ? "imagem" : "documento PDF";
+          const captionInfo = audioParams.media_caption ? ` com legenda: "${audioParams.media_caption}"` : "";
+          actualMsg = `[O cliente enviou ${mediaLabel}${captionInfo}]\n\nCONTEÚDO ANALISADO:\n${mediaAnalysis}\n\n${msg && msg !== `[${audioParams.media_type === "image" ? "imagem" : "documento"}]` ? `Mensagem adicional do cliente: ${msg}` : ""}`.trim();
+          log("🔍 Media analysis injected into message context");
+        } catch (e: any) {
+          logErr("🔍 Media analysis failed:", e.message);
+          const mediaLabel = audioParams.media_type === "image" ? "imagem" : "documento PDF";
+          actualMsg = `[O cliente enviou ${audioParams.media_caption ? `${mediaLabel}: "${audioParams.media_caption}"` : `uma ${mediaLabel}`} que não pôde ser analisada]`;
+        }
+      } else {
+        log("🔍 No API key available for vision model, skipping analysis");
+        const mediaLabel = audioParams.media_type === "image" ? "imagem" : "documento";
+        actualMsg = `[O cliente enviou ${audioParams.media_caption ? `uma ${mediaLabel}: "${audioParams.media_caption}"` : `uma ${mediaLabel}`}]`;
+      }
+    } else {
+      // Feature disabled — just inform the agent a media was received
+      const mediaLabel = audioParams.media_type === "image" ? "imagem" : "documento";
+      actualMsg = `[O cliente enviou ${audioParams.media_caption ? `uma ${mediaLabel}: "${audioParams.media_caption}"` : `uma ${mediaLabel}`}]`;
+      log("🔍 can_read_media is disabled, skipping analysis");
+    }
+  }
+
   // Save incoming message (with wa_message_id for delivery tracking + reactions)
   log("🤖 Saving incoming message...");
+  const messageType = audioParams.is_media && audioParams.media_type ? audioParams.media_type : (isAudioMsg ? "audio" : "text");
   const incomingInsert: any = { 
     conversation_id: conv.id, company_id: cid, direction: "incoming", 
-    message_type: isAudioMsg ? "audio" : "text", 
+    message_type: messageType,
     content: actualMsg,
     delivery_status: "read",
-    metadata: isAudioMsg ? { original_type: "audio", transcribed: actualMsg !== msg } : {}
+    metadata: isAudioMsg 
+      ? { original_type: "audio", transcribed: actualMsg !== msg }
+      : (audioParams.is_media ? { original_type: audioParams.media_type, analyzed: !!mediaAnalysis, caption: audioParams.media_caption } : {})
   };
   // wa_message_id passed from wa-webhook for reaction/tracking support
   if (audioParams.wa_message_id) incomingInsert.wa_message_id = audioParams.wa_message_id;
@@ -1292,7 +1435,7 @@ async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
     sb.from("business_hours").select("day_of_week, open_time, close_time, is_open").eq("company_id", cid),
     sb.from("whatsapp_knowledge_base").select("category, title, content").eq("company_id", cid).eq("active", true),
     sb.from("company_settings").select("slot_interval, max_capacity_per_slot, min_advance_hours").eq("company_id", cid).single(),
-    sb.from("whatsapp_agent_settings").select("custom_prompt, timezone, can_share_address, can_share_phone, can_share_business_hours, can_share_services, can_share_professionals, can_handle_anamnesis, can_send_files, can_send_images, can_send_audio, custom_business_info, can_send_payment_link, payment_link_url, can_send_pix, pix_key, pix_name, pix_instructions, pix_send_as_text").eq("company_id", cid).single(),
+    sb.from("whatsapp_agent_settings").select("custom_prompt, timezone, can_share_address, can_share_phone, can_share_business_hours, can_share_services, can_share_professionals, can_handle_anamnesis, can_send_files, can_send_images, can_send_audio, custom_business_info, can_send_payment_link, payment_link_url, can_send_pix, pix_key, pix_name, pix_instructions, pix_send_as_text, can_read_media, media_vision_model").eq("company_id", cid).single(),
     sb.from("staff").select("id, name").eq("company_id", cid).eq("active", true),
     sb.from("staff_services").select("staff_id, service_id").in("staff_id", (await sb.from("staff").select("id").eq("company_id", cid).eq("active", true)).data?.map((x: any) => x.id) || []),
     sb.from("whatsapp_agent_files").select("file_name, file_url, file_type, description").eq("company_id", cid).eq("active", true),
@@ -1320,6 +1463,8 @@ async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
       pix_name: agentCaps.pix_name || null,
       pix_instructions: agentCaps.pix_instructions || null,
       pix_send_as_text: agentCaps.pix_send_as_text ?? true,
+      can_read_media: agentCaps.can_read_media ?? false,
+      media_vision_model: agentCaps.media_vision_model || "google/gemini-2.5-flash",
     },
   };
 }
@@ -1455,6 +1600,15 @@ NORMALIZAÇÃO DE HORÁRIOS (OBRIGATÓRIO):
 - NUNCA use formato numérico como "09:00" ou "18:00" na resposta. Escreva TUDO por extenso.
 - PROIBIDO falar dígitos separados ("zero nove zero zero")
 - Seja direto: "a gente funciona das nove da manhã às seis da tarde" em vez de frases longas
+
+${caps.can_read_media ? `LEITURA DE IMAGENS E DOCUMENTOS (CAPACIDADE ATIVA):
+- Quando a mensagem contém "[O cliente enviou uma imagem" ou "[O cliente enviou um documento PDF", significa que o cliente enviou uma mídia que foi analisada automaticamente pelo sistema.
+- O conteúdo analisado estará disponível na mensagem como "CONTEÚDO ANALISADO:". Use essas informações para responder de forma contextualizada.
+- Exemplos de situações:
+  * Cliente enviou foto de exame/laudo → analise e responda com base nos dados do exame
+  * Cliente enviou foto de referência de serviço → descreva o que viu e sugira o serviço mais adequado
+  * Cliente enviou PDF de orçamento → extraia os dados e responda sobre os valores
+- Responda de forma natural, como se tivesse realmente visto a imagem/documento.` : ""}
 
 FLUXO DE AGENDAMENTO (IMPORTANTE):
 - Quando o cliente quiser agendar, pergunte: 1) Qual serviço? 2) Qual data/horário de preferência?
