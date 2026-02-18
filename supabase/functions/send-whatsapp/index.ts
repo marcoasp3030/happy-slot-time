@@ -1140,15 +1140,24 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
           // Split: remove PIX key from audio reply, build a clean text message with PIX info
           const pixName = caps.pix_name || ag?.pix_name || null;
           const pixInstructions = caps.pix_instructions || ag?.pix_instructions || null;
-          pixTextMessage = `💳 *Dados para pagamento PIX:*\n\n🔑 Chave: \`${pixKey}\``;
-          if (pixName) pixTextMessage += `\n👤 Titular: ${pixName}`;
-          if (pixInstructions) pixTextMessage += `\n\nℹ️ ${pixInstructions}`;
+
+          // Build rich PIX text message — formatted for easy copy
+          let pixBody = `🔑 *${pixKey}*`;
+          if (pixName) pixBody += `\n👤 Titular: ${pixName}`;
+          if (pixInstructions) pixBody += `\n\nℹ️ ${pixInstructions}`;
+          
+          // Store as structured object so we can send as button below
+          pixTextMessage = JSON.stringify({
+            header: "💳 Dados para pagamento PIX",
+            body: pixBody,
+            footer: "Copie a chave acima para realizar o pagamento",
+          });
           
           // Remove PIX details from the reply that will go to TTS (to avoid robotic reading of keys)
           audioReply = reply
-            .replace(new RegExp(`\\*?Chave PIX\\*?[:\\s]+${pixKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi'), '[chave PIX enviada abaixo]')
-            .replace(new RegExp(pixKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '[chave PIX]');
-          log("💳 PIX key detected — will send PIX data as separate text message");
+            .replace(new RegExp(`\\*?Chave PIX\\*?[:\\s]+${pixKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi'), 'os dados completos de pagamento foram enviados como texto abaixo para facilitar a cópia')
+            .replace(new RegExp(pixKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), 'os dados de pagamento');
+          log("💳 PIX key detected — will send PIX data as separate button message");
         }
         
         // Check if we should respond with audio (when incoming was audio and setting is enabled)
@@ -1188,14 +1197,34 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
           }
         }
 
-        // ── Send PIX info as a separate text message (always text, never audio) ──
+        // ── Send PIX info as a separate button message (always text, never audio) ──
         if (pixTextMessage) {
           try {
-            log("💳 Sending PIX text message separately...");
-            await sendUazapiMessage(ws, cleanPhone, pixTextMessage);
-            log("💳 ✅ PIX text message sent!");
+            log("💳 Sending PIX as button message...");
+            const pixData = JSON.parse(pixTextMessage);
+            // Try to send as button with a "Copiar chave" style button
+            // The button action just echoes the key so the client can see it clearly
+            try {
+              await sendMenuViaUazapi(
+                { base_url: ws.base_url, token: ws.token },
+                cleanPhone,
+                {
+                  type: "button",
+                  text: `${pixData.header}\n\n${pixData.body}`,
+                  footerText: pixData.footer,
+                  choices: [`✅ Entendido|pix_ok`],
+                }
+              );
+              log("💳 ✅ PIX button message sent!");
+            } catch (btnErr: any) {
+              // Fallback: send as plain text if button fails
+              log("💳 Button failed, falling back to text:", btnErr.message);
+              const plainText = `${pixData.header}\n\n${pixData.body}\n\n_${pixData.footer}_`;
+              await sendUazapiMessage(ws, cleanPhone, plainText);
+              log("💳 ✅ PIX fallback text sent!");
+            }
           } catch (e: any) {
-            logErr("💳 ❌ PIX text message failed:", e.message);
+            logErr("💳 ❌ PIX message failed:", e.message);
           }
         }
       } else {
@@ -1476,7 +1505,7 @@ ${!hasCustomPrompt && caps.custom_business_info ? "Info do estabelecimento: " + 
 Agendamentos do cliente: ${appts || "nenhum"}
 ${fileParts.join("\n")}
 ${caps.can_send_payment_link && caps.payment_link_url ? "\nPAGAMENTO - LINK:\nQuando o cliente perguntar sobre pagamento ou após confirmar agendamento, envie o link: " + caps.payment_link_url : ""}
-${caps.can_send_pix && caps.pix_key ? "\nPAGAMENTO - PIX:\nChave PIX: " + caps.pix_key + (caps.pix_name ? " | Titular: " + caps.pix_name : "") + (caps.pix_instructions ? "\nInstruções: " + caps.pix_instructions : "") : ""}`;
+${caps.can_send_pix && caps.pix_key ? ("\nPAGAMENTO - PIX:\nChave PIX: " + caps.pix_key + (caps.pix_name ? " | Titular: " + caps.pix_name : "") + (caps.pix_instructions ? "\nInstruções: " + caps.pix_instructions : "") + (caps.pix_send_as_text !== false ? "\n\nREGRA OBRIGATÓRIA - CHAVE PIX:\nSempre que mencionar pagamento via PIX ou quando o cliente pedir a chave, inclua o valor literal da chave na sua resposta (ex: 'A chave PIX é " + caps.pix_key + "'). O sistema detectará a chave e a enviará em mensagem separada para o cliente copiar facilmente.\nAo falar sobre o PIX, encerre com a frase exata: 'Os dados completos de pagamento foram enviados como texto abaixo para facilitar a cópia.' Isso sinaliza ao cliente que a chave chegará em formato copiável logo abaixo." : "")) : ""}`;
 
 
   const messages: any[] = [{ role: "system", content: sys }];
