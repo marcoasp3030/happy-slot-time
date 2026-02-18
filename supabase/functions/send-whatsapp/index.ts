@@ -93,10 +93,13 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ ok: true, skipped: "no_msg" }), { headers: jsonH });
       }
 
-      // ── Message Delay / Aggregation ──
-      // If enabled: save each message immediately to DB (delivery_status='pending'),
-      // wait N seconds, then the LAST call in the burst collects ALL buffered messages,
-      // concatenates them, and calls handleAgent once with the full context.
+      // ── Message Debounce / Aggregation ──
+      // Strategy: Each incoming message is saved as 'pending' immediately.
+      // Then we try to acquire a per-conversation processing LOCK by inserting a
+      // special 'locking' row into whatsapp_messages. Only ONE worker succeeds
+      // (unique constraint via metadata check). The lock winner waits the debounce
+      // delay, collects ALL pending msgs, concatenates, calls handleAgent ONCE.
+      // Losers (concurrent workers) detect the existing lock and exit immediately.
       const { data: agSettingsDelay } = await supabase
         .from("whatsapp_agent_settings")
         .select("message_delay_enabled, message_delay_seconds, enabled")
@@ -104,16 +107,13 @@ Deno.serve(async (req) => {
         .single();
 
       if (agSettingsDelay?.enabled && agSettingsDelay?.message_delay_enabled && !isAudio) {
-        const delaySeconds = Math.max(1, Math.min(30, agSettingsDelay.message_delay_seconds || 8));
-        log("⏳ Delay enabled:", delaySeconds, "s. Buffering message before processing...");
+        const delaySeconds = Math.max(2, Math.min(30, agSettingsDelay.message_delay_seconds || 8));
+        log("⏳ Debounce enabled:", delaySeconds, "s");
 
-        const arrivalTime = Date.now();
-        const arrivalIso = new Date(arrivalTime).toISOString();
-
-        // 1️⃣ Get or create conversation BEFORE the delay so we can buffer messages
+        // ── Step 1: Get or create conversation ──
         let { data: delayConv } = await supabase
           .from("whatsapp_conversations")
-          .select("id, last_message_at, handoff_requested")
+          .select("id, handoff_requested")
           .eq("company_id", uazapiCompanyId)
           .eq("phone", phone)
           .eq("status", "active")
@@ -125,115 +125,145 @@ Deno.serve(async (req) => {
           const { data: nc } = await supabase
             .from("whatsapp_conversations")
             .insert({ company_id: uazapiCompanyId, phone, status: "active" })
-            .select("id, last_message_at, handoff_requested")
+            .select("id, handoff_requested")
             .single();
           delayConv = nc;
         }
 
         if (!delayConv?.id) {
-          log("⏳ ❌ Could not get/create conversation for delay buffer, falling through to handleAgent...");
+          log("⏳ ❌ Could not get/create conversation, falling through...");
         } else {
-          // Skip if handoff active
+          // Skip if handoff is active — human is handling this
           if (delayConv.handoff_requested) {
-            log("⏳ Handoff active, skipping delay buffering");
+            log("⏳ Handoff active, skipping");
             return new Response(JSON.stringify({ ok: true, skipped: "handoff" }), { headers: jsonH });
           }
 
-          // 2️⃣ Save this message immediately with delivery_status='pending' (buffered)
+          const convId = delayConv.id;
+          const arrivalMs = Date.now();
+
+          // ── Step 2: Save this message immediately as 'pending' ──
           await supabase.from("whatsapp_messages").insert({
-            conversation_id: delayConv.id,
+            conversation_id: convId,
             company_id: uazapiCompanyId,
             direction: "incoming",
             message_type: "text",
             content: msg,
             delivery_status: "pending",
-            metadata: { buffered: true, arrival_ms: arrivalTime },
+            metadata: { buffered: true, arrival_ms: arrivalMs },
           });
+          log("⏳ Message saved as pending, arrival_ms:", arrivalMs);
 
-          // 3️⃣ Mark latest arrival time in conversation
-          await supabase
-            .from("whatsapp_conversations")
-            .update({ last_message_at: arrivalIso })
-            .eq("id", delayConv.id);
-
-          // 4️⃣ Wait the configured delay
-          await new Promise(r => setTimeout(r, delaySeconds * 1000));
-
-          // 5️⃣ Check if a NEWER message arrived after us
-          const { data: convAfterWait } = await supabase
-            .from("whatsapp_conversations")
-            .select("last_message_at")
-            .eq("id", delayConv.id)
+          // ── Step 3: Try to acquire the processing LOCK ──
+          // The lock is a special outgoing message with delivery_status='locking'.
+          // We check if a lock already exists within the last (delay + 60)s window.
+          const lockWindowStart = new Date(arrivalMs - (delaySeconds + 60) * 1000).toISOString();
+          const { data: existingLock } = await supabase
+            .from("whatsapp_messages")
+            .select("id, created_at, metadata")
+            .eq("conversation_id", convId)
+            .eq("direction", "outgoing")
+            .eq("delivery_status", "locking")
+            .gte("created_at", lockWindowStart)
+            .limit(1)
             .single();
 
-          if (convAfterWait?.last_message_at) {
-            const lastMsgTime = new Date(convAfterWait.last_message_at).getTime();
-            if (lastMsgTime > arrivalTime + 500) {
-              log("⏳ Newer message arrived during delay — skipping, another call will process all.");
-              return new Response(JSON.stringify({ ok: true, skipped: "delay_superseded" }), { headers: jsonH });
-            }
+          if (existingLock) {
+            // Another worker already holds the lock — we are done here.
+            // That worker will pick up our 'pending' message when it collects all buffered msgs.
+            log("⏳ Lock already held by another worker (lock id:", existingLock.id, ") — exiting.");
+            return new Response(JSON.stringify({ ok: true, skipped: "lock_held_by_other" }), { headers: jsonH });
           }
 
-          // 6️⃣ We are the LAST message in this burst — collect ALL buffered messages
-          const bufferWindowStart = new Date(arrivalTime - (delaySeconds * 1000) - 5000).toISOString();
-          const { data: bufferedMsgs } = await supabase
-            .from("whatsapp_messages")
-            .select("id, content, created_at")
-            .eq("conversation_id", delayConv.id)
-            .eq("direction", "incoming")
-            .eq("delivery_status", "pending")
-            .gte("created_at", bufferWindowStart)
-            .order("created_at", { ascending: true });
+          // ── Step 4: No lock found — WE acquire it ──
+          const { data: lockRow, error: lockErr } = await supabase.from("whatsapp_messages").insert({
+            conversation_id: convId,
+            company_id: uazapiCompanyId,
+            direction: "outgoing",
+            message_type: "text",
+            content: "__DEBOUNCE_LOCK__",
+            delivery_status: "locking",
+            metadata: { lock: true, acquired_ms: arrivalMs, delay_seconds: delaySeconds },
+          }).select("id").single();
 
-          log("⏳ Buffered messages found:", bufferedMsgs?.length || 0);
+          if (lockErr || !lockRow?.id) {
+            log("⏳ ❌ Failed to insert lock row, falling through to direct handleAgent...");
+          } else {
+            const lockId = lockRow.id;
+            log("⏳ 🔒 Lock acquired! id:", lockId, "Waiting", delaySeconds, "s...");
 
-          if (bufferedMsgs && bufferedMsgs.length > 0) {
-            // 7️⃣ Concatenate all buffered messages into a single context string
-            const concatenatedMsg = bufferedMsgs
-              .map((m: any) => m.content)
-              .filter(Boolean)
-              .join("\n");
-            log("⏳ Concatenated message:", concatenatedMsg.substring(0, 300));
+            // ── Step 5: Wait the full debounce delay ──
+            await new Promise(r => setTimeout(r, delaySeconds * 1000));
 
-            // 8️⃣ Mark buffered messages as processed (delivery_status='read')
+            // ── Step 6: Collect ALL pending messages from the buffer window ──
+            // We look back far enough to capture all messages from this burst
+            const bufferWindowStart = new Date(arrivalMs - 5000).toISOString();
+            const { data: bufferedMsgs } = await supabase
+              .from("whatsapp_messages")
+              .select("id, content, created_at")
+              .eq("conversation_id", convId)
+              .eq("direction", "incoming")
+              .eq("delivery_status", "pending")
+              .gte("created_at", bufferWindowStart)
+              .order("created_at", { ascending: true });
+
+            log("⏳ Buffered messages collected:", bufferedMsgs?.length || 0);
+
+            // ── Step 7: Release lock regardless of outcome ──
+            await supabase
+              .from("whatsapp_messages")
+              .delete()
+              .eq("id", lockId);
+            log("⏳ 🔓 Lock released");
+
+            if (!bufferedMsgs || bufferedMsgs.length === 0) {
+              log("⏳ No pending messages found after delay, skipping.");
+              return new Response(JSON.stringify({ ok: true, skipped: "no_pending_after_delay" }), { headers: jsonH });
+            }
+
+            // ── Step 8: Mark all buffered messages as 'read' (processed) ──
             const msgIds = bufferedMsgs.map((m: any) => m.id);
             await supabase
               .from("whatsapp_messages")
               .update({ delivery_status: "read", metadata: { buffered: false, aggregated: true, source_count: bufferedMsgs.length } })
               .in("id", msgIds);
 
-            // 9️⃣ Call handleAgent ONCE with the full concatenated context
-            //    Pass skipIncomingSave=true (messages already in DB) and existingConvId
-            log("🚀 CALLING handleAgent with aggregated message...");
+            // ── Step 9: Concatenate all messages into a single text ──
+            const concatenatedMsg = bufferedMsgs
+              .map((m: any) => m.content?.trim())
+              .filter(Boolean)
+              .join("\n");
+            log("⏳ Concatenated (", bufferedMsgs.length, "msgs):", concatenatedMsg.substring(0, 300));
+
+            // ── Step 10: Call handleAgent ONCE with the full aggregated context ──
             const t0 = Date.now();
             try {
               const result = await handleAgent(
                 supabase, uazapiCompanyId, phone, concatenatedMsg,
                 { is_audio: false, audio_media_url: null, audio_media_key: null, audio_message_id: null },
-                { skipIncomingSave: true, existingConvId: delayConv.id }
+                { skipIncomingSave: true, existingConvId: convId }
               );
               const elapsed = Date.now() - t0;
-              log("✅ handleAgent (aggregated) done in", elapsed, "ms");
+              log("✅ handleAgent (debounced) done in", elapsed, "ms, msgs aggregated:", bufferedMsgs.length);
 
               await supabase.from("whatsapp_agent_logs").insert({
                 company_id: uazapiCompanyId,
-                conversation_id: result.conversation_id || delayConv.id || null,
+                conversation_id: result.conversation_id || convId,
                 action: "response_sent",
-                details: { response_time_ms: elapsed, aggregated_messages: bufferedMsgs.length },
+                details: { response_time_ms: elapsed, aggregated_messages: bufferedMsgs.length, debounce_seconds: delaySeconds },
               }).catch(() => {});
 
               return new Response(JSON.stringify({ ok: true, ...result }), { headers: jsonH });
             } catch (agentErr: any) {
-              logErr("❌ handleAgent (aggregated) THREW:", agentErr.message);
+              logErr("❌ handleAgent (debounced) THREW:", agentErr.message);
               return new Response(JSON.stringify({ error: agentErr.message }), { status: 500, headers: jsonH });
             }
           }
-
-          log("⏳ No buffered messages found, falling through to normal handleAgent...");
         }
       }
 
-      log("🚀 CALLING handleAgent...");
+      // ── Fallback (debounce disabled): simple per-conversation lock already inside handleAgent
+      log("🚀 CALLING handleAgent (debounce disabled)...");
       const t0 = Date.now();
       try {
         const result = await handleAgent(supabase, uazapiCompanyId, phone, msg || "[áudio]", {
@@ -242,14 +272,14 @@ Deno.serve(async (req) => {
           audio_message_id: audioMsgId,
         });
         const elapsed = Date.now() - t0;
-        log("✅ handleAgent completed in", elapsed, "ms, result:", JSON.stringify(result).substring(0, 300));
+        log("✅ handleAgent completed in", elapsed, "ms");
 
         await supabase.from("whatsapp_agent_logs").insert({
           company_id: uazapiCompanyId,
           conversation_id: result.conversation_id || null,
           action: "response_sent",
           details: { response_time_ms: elapsed, is_audio: !!isAudio },
-        }).then(() => log("✅ Agent log inserted")).catch((e: any) => logErr("❌ Agent log insert error:", e));
+        }).catch(() => {});
 
         return new Response(JSON.stringify({ ok: true, ...result }), { headers: jsonH });
       } catch (agentErr: any) {
@@ -1141,10 +1171,10 @@ async function handleAgent(
   }
 
   // ── Concurrency lock: prevent parallel executions for the same conversation ──
-  // If another request is already processing this conversation (within 45s), skip.
-  // This prevents duplicate responses when multiple webhook calls arrive simultaneously.
+  // This is the primary guard when debounce is disabled. It checks for an active
+  // 'processing' lock row within the last 60s. Only ONE call proceeds at a time.
   if (!agentOptions.skipIncomingSave) {
-    const lockWindowStart = new Date(Date.now() - 45000).toISOString();
+    const lockWindowStart = new Date(Date.now() - 60000).toISOString();
     const { data: recentOutgoing } = await sb.from("whatsapp_messages")
       .select("id, created_at")
       .eq("conversation_id", conv.id)
@@ -1158,8 +1188,8 @@ async function handleAgent(
       return { ok: true, skipped: "concurrent_lock", conversation_id: conv.id };
     }
 
-    // Acquire lock: insert a processing placeholder message
-    const { data: lockMsg } = await sb.from("whatsapp_messages").insert({
+    // Acquire lock: insert a processing placeholder message immediately
+    const { data: lockMsg, error: lockInsertErr } = await sb.from("whatsapp_messages").insert({
       conversation_id: conv.id,
       company_id: cid,
       direction: "outgoing",
@@ -1168,7 +1198,12 @@ async function handleAgent(
       delivery_status: "processing",
     }).select("id").single();
 
-    // Register cleanup at end of execution (will update this lock to released/real content)
+    if (lockInsertErr) {
+      log("🤖 ⚠️ Lock insert failed (possible race condition), skipping:", lockInsertErr.message);
+      return { ok: true, skipped: "lock_insert_failed", conversation_id: conv.id };
+    }
+
+    // Register cleanup at end of execution
     if (lockMsg?.id) {
       agentOptions._lockMsgId = lockMsg.id;
       log("🔒 Processing lock acquired. lockMsgId:", lockMsg.id);
