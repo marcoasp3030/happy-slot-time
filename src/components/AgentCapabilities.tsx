@@ -430,6 +430,22 @@ export default function AgentCapabilities({ settings, onSettingsChange, onSave, 
                   placeholder="Ex: Envie o comprovante após o pagamento para confirmar seu agendamento."
                 />
               </div>
+
+              <div className="flex items-center justify-between p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+                <div className="flex items-center gap-3">
+                  <QrCode className="h-4 w-4 text-yellow-600" />
+                  <div>
+                    <Label className="font-medium text-sm">Enviar chave PIX sempre como texto</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Recomendado: mesmo quando o agente responder por áudio, a chave PIX será enviada em uma mensagem de texto separada para evitar erros de leitura
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={settings?.pix_send_as_text ?? true}
+                  onCheckedChange={(v) => u('pix_send_as_text', v)}
+                />
+              </div>
             </div>
           )}
         </CardContent>

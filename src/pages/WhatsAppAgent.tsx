@@ -111,6 +111,7 @@ export default function WhatsAppAgent() {
         pix_key: settings.pix_key,
         pix_name: settings.pix_name,
         pix_instructions: settings.pix_instructions,
+        pix_send_as_text: settings.pix_send_as_text ?? true,
         openai_api_key: settings.openai_api_key,
         gemini_api_key: (settings as any).gemini_api_key,
         preferred_provider: (settings as any).preferred_provider,

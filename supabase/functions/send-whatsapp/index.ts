@@ -1125,12 +1125,37 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
 
       if (ws?.active && ws?.base_url && ws?.token) {
         const cleanPhone = phone.replace(/\D/g, "");
+        const caps = ctx?.caps || {};
+
+        // ── Detect if the reply contains PIX key and pix_send_as_text is enabled ──
+        // When active, we strip the PIX block from the audio/text reply and send it as a separate text message
+        const pixKey = caps.pix_key || ag?.pix_key || null;
+        const pixSendAsText = caps.pix_send_as_text ?? ag?.pix_send_as_text ?? true;
+        const replyContainsPix = pixKey && reply.includes(pixKey);
+
+        let audioReply = reply;
+        let pixTextMessage: string | null = null;
+
+        if (replyContainsPix && pixSendAsText) {
+          // Split: remove PIX key from audio reply, build a clean text message with PIX info
+          const pixName = caps.pix_name || ag?.pix_name || null;
+          const pixInstructions = caps.pix_instructions || ag?.pix_instructions || null;
+          pixTextMessage = `💳 *Dados para pagamento PIX:*\n\n🔑 Chave: \`${pixKey}\``;
+          if (pixName) pixTextMessage += `\n👤 Titular: ${pixName}`;
+          if (pixInstructions) pixTextMessage += `\n\nℹ️ ${pixInstructions}`;
+          
+          // Remove PIX details from the reply that will go to TTS (to avoid robotic reading of keys)
+          audioReply = reply
+            .replace(new RegExp(`\\*?Chave PIX\\*?[:\\s]+${pixKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi'), '[chave PIX enviada abaixo]')
+            .replace(new RegExp(pixKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '[chave PIX]');
+          log("💳 PIX key detected — will send PIX data as separate text message");
+        }
         
         // Check if we should respond with audio (when incoming was audio and setting is enabled)
         if (isAudioMsg && ag?.respond_audio_with_audio && ag?.elevenlabs_voice_id) {
           log("🔊 Responding with audio (respond_audio_with_audio=true)");
           try {
-            const ttsText = normalizeTimeForSpeech(reply);
+            const ttsText = normalizeTimeForSpeech(audioReply);
             const audioData = await textToSpeech(ttsText, ag.elevenlabs_voice_id);
             if (audioData) {
               await sendAudioViaUazapi(ws, cleanPhone, audioData);
@@ -1139,14 +1164,14 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
               log("🔊 TTS returned null, falling back to text");
               await sendHumanizedReply(
                 { base_url: ws.base_url, instance_id: ws.instance_id || "", token: ws.token },
-                cleanPhone, reply
+                cleanPhone, audioReply
               );
             }
           } catch (e: any) {
             logErr("🔊 Audio response failed, falling back to text:", e.message);
             await sendHumanizedReply(
               { base_url: ws.base_url, instance_id: ws.instance_id || "", token: ws.token },
-              cleanPhone, reply
+              cleanPhone, audioReply
             );
           }
         } else {
@@ -1155,11 +1180,22 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
             log("🤖 Sending humanized reply via UAZAPI...");
             await sendHumanizedReply(
               { base_url: ws.base_url, instance_id: ws.instance_id || "", token: ws.token },
-              cleanPhone, reply
+              cleanPhone, audioReply
             );
             log("🤖 ✅ Humanized reply sent successfully!");
           } catch (e: any) {
             logErr("🤖 ❌ Send error:", e.message);
+          }
+        }
+
+        // ── Send PIX info as a separate text message (always text, never audio) ──
+        if (pixTextMessage) {
+          try {
+            log("💳 Sending PIX text message separately...");
+            await sendUazapiMessage(ws, cleanPhone, pixTextMessage);
+            log("💳 ✅ PIX text message sent!");
+          } catch (e: any) {
+            logErr("💳 ❌ PIX text message failed:", e.message);
           }
         }
       } else {
@@ -1227,7 +1263,7 @@ async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
     sb.from("business_hours").select("day_of_week, open_time, close_time, is_open").eq("company_id", cid),
     sb.from("whatsapp_knowledge_base").select("category, title, content").eq("company_id", cid).eq("active", true),
     sb.from("company_settings").select("slot_interval, max_capacity_per_slot, min_advance_hours").eq("company_id", cid).single(),
-    sb.from("whatsapp_agent_settings").select("custom_prompt, timezone, can_share_address, can_share_phone, can_share_business_hours, can_share_services, can_share_professionals, can_handle_anamnesis, can_send_files, can_send_images, can_send_audio, custom_business_info, can_send_payment_link, payment_link_url, can_send_pix, pix_key, pix_name, pix_instructions").eq("company_id", cid).single(),
+    sb.from("whatsapp_agent_settings").select("custom_prompt, timezone, can_share_address, can_share_phone, can_share_business_hours, can_share_services, can_share_professionals, can_handle_anamnesis, can_send_files, can_send_images, can_send_audio, custom_business_info, can_send_payment_link, payment_link_url, can_send_pix, pix_key, pix_name, pix_instructions, pix_send_as_text").eq("company_id", cid).single(),
     sb.from("staff").select("id, name").eq("company_id", cid).eq("active", true),
     sb.from("staff_services").select("staff_id, service_id").in("staff_id", (await sb.from("staff").select("id").eq("company_id", cid).eq("active", true)).data?.map((x: any) => x.id) || []),
     sb.from("whatsapp_agent_files").select("file_name, file_url, file_type, description").eq("company_id", cid).eq("active", true),
@@ -1254,6 +1290,7 @@ async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
       pix_key: agentCaps.pix_key || null,
       pix_name: agentCaps.pix_name || null,
       pix_instructions: agentCaps.pix_instructions || null,
+      pix_send_as_text: agentCaps.pix_send_as_text ?? true,
     },
   };
 }

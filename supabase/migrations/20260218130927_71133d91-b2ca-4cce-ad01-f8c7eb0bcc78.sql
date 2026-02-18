@@ -1,0 +1,1 @@
+ALTER TABLE public.whatsapp_agent_settings ADD COLUMN IF NOT EXISTS pix_send_as_text boolean DEFAULT true;

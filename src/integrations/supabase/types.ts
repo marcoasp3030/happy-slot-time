@@ -1544,6 +1544,7 @@ export type Database = {
           pix_instructions: string | null
           pix_key: string | null
           pix_name: string | null
+          pix_send_as_text: boolean | null
           preferred_provider: string | null
           react_on_booking: string | null
           react_on_cancel: string | null
@@ -1596,6 +1597,7 @@ export type Database = {
           pix_instructions?: string | null
           pix_key?: string | null
           pix_name?: string | null
+          pix_send_as_text?: boolean | null
           preferred_provider?: string | null
           react_on_booking?: string | null
           react_on_cancel?: string | null
@@ -1648,6 +1650,7 @@ export type Database = {
           pix_instructions?: string | null
           pix_key?: string | null
           pix_name?: string | null
+          pix_send_as_text?: boolean | null
           preferred_provider?: string | null
           react_on_booking?: string | null
           react_on_cancel?: string | null
