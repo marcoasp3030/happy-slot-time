@@ -246,12 +246,14 @@ Deno.serve(async (req) => {
               const elapsed = Date.now() - t0;
               log("✅ handleAgent (debounced) done in", elapsed, "ms, msgs aggregated:", bufferedMsgs.length);
 
-              await supabase.from("whatsapp_agent_logs").insert({
-                company_id: uazapiCompanyId,
-                conversation_id: result.conversation_id || convId,
-                action: "response_sent",
-                details: { response_time_ms: elapsed, aggregated_messages: bufferedMsgs.length, debounce_seconds: delaySeconds },
-              }).catch(() => {});
+              try {
+                await supabase.from("whatsapp_agent_logs").insert({
+                  company_id: uazapiCompanyId,
+                  conversation_id: result.conversation_id || convId,
+                  action: "response_sent",
+                  details: { response_time_ms: elapsed, aggregated_messages: bufferedMsgs.length, debounce_seconds: delaySeconds },
+                });
+              } catch (_logErr) { /* non-critical */ }
 
               return new Response(JSON.stringify({ ok: true, ...result }), { headers: jsonH });
             } catch (agentErr: any) {
