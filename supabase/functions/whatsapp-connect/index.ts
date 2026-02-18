@@ -212,8 +212,47 @@ Deno.serve(async (req) => {
         let instanceToken = existingInst.token;
 
         if (!instanceToken) {
-          // Re-create instance on uazapi
+          // Token was cleared (e.g., after a 401). Try to fetch the existing instance from uazapi
+          // using admin_token to recover the current token, instead of blindly re-creating.
+          console.log(`[whatsapp-connect] 🔄 Token missing for ${existingInst.instance_name}, trying to recover via admin...`);
+          try {
+            const listData = await callUazapi(
+              baseUrl,
+              "/instance/list",
+              "GET",
+              { name: "admintoken", value: settings.admin_token }
+            );
+            // listData may be an array or object with instances array
+            const instanceList: any[] = Array.isArray(listData) ? listData : (listData?.instances || listData?.data || []);
+            const found = instanceList.find((i: any) =>
+              i.name === existingInst.instance_name || i.instanceName === existingInst.instance_name
+            );
+            if (found?.token) {
+              instanceToken = found.token;
+              console.log(`[whatsapp-connect] ✅ Recovered token for ${existingInst.instance_name}`);
+              await supabase
+                .from("whatsapp_instances")
+                .update({ token: instanceToken, status: "disconnected" })
+                .eq("id", instanceId);
+            }
+          } catch (listErr: any) {
+            console.log(`[whatsapp-connect] ⚠️ Failed to list instances: ${JSON.stringify(listErr?.data || listErr)}`);
+          }
+        }
+
+        if (!instanceToken) {
+          // Could not recover — delete from uazapi and re-create fresh
           console.log(`[whatsapp-connect] 📦 Re-creating instance for ${existingInst.instance_name}...`);
+          try {
+            await callUazapi(
+              baseUrl,
+              "/instance/delete",
+              "DELETE",
+              { name: "admintoken", value: settings.admin_token },
+              { name: existingInst.instance_name }
+            );
+          } catch (_) { /* may not exist, ignore */ }
+
           const createData = await callUazapi(
             baseUrl,
             "/instance/init",
@@ -235,7 +274,7 @@ Deno.serve(async (req) => {
             .eq("id", instanceId);
         }
 
-        // Connect
+        // Connect the instance
         try {
           const reqBody = await req.json().catch(() => ({}));
           const connectBody: Record<string, string> = {};
@@ -252,13 +291,14 @@ Deno.serve(async (req) => {
           return jsonResponse({ success: true, data: connectData });
         } catch (e: any) {
           if (e?.status === 401) {
+            // Token still invalid after recovery attempt — clear it so next call re-creates
             await supabase
               .from("whatsapp_instances")
               .update({ token: null, instance_id: null, status: "disconnected" })
               .eq("id", instanceId);
 
             return jsonResponse({
-              error: "Token inválido. Clique em Conectar novamente.",
+              error: "Token inválido. A instância será recriada na próxima tentativa.",
               needsRetry: true,
             }, 401);
           }

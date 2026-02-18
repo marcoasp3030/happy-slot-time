@@ -88,7 +88,7 @@ export default function WhatsAppInstanceCard({ instance, onDeleted, onUpdated }:
     }
   };
 
-  const startConnection = async () => {
+  const startConnection = async (retryCount = 0) => {
     setStatus('connecting');
     setError(null);
     setQrCode(null);
@@ -100,6 +100,14 @@ export default function WhatsAppInstanceCard({ instance, onDeleted, onUpdated }:
         { method: 'POST', body: {} }
       );
       if (fnError) throw fnError;
+
+      // If token was invalid, the backend recovers it — auto-retry once
+      if (data?.needsRetry && retryCount < 1) {
+        console.log('[WhatsApp] Token inválido, tentando novamente...');
+        await new Promise(r => setTimeout(r, 1500));
+        return startConnection(retryCount + 1);
+      }
+
       if (!data?.success) throw new Error(data?.error || 'Falha ao iniciar conexão');
 
       setStatus('polling');
@@ -334,7 +342,7 @@ export default function WhatsAppInstanceCard({ instance, onDeleted, onUpdated }:
               </ol>
             </div>
 
-            <Button variant="outline" size="sm" onClick={startConnection} className="w-full">
+            <Button variant="outline" size="sm" onClick={() => startConnection()} className="w-full">
               <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
               Gerar novo QR Code
             </Button>
@@ -347,7 +355,7 @@ export default function WhatsAppInstanceCard({ instance, onDeleted, onUpdated }:
               </div>
             )}
             <Button
-              onClick={startConnection}
+              onClick={() => startConnection()}
               disabled={status === 'connecting'}
               className="gradient-primary border-0 font-semibold w-full"
               size="sm"
