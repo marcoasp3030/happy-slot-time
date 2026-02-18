@@ -871,48 +871,6 @@ async function uploadBinaryToStorage(audioData: Uint8Array): Promise<string> {
   return urlData.publicUrl;
 }
 
-// ─── WhatsApp AES-256-CBC media decryption ───
-// WhatsApp encrypts media using HKDF key derivation + AES-256-CBC
-async function decryptWhatsAppMedia(
-  encryptedData: Uint8Array,
-  mediaKeyBase64: string,
-  mediaType: "image" | "document" | "audio" | "video",
-): Promise<Uint8Array> {
-  // Map media type to WhatsApp's media type string for HKDF info
-  const mediaTypeMap: Record<string, string> = {
-    image: "WhatsApp Image Keys",
-    document: "WhatsApp Document Keys",
-    audio: "WhatsApp Audio Keys",
-    video: "WhatsApp Video Keys",
-  };
-  const info = new TextEncoder().encode(mediaTypeMap[mediaType] || "WhatsApp Image Keys");
-
-  // Decode the base64 media key
-  const mediaKeyBytes = Uint8Array.from(atob(mediaKeyBase64), c => c.charCodeAt(0));
-
-  // HKDF-SHA256: extract + expand to 112 bytes
-  const hkdfKey = await crypto.subtle.importKey("raw", mediaKeyBytes, { name: "HKDF" }, false, ["deriveBits"]);
-  const derived = new Uint8Array(await crypto.subtle.deriveBits(
-    { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(32), info },
-    hkdfKey,
-    112 * 8,
-  ));
-
-  // derived[0..15] = IV, derived[16..47] = AES key, derived[48..79] = MAC key
-  const iv = derived.slice(0, 16);
-  const aesKey = derived.slice(16, 48);
-
-  // Import AES-CBC key
-  const cryptoKey = await crypto.subtle.importKey("raw", aesKey, { name: "AES-CBC" }, false, ["decrypt"]);
-
-  // The encrypted payload is: encrypted_data (all but last 10 bytes) + HMAC (last 10 bytes)
-  // Strip the 10-byte MAC suffix before decrypting
-  const encryptedPayload = encryptedData.slice(0, encryptedData.length - 10);
-
-  const decrypted = await crypto.subtle.decrypt({ name: "AES-CBC", iv }, cryptoKey, encryptedPayload);
-  return new Uint8Array(decrypted);
-}
-
 // ─── Analyze image or PDF using a vision model ───
 async function analyzeMedia(
   mediaUrl: string,
