@@ -94,6 +94,7 @@ Deno.serve(async (req) => {
 
     const companyId = profile.company_id;
 
+    // Fetch base whatsapp_settings (platform credentials)
     let { data: settings } = await supabase
       .from("whatsapp_settings")
       .select("*")
@@ -113,7 +114,6 @@ Deno.serve(async (req) => {
 
       if (platformDefaults?.base_url && platformDefaults?.admin_token) {
         if (!settings) {
-          // Create new settings row with platform defaults
           const { data: newSettings } = await supabase
             .from("whatsapp_settings")
             .insert({
@@ -126,7 +126,6 @@ Deno.serve(async (req) => {
             .single();
           settings = newSettings;
         } else {
-          // Update existing row with missing fields
           const updates: Record<string, string> = {};
           if (!settings.base_url) updates.base_url = platformDefaults.base_url;
           if (!settings.admin_token) updates.admin_token = platformDefaults.admin_token;
@@ -148,126 +147,256 @@ Deno.serve(async (req) => {
     const baseUrl = settings.base_url.replace(/\/$/, "");
     const url = new URL(req.url);
     const action = url.searchParams.get("action");
+    // instanceId param used for multi-instance operations
+    const instanceId = url.searchParams.get("instanceId");
 
-    console.log(`[whatsapp-connect] 🔧 Action: ${action}`);
-    console.log(`[whatsapp-connect]    Base URL: ${baseUrl}`);
-    console.log(`[whatsapp-connect]    instance_id: ${settings.instance_id || "(none)"}`);
-    console.log(`[whatsapp-connect]    Has token: ${!!settings.token}`);
-    console.log(`[whatsapp-connect]    Has admin_token: ${!!settings.admin_token}`);
+    console.log(`[whatsapp-connect] 🔧 Action: ${action}, instanceId: ${instanceId || "(none)"}`);
 
     // ============================================================
-    // ACTION: connect — Unified flow:
-    //   1. If no instance token, create instance first (POST /instance/init with admintoken)
-    //   2. Then connect (POST /instance/connect with instance token)
+    // ACTION: list-instances — list all instances for this company
     // ============================================================
-    if (action === "connect") {
-      let instanceToken = settings.token;
+    if (action === "list-instances") {
+      const { data: instances } = await supabase
+        .from("whatsapp_instances")
+        .select("*")
+        .eq("company_id", companyId)
+        .order("created_at", { ascending: true });
 
-      // Step 1: Create instance if no token exists
-      if (!instanceToken) {
-        if (!settings.admin_token) {
-          return jsonResponse({
-            error: "Admin Token não configurado. Configure-o nas credenciais antes de conectar.",
-          }, 400);
-        }
+      // Also get subscription limit
+      const { data: sub } = await supabase
+        .from("subscriptions")
+        .select("max_whatsapp_instances, plan_name, status")
+        .eq("company_id", companyId)
+        .single();
 
-        console.log(`[whatsapp-connect] 📦 No instance token — creating new instance...`);
+      return jsonResponse({
+        success: true,
+        instances: instances || [],
+        maxInstances: sub?.max_whatsapp_instances ?? 1,
+        planName: sub?.plan_name ?? null,
+        subscriptionStatus: sub?.status ?? "trial",
+      });
 
-        const instanceName = `instance-${companyId.substring(0, 8)}`;
-        const createData = await callUazapi(
-          baseUrl,
-          "/instance/init",
-          "POST",
-          { name: "admintoken", value: settings.admin_token },
-          { name: instanceName }
-        );
-
-        console.log(`[whatsapp-connect] ✅ Instance created:`, JSON.stringify(createData));
-
-        // Extract the new token
-        instanceToken = createData?.token;
-        const newInstanceId = createData?.instanceId || createData?.instance_id || createData?.name || instanceName;
-
-        if (!instanceToken) {
-          console.error(`[whatsapp-connect] ❌ No token returned from /instance/init`);
-          return jsonResponse({
-            error: "UAZAPI não retornou token ao criar a instância. Verifique o admin token.",
-            details: createData,
-          }, 500);
-        }
-
-        // Save token + instance_id to DB
-        console.log(`[whatsapp-connect] 💾 Saving new token and instance_id: ${newInstanceId}`);
-        await supabase
-          .from("whatsapp_settings")
-          .update({ token: instanceToken, instance_id: newInstanceId })
-          .eq("company_id", companyId);
-
-        await supabase.from("audit_logs").insert({
-          company_id: companyId,
-          user_id: userId,
-          user_email: userEmail,
-          action: "WhatsApp: Criou instância via UAZAPI",
-          category: "whatsapp",
-          details: { instanceName: newInstanceId, tokenPrefix: instanceToken.substring(0, 8) },
-        });
+    // ============================================================
+    // ACTION: connect — create/connect a specific instance
+    // ============================================================
+    } else if (action === "connect") {
+      if (!settings.admin_token) {
+        return jsonResponse({
+          error: "Admin Token não configurado. Configure-o nas credenciais antes de conectar.",
+        }, 400);
       }
 
-      // Step 2: Connect instance
-      console.log(`[whatsapp-connect] 🔗 Connecting instance with token ${instanceToken.substring(0, 8)}...`);
+      // Check subscription limit
+      const { data: sub } = await supabase
+        .from("subscriptions")
+        .select("max_whatsapp_instances")
+        .eq("company_id", companyId)
+        .single();
 
-      try {
-        const reqBody = await req.json().catch(() => ({}));
-        const connectBody: Record<string, string> = {};
-        if (reqBody.phone) {
-          connectBody.phone = reqBody.phone.replace(/\D/g, "");
+      const maxInstances = sub?.max_whatsapp_instances ?? 1;
+
+      // If instanceId provided, reconnect existing instance
+      if (instanceId) {
+        const { data: existingInst } = await supabase
+          .from("whatsapp_instances")
+          .select("*")
+          .eq("id", instanceId)
+          .eq("company_id", companyId)
+          .single();
+
+        if (!existingInst) {
+          return jsonResponse({ error: "Instância não encontrada." }, 404);
         }
+
+        let instanceToken = existingInst.token;
+
+        if (!instanceToken) {
+          // Re-create instance on uazapi
+          console.log(`[whatsapp-connect] 📦 Re-creating instance for ${existingInst.instance_name}...`);
+          const createData = await callUazapi(
+            baseUrl,
+            "/instance/init",
+            "POST",
+            { name: "admintoken", value: settings.admin_token },
+            { name: existingInst.instance_name }
+          );
+
+          instanceToken = createData?.token;
+          const newInstanceId = createData?.instanceId || createData?.instance_id || createData?.name || existingInst.instance_name;
+
+          if (!instanceToken) {
+            return jsonResponse({ error: "UAZAPI não retornou token ao criar a instância.", details: createData }, 500);
+          }
+
+          await supabase
+            .from("whatsapp_instances")
+            .update({ token: instanceToken, instance_id: newInstanceId, status: "disconnected" })
+            .eq("id", instanceId);
+        }
+
+        // Connect
+        try {
+          const reqBody = await req.json().catch(() => ({}));
+          const connectBody: Record<string, string> = {};
+          if (reqBody.phone) connectBody.phone = reqBody.phone.replace(/\D/g, "");
+
+          const connectData = await callUazapi(
+            baseUrl,
+            "/instance/connect",
+            "POST",
+            { name: "token", value: instanceToken },
+            connectBody
+          );
+
+          return jsonResponse({ success: true, data: connectData });
+        } catch (e: any) {
+          if (e?.status === 401) {
+            await supabase
+              .from("whatsapp_instances")
+              .update({ token: null, instance_id: null, status: "disconnected" })
+              .eq("id", instanceId);
+
+            return jsonResponse({
+              error: "Token inválido. Clique em Conectar novamente.",
+              needsRetry: true,
+            }, 401);
+          }
+          return jsonResponse({ error: `UAZAPI error ${e?.status || 500}`, details: e?.data || {} }, e?.status || 500);
+        }
+      }
+
+      // No instanceId — create a NEW instance (if limit allows)
+      const { count } = await supabase
+        .from("whatsapp_instances")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", companyId);
+
+      const currentCount = count ?? 0;
+
+      if (currentCount >= maxInstances) {
+        return jsonResponse({
+          error: `Limite do plano atingido. Seu plano permite ${maxInstances} número(s) de WhatsApp. Entre em contato para fazer upgrade.`,
+          limitReached: true,
+          maxInstances,
+          currentCount,
+        }, 403);
+      }
+
+      // Generate unique instance name
+      const instanceIndex = currentCount + 1;
+      const instanceName = `inst-${companyId.substring(0, 8)}-${instanceIndex}`;
+
+      console.log(`[whatsapp-connect] 📦 Creating new instance: ${instanceName} (${instanceIndex}/${maxInstances})`);
+
+      const reqBody = await req.json().catch(() => ({}));
+      const label = reqBody.label || `WhatsApp ${instanceIndex}`;
+
+      const createData = await callUazapi(
+        baseUrl,
+        "/instance/init",
+        "POST",
+        { name: "admintoken", value: settings.admin_token },
+        { name: instanceName }
+      );
+
+      const newToken = createData?.token;
+      const newInstanceId = createData?.instanceId || createData?.instance_id || createData?.name || instanceName;
+
+      if (!newToken) {
+        return jsonResponse({
+          error: "UAZAPI não retornou token ao criar a instância. Verifique o admin token.",
+          details: createData,
+        }, 500);
+      }
+
+      // Save new instance record
+      const { data: newInst, error: insertErr } = await supabase
+        .from("whatsapp_instances")
+        .insert({
+          company_id: companyId,
+          instance_name: instanceName,
+          instance_id: newInstanceId,
+          token: newToken,
+          label,
+          status: "disconnected",
+          is_primary: currentCount === 0,
+        })
+        .select("*")
+        .single();
+
+      if (insertErr || !newInst) {
+        return jsonResponse({ error: "Erro ao salvar instância no banco.", details: insertErr }, 500);
+      }
+
+      // Also update legacy whatsapp_settings if this is the first instance
+      if (currentCount === 0) {
+        await supabase
+          .from("whatsapp_settings")
+          .update({ token: newToken, instance_id: newInstanceId })
+          .eq("company_id", companyId);
+      }
+
+      await supabase.from("audit_logs").insert({
+        company_id: companyId,
+        user_id: userId,
+        user_email: userEmail,
+        action: `WhatsApp: Criou instância ${label}`,
+        category: "whatsapp",
+        details: { instanceName, instanceIndex },
+      });
+
+      // Now connect it
+      try {
+        const connectBody: Record<string, string> = {};
+        if (reqBody.phone) connectBody.phone = reqBody.phone.replace(/\D/g, "");
 
         const connectData = await callUazapi(
           baseUrl,
           "/instance/connect",
           "POST",
-          { name: "token", value: instanceToken },
+          { name: "token", value: newToken },
           connectBody
         );
 
-        await supabase.from("audit_logs").insert({
-          company_id: companyId,
-          user_id: userId,
-          user_email: userEmail,
-          action: "WhatsApp: Iniciou conexão via QR code",
-          category: "whatsapp",
-        });
-
-        return jsonResponse({ success: true, data: connectData });
+        return jsonResponse({ success: true, data: connectData, instanceDbId: newInst.id, newInstance: true });
       } catch (e: any) {
-        console.error(`[whatsapp-connect] ❌ Connect failed:`, JSON.stringify(e?.data || e));
-
-        // If 401 on connect, the token is invalid — clear it so next attempt creates a new instance
-        if (e?.status === 401) {
-          console.log(`[whatsapp-connect] 🔄 Token invalid, clearing stored token for next attempt...`);
-          await supabase
-            .from("whatsapp_settings")
-            .update({ token: null, instance_id: null })
-            .eq("company_id", companyId);
-
-          return jsonResponse({
-            error: "Token da instância inválido. A instância foi removida. Clique em Conectar novamente para criar uma nova.",
-            needsRetry: true,
-          }, 401);
-        }
-
-        return jsonResponse(
-          { error: `UAZAPI error ${e?.status || 500}`, details: e?.data || {} },
-          e?.status || 500
-        );
+        return jsonResponse({ error: `UAZAPI error ${e?.status || 500}`, details: e?.data || {} }, e?.status || 500);
       }
 
     // ============================================================
-    // ACTION: status — Check instance status via GET /instance/status
+    // ACTION: status — Check instance status
     // ============================================================
     } else if (action === "status") {
-      if (!settings.token) {
+      // Get specific instance token
+      let instanceToken: string | null = null;
+      let instanceDbId: string | null = instanceId;
+
+      if (instanceId) {
+        const { data: inst } = await supabase
+          .from("whatsapp_instances")
+          .select("*")
+          .eq("id", instanceId)
+          .eq("company_id", companyId)
+          .single();
+        instanceToken = inst?.token ?? null;
+      } else {
+        // Fallback to legacy settings token (primary instance)
+        instanceToken = settings.token ?? null;
+        // Also try first instance
+        if (!instanceToken) {
+          const { data: firstInst } = await supabase
+            .from("whatsapp_instances")
+            .select("*")
+            .eq("company_id", companyId)
+            .eq("is_primary", true)
+            .single();
+          instanceToken = firstInst?.token ?? null;
+          instanceDbId = firstInst?.id ?? null;
+        }
+      }
+
+      if (!instanceToken) {
         return jsonResponse({ error: "Nenhuma instância configurada.", needsCreate: true }, 400);
       }
 
@@ -276,96 +405,100 @@ Deno.serve(async (req) => {
           baseUrl,
           "/instance/status",
           "GET",
-          { name: "token", value: settings.token }
+          { name: "token", value: instanceToken }
         );
 
-        // Auto-configure webhook when instance becomes connected
         const instanceStatus = data?.instance?.status || data?.status;
         const isConnected = instanceStatus === "connected" || data?.instance?.connected === true || data?.connected === true;
 
         if (isConnected) {
+          const phoneNumber = data?.instance?.phone || data?.instance?.me?.id || null;
+
+          // Update instance status in DB
+          if (instanceDbId) {
+            await supabase
+              .from("whatsapp_instances")
+              .update({ status: "connected", phone_number: phoneNumber })
+              .eq("id", instanceDbId);
+          }
+
           try {
             const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-            // Use wa-webhook proxy to avoid UAZAPI URL-encoding query params as %3F
             const webhookUrl = `${supabaseUrl}/functions/v1/wa-webhook/${companyId}`;
 
-            console.log(`[whatsapp-connect] 🔗 Instance connected! Auto-configuring webhook: ${webhookUrl}`);
+            console.log(`[whatsapp-connect] 🔗 Auto-configuring webhook: ${webhookUrl}`);
 
             await callUazapi(
               baseUrl,
               "/webhook",
               "POST",
-              { name: "token", value: settings.token },
-              {
-                url: webhookUrl,
-                enabled: true,
-                events: ["Message"],
-              }
+              { name: "token", value: instanceToken },
+              { url: webhookUrl, enabled: true, events: ["Message"] }
             );
 
-            console.log(`[whatsapp-connect] ✅ Webhook configured automatically`);
-
-            // Auto-activate WhatsApp settings when instance is connected
             await supabase
               .from("whatsapp_settings")
               .update({ active: true })
               .eq("company_id", companyId);
-            console.log(`[whatsapp-connect] ✅ WhatsApp settings activated automatically`);
 
-            // Set presence to available (online) via UAZAPI /send/presence
             try {
               await callUazapi(
                 baseUrl,
                 "/send/presence",
                 "POST",
-                { name: "token", value: settings.token },
+                { name: "token", value: instanceToken },
                 { phone: "", presence: "available" }
               );
-              console.log(`[whatsapp-connect] ✅ Presence set to available (online)`);
-            } catch (presErr: any) {
-              console.log(`[whatsapp-connect] ⚠️ Could not set presence via /send/presence:`, presErr?.status);
-            }
+            } catch (_) { /* non-fatal */ }
 
-            await supabase.from("audit_logs").insert({
-              company_id: companyId,
-              user_id: userId,
-              user_email: userEmail,
-              action: "WhatsApp: Webhook configurado automaticamente",
-              category: "whatsapp",
-              details: { webhookUrl },
-            });
           } catch (webhookErr: any) {
-            // Non-fatal: log but don't fail the status check
-            console.error(`[whatsapp-connect] ⚠️ Failed to auto-configure webhook:`, JSON.stringify(webhookErr?.data || webhookErr));
+            console.error(`[whatsapp-connect] ⚠️ Webhook setup failed:`, JSON.stringify(webhookErr?.data || webhookErr));
+          }
+        } else {
+          // Update status
+          if (instanceDbId) {
+            const qrcode = data?.instance?.qrcode || null;
+            await supabase
+              .from("whatsapp_instances")
+              .update({ status: "connecting" })
+              .eq("id", instanceDbId);
           }
         }
 
         return jsonResponse({ success: true, data });
       } catch (e: any) {
-        // If 401, token is invalid
         if (e?.status === 401) {
-          console.log(`[whatsapp-connect] 🔄 Status check: token invalid, clearing...`);
-          await supabase
-            .from("whatsapp_settings")
-            .update({ token: null, instance_id: null })
-            .eq("company_id", companyId);
-
-          return jsonResponse({
-            error: "Token inválido. Instância removida. Conecte novamente.",
-            needsCreate: true,
-          }, 400);
+          if (instanceDbId) {
+            await supabase
+              .from("whatsapp_instances")
+              .update({ token: null, instance_id: null, status: "disconnected" })
+              .eq("id", instanceDbId);
+          }
+          return jsonResponse({ error: "Token inválido. Conecte novamente.", needsCreate: true }, 400);
         }
-        return jsonResponse(
-          { error: `UAZAPI error ${e?.status || 500}`, details: e?.data || {} },
-          e?.status || 500
-        );
+        return jsonResponse({ error: `UAZAPI error ${e?.status || 500}`, details: e?.data || {} }, e?.status || 500);
       }
 
     // ============================================================
-    // ACTION: disconnect — Disconnect instance via POST /instance/disconnect
+    // ACTION: disconnect — Disconnect specific instance
     // ============================================================
     } else if (action === "disconnect") {
-      if (!settings.token) {
+      let instanceToken: string | null = null;
+      let instanceDbId: string | null = instanceId;
+
+      if (instanceId) {
+        const { data: inst } = await supabase
+          .from("whatsapp_instances")
+          .select("*")
+          .eq("id", instanceId)
+          .eq("company_id", companyId)
+          .single();
+        instanceToken = inst?.token ?? null;
+      } else {
+        instanceToken = settings.token ?? null;
+      }
+
+      if (!instanceToken) {
         return jsonResponse({ error: "Token da instância não configurado." }, 400);
       }
 
@@ -374,142 +507,145 @@ Deno.serve(async (req) => {
           baseUrl,
           "/instance/disconnect",
           "POST",
-          { name: "token", value: settings.token }
+          { name: "token", value: instanceToken }
         );
 
-        await supabase.from("audit_logs").insert({
-          company_id: companyId,
-          user_id: userId,
-          user_email: userEmail,
-          action: "WhatsApp: Desconectou instância",
-          category: "whatsapp",
-        });
+        if (instanceDbId) {
+          await supabase
+            .from("whatsapp_instances")
+            .update({ status: "disconnected", phone_number: null })
+            .eq("id", instanceDbId);
+        }
 
         return jsonResponse({ success: true, data });
       } catch (e: any) {
-        return jsonResponse(
-          { error: `UAZAPI error ${e?.status || 500}`, details: e?.data || {} },
-          e?.status || 500
-        );
+        return jsonResponse({ error: `UAZAPI error ${e?.status || 500}`, details: e?.data || {} }, e?.status || 500);
       }
 
     // ============================================================
-    // ACTION: check-webhook — Check current webhook config via GET /webhook
+    // ACTION: delete-instance — Delete an instance completely
     // ============================================================
-    } else if (action === "check-webhook") {
-      if (!settings.token) {
-        return jsonResponse({ error: "Token não configurado." }, 400);
-      }
-      try {
-        const data = await callUazapi(
-          baseUrl,
-          "/webhook",
-          "GET",
-          { name: "token", value: settings.token }
-        );
-        return jsonResponse({ success: true, webhook: data });
-      } catch (e: any) {
-        return jsonResponse({ error: `UAZAPI error`, details: e?.data || {} }, e?.status || 500);
+    } else if (action === "delete-instance") {
+      if (!instanceId) {
+        return jsonResponse({ error: "instanceId é obrigatório." }, 400);
       }
 
+      const { data: inst } = await supabase
+        .from("whatsapp_instances")
+        .select("*")
+        .eq("id", instanceId)
+        .eq("company_id", companyId)
+        .single();
+
+      if (!inst) {
+        return jsonResponse({ error: "Instância não encontrada." }, 404);
+      }
+
+      // Try to disconnect first, then delete from uazapi if possible
+      if (inst.token) {
+        try {
+          await callUazapi(baseUrl, "/instance/disconnect", "POST", { name: "token", value: inst.token });
+        } catch (_) { /* non-fatal */ }
+
+        // Try to delete instance from uazapi via admin token
+        if (settings.admin_token && inst.instance_id) {
+          try {
+            await callUazapi(
+              baseUrl,
+              `/instance/${inst.instance_name}`,
+              "DELETE",
+              { name: "admintoken", value: settings.admin_token }
+            );
+          } catch (_) { /* non-fatal */ }
+        }
+      }
+
+      // Delete from DB
+      await supabase.from("whatsapp_instances").delete().eq("id", instanceId);
+
+      await supabase.from("audit_logs").insert({
+        company_id: companyId,
+        user_id: userId,
+        user_email: userEmail,
+        action: `WhatsApp: Removeu instância ${inst.label || inst.instance_name}`,
+        category: "whatsapp",
+      });
+
+      return jsonResponse({ success: true });
+
     // ============================================================
-    // ACTION: set-webhook — Force reconfigure BOTH instance AND global webhooks
+    // ACTION: update-label — Update instance label
+    // ============================================================
+    } else if (action === "update-label") {
+      if (!instanceId) return jsonResponse({ error: "instanceId é obrigatório." }, 400);
+
+      const reqBody = await req.json().catch(() => ({}));
+      const newLabel = reqBody.label;
+      if (!newLabel) return jsonResponse({ error: "label é obrigatório." }, 400);
+
+      await supabase
+        .from("whatsapp_instances")
+        .update({ label: newLabel })
+        .eq("id", instanceId)
+        .eq("company_id", companyId);
+
+      return jsonResponse({ success: true });
+
+    // ============================================================
+    // ACTION: set-webhook (legacy / manual trigger)
     // ============================================================
     } else if (action === "set-webhook") {
-      if (!settings.token) {
+      let instanceToken: string | null = null;
+
+      if (instanceId) {
+        const { data: inst } = await supabase
+          .from("whatsapp_instances")
+          .select("token")
+          .eq("id", instanceId)
+          .eq("company_id", companyId)
+          .single();
+        instanceToken = inst?.token ?? null;
+      } else {
+        instanceToken = settings.token ?? null;
+      }
+
+      if (!instanceToken) {
         return jsonResponse({ error: "Token não configurado." }, 400);
       }
+
       try {
         const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
         const webhookUrl = `${supabaseUrl}/functions/v1/wa-webhook/${companyId}`;
-        console.log(`[whatsapp-connect] 🔗 Setting instance webhook to: ${webhookUrl}`);
 
-        // 1. Set INSTANCE webhook (per-instance)
         const data = await callUazapi(
           baseUrl,
           "/webhook",
           "POST",
-          { name: "token", value: settings.token },
+          { name: "token", value: instanceToken },
           { url: webhookUrl, enabled: true, events: ["Message"] }
         );
-        console.log(`[whatsapp-connect] ✅ Instance webhook set`);
 
-        // 2. Set GLOBAL webhook via admin token (overrides any old global webhook)
-        let globalResult: any = null;
+        // Try global webhook via admin token
         if (settings.admin_token) {
-          // Try multiple possible admin webhook endpoints
-          const globalWebhookEndpoints = [
-            "/admin/setGlobalWebhook",
-            "/admin/globalWebhook", 
-            "/admin/webhook",
-          ];
-          
-          for (const endpoint of globalWebhookEndpoints) {
+          for (const endpoint of ["/admin/setGlobalWebhook", "/admin/globalWebhook", "/admin/webhook"]) {
             try {
-              console.log(`[whatsapp-connect] 🌐 Trying global webhook via ${endpoint}...`);
-              globalResult = await callUazapi(
-                baseUrl,
-                endpoint,
-                "POST",
-                { name: "admintoken", value: settings.admin_token },
-                { url: webhookUrl, enabled: true, events: ["Message"] }
-              );
-              console.log(`[whatsapp-connect] ✅ Global webhook set via ${endpoint}`);
-              break; // Success, stop trying
-            } catch (gErr: any) {
-              console.log(`[whatsapp-connect] ⚠️ ${endpoint} failed: ${gErr?.status}`);
-            }
-          }
-
-          // Also try to GET the current global webhook to see what's configured
-          try {
-            console.log(`[whatsapp-connect] 🔍 Checking current global webhook...`);
-            const currentGlobal = await callUazapi(
-              baseUrl,
-              "/admin/listGlobalWebhook",
-              "GET",
-              { name: "admintoken", value: settings.admin_token }
-            );
-            console.log(`[whatsapp-connect] 📋 Current global webhook:`, JSON.stringify(currentGlobal));
-          } catch (checkErr: any) {
-            // Try alternative endpoint
-            try {
-              const currentGlobal2 = await callUazapi(
-                baseUrl,
-                "/admin/globalWebhook",
-                "GET",
-                { name: "admintoken", value: settings.admin_token }
-              );
-              console.log(`[whatsapp-connect] 📋 Current global webhook (alt):`, JSON.stringify(currentGlobal2));
-            } catch {
-              console.log(`[whatsapp-connect] ⚠️ Could not read global webhook config`);
-            }
+              await callUazapi(baseUrl, endpoint, "POST", { name: "admintoken", value: settings.admin_token }, { url: webhookUrl, enabled: true, events: ["Message"] });
+              break;
+            } catch (_) { /* try next */ }
           }
         }
 
-        await supabase.from("audit_logs").insert({
-          company_id: companyId,
-          user_id: userId,
-          user_email: userEmail,
-          action: "WhatsApp: Webhook reconfigurado (instância + global)",
-          category: "whatsapp",
-          details: { webhookUrl, globalResult },
-        });
-
-        return jsonResponse({ success: true, webhookUrl, data, globalResult });
+        return jsonResponse({ success: true, data });
       } catch (e: any) {
         return jsonResponse({ error: `UAZAPI error`, details: e?.data || {} }, e?.status || 500);
       }
 
     } else {
-      return jsonResponse(
-        { error: "Invalid action" },
-        400
-      );
+      return jsonResponse({ error: `Unknown action: ${action}` }, 400);
     }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error("[whatsapp-connect] 💥 Unhandled error:", msg);
-    return jsonResponse({ error: msg }, 500);
+
+  } catch (err: any) {
+    console.error("[whatsapp-connect] ❌ Unhandled error:", err);
+    return jsonResponse({ error: err.message || "Internal error" }, 500);
   }
 });

@@ -9,10 +9,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
-import { MessageSquare, Send, Settings, Wifi, Bell, Plus, Trash2, MousePointerClick } from 'lucide-react';
+import { MessageSquare, Send, Settings, Bell, Plus, Trash2, MousePointerClick } from 'lucide-react';
 import { toast } from 'sonner';
-import WhatsAppConnectionCard from '@/components/WhatsAppConnectionCard';
+import WhatsAppMultiInstanceManager from '@/components/WhatsAppMultiInstanceManager';
 
 interface TemplateButton {
   id: string;
@@ -23,8 +22,6 @@ export default function WhatsAppSettings() {
   const { companyId } = useAuth();
   const { isSuperAdmin } = useRole();
   const [settings, setSettings] = useState({ base_url: '', instance_id: '', token: '', admin_token: '', from_number: '', active: false } as any);
-  const [dbHasCredentials, setDbHasCredentials] = useState(false);
-  const [dbHasAdminToken, setDbHasAdminToken] = useState(false);
   const [templates, setTemplates] = useState<any[]>([]);
   const [rules, setRules] = useState<any[]>([]);
   const [testPhone, setTestPhone] = useState('');
@@ -47,27 +44,9 @@ export default function WhatsAppSettings() {
         from_number: s.from_number || '',
         active: s.active ?? false,
       });
-      setDbHasCredentials(!!s.base_url);
-      setDbHasAdminToken(!!s.admin_token);
     } else {
       // No settings row for this company yet — auto-create with empty defaults
-      // The whatsapp-connect edge function will use platform defaults
-      const { error: insertErr } = await supabase.from('whatsapp_settings').insert({
-        company_id: companyId,
-        active: false,
-      });
-      if (!insertErr) {
-        // Refetch to get the newly created row
-        const { data: newSettings } = await supabase
-          .from('whatsapp_settings')
-          .select('*')
-          .eq('company_id', companyId)
-          .single();
-        if (newSettings) {
-          setDbHasCredentials(!!newSettings.base_url);
-          setDbHasAdminToken(!!newSettings.admin_token);
-        }
-      }
+      await supabase.from('whatsapp_settings').insert({ company_id: companyId, active: false });
     }
     const tpls = templatesRes.data || [];
     setTemplates(tpls);
@@ -194,13 +173,8 @@ export default function WhatsAppSettings() {
           <p className="section-subtitle">Configure a integração com WhatsApp para envio de notificações automáticas</p>
         </div>
 
-        {/* Connection Card - QR Code flow */}
-        <WhatsAppConnectionCard
-          hasCredentials={dbHasCredentials}
-          hasInstanceToken={!!settings.token}
-          hasAdminToken={dbHasAdminToken}
-          onInstanceCreated={fetchData}
-        />
+        {/* Multi-instance WhatsApp manager */}
+        <WhatsAppMultiInstanceManager />
 
         {/* Credentials - only visible for super_admin */}
         {isSuperAdmin && (
