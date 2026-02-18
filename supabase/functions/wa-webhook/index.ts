@@ -248,6 +248,40 @@ function detectAudioMessage(body: any): { isAudio: boolean; mediaUrl: string | n
   return { isAudio: false, mediaUrl: null, mediaKey: null, messageId: null, whatsappMsgId: null, chatId: null };
 }
 
+function detectMediaMessage(body: any): { isMedia: boolean; mediaType: "image" | "document" | null; mediaUrl: string | null; mediaKey: string | null; messageId: string | null; mimeType: string | null; caption: string | null } {
+  const msg = body.message;
+  if (msg && typeof msg === "object") {
+    const msgType = msg.messageType || msg.type || "";
+
+    // Image message
+    const isImage = msgType === "imageMessage" || msgType === "ImageMessage" || !!msg.imageMessage;
+    if (isImage) {
+      const imgMsg = msg.imageMessage || msg;
+      const mediaUrl = msg.content?.URL || msg.content?.url || imgMsg.url || imgMsg.mediaUrl || msg.mediaUrl || null;
+      const mediaKey = msg.content?.mediaKey || imgMsg.mediaKey || null;
+      const messageId = msg.messageid || msg.messageId || null;
+      const mimeType = imgMsg.mimetype || "image/jpeg";
+      const caption = imgMsg.caption || msg.caption || null;
+      log("🖼️ Image detected! mediaUrl:", mediaUrl ? "yes" : "no", "mimeType:", mimeType, "caption:", caption);
+      return { isMedia: true, mediaType: "image", mediaUrl: typeof mediaUrl === "string" ? mediaUrl : null, mediaKey: typeof mediaKey === "string" ? mediaKey : null, messageId, mimeType, caption };
+    }
+
+    // Document (PDF, etc.) message
+    const isDocument = msgType === "documentMessage" || msgType === "DocumentMessage" || !!msg.documentMessage;
+    if (isDocument) {
+      const docMsg = msg.documentMessage || msg;
+      const mediaUrl = msg.content?.URL || msg.content?.url || docMsg.url || docMsg.mediaUrl || msg.mediaUrl || null;
+      const mediaKey = msg.content?.mediaKey || docMsg.mediaKey || null;
+      const messageId = msg.messageid || msg.messageId || null;
+      const mimeType = docMsg.mimetype || "application/pdf";
+      const caption = docMsg.caption || docMsg.fileName || msg.caption || null;
+      log("📄 Document detected! mediaUrl:", mediaUrl ? "yes" : "no", "mimeType:", mimeType, "caption:", caption);
+      return { isMedia: true, mediaType: "document", mediaUrl: typeof mediaUrl === "string" ? mediaUrl : null, mediaKey: typeof mediaKey === "string" ? mediaKey : null, messageId, mimeType, caption };
+    }
+  }
+  return { isMedia: false, mediaType: null, mediaUrl: null, mediaKey: null, messageId: null, mimeType: null, caption: null };
+}
+
 function isGroupMessage(body: any): boolean {
   const msg = body.message;
   if (msg && typeof msg === "object") {
@@ -581,12 +615,14 @@ Deno.serve(async (req) => {
 
     // Check if this is an audio message
     const audioInfo = detectAudioMessage(body);
-    
-    if (!phone || (!msg && !audioInfo.isAudio)) {
+    // Check if this is an image or document message
+    const mediaInfo = detectMediaMessage(body);
+
+    if (!phone || (!msg && !audioInfo.isAudio && !mediaInfo.isMedia)) {
       log("⚠️ Could not extract phone/msg. Full body keys:", JSON.stringify(Object.keys(body)));
       if (body.chat) log("⚠️ chat keys:", Object.keys(body.chat).join(","));
       return new Response(
-        JSON.stringify({ ok: true, skipped: "no_msg", phone, hasMsg: !!msg, isAudio: audioInfo.isAudio }),
+        JSON.stringify({ ok: true, skipped: "no_msg", phone, hasMsg: !!msg, isAudio: audioInfo.isAudio, isMedia: mediaInfo.isMedia }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -595,13 +631,13 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const forwardUrl = `${supabaseUrl}/functions/v1/send-whatsapp`;
-    log("🚀 Forwarding to:", forwardUrl, audioInfo.isAudio ? "(AUDIO)" : "(TEXT)");
+    log("🚀 Forwarding to:", forwardUrl, audioInfo.isAudio ? "(AUDIO)" : mediaInfo.isMedia ? `(MEDIA:${mediaInfo.mediaType})` : "(TEXT)");
 
     const forwardBody: any = {
       action: "agent-process",
       company_id: companyId,
       phone,
-      message: msg || "[áudio]",
+      message: msg || (audioInfo.isAudio ? "[áudio]" : mediaInfo.isMedia ? `[${mediaInfo.mediaType === "image" ? "imagem" : "documento"}]` : ""),
       // Pass the UAZAPI message ID for delivery tracking and reactions
       wa_message_id: body.message?.messageid || body.message?.id || null,
     };
@@ -621,6 +657,16 @@ Deno.serve(async (req) => {
       forwardBody.audio_message_id = audioInfo.messageId;
       forwardBody.audio_wa_msg_id = audioInfo.whatsappMsgId;
       forwardBody.audio_chat_id = audioInfo.chatId;
+    }
+
+    if (mediaInfo.isMedia) {
+      forwardBody.is_media = true;
+      forwardBody.media_type = mediaInfo.mediaType;
+      forwardBody.media_url = mediaInfo.mediaUrl;
+      forwardBody.media_key = mediaInfo.mediaKey;
+      forwardBody.media_message_id = mediaInfo.messageId;
+      forwardBody.media_mime_type = mediaInfo.mimeType;
+      forwardBody.media_caption = mediaInfo.caption;
     }
 
     const res = await fetch(forwardUrl, {

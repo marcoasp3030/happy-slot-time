@@ -1507,6 +1507,7 @@ export type Database = {
           ai_model: string | null
           auto_react_enabled: boolean | null
           can_handle_anamnesis: boolean | null
+          can_read_media: boolean | null
           can_send_audio: boolean | null
           can_send_files: boolean | null
           can_send_images: boolean | null
@@ -1539,6 +1540,7 @@ export type Database = {
           id: string
           ignore_groups: boolean | null
           max_reschedule_suggestions: number | null
+          media_vision_model: string | null
           openai_api_key: string | null
           payment_link_url: string | null
           pix_instructions: string | null
@@ -1560,6 +1562,7 @@ export type Database = {
           ai_model?: string | null
           auto_react_enabled?: boolean | null
           can_handle_anamnesis?: boolean | null
+          can_read_media?: boolean | null
           can_send_audio?: boolean | null
           can_send_files?: boolean | null
           can_send_images?: boolean | null
@@ -1592,6 +1595,7 @@ export type Database = {
           id?: string
           ignore_groups?: boolean | null
           max_reschedule_suggestions?: number | null
+          media_vision_model?: string | null
           openai_api_key?: string | null
           payment_link_url?: string | null
           pix_instructions?: string | null
@@ -1613,6 +1617,7 @@ export type Database = {
           ai_model?: string | null
           auto_react_enabled?: boolean | null
           can_handle_anamnesis?: boolean | null
+          can_read_media?: boolean | null
           can_send_audio?: boolean | null
           can_send_files?: boolean | null
           can_send_images?: boolean | null
@@ -1645,6 +1650,7 @@ export type Database = {
           id?: string
           ignore_groups?: boolean | null
           max_reschedule_suggestions?: number | null
+          media_vision_model?: string | null
           openai_api_key?: string | null
           payment_link_url?: string | null
           pix_instructions?: string | null
