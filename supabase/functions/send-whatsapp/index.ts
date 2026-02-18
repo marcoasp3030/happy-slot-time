@@ -294,7 +294,7 @@ Deno.serve(async (req) => {
 
     // ─── Agent processing route (internal call) ───
     if (body.action === "agent-process") {
-      log("🔵 agent-process route, is_audio:", body.is_audio, "is_media:", body.is_media, "media_type:", body.media_type, "button_response:", body.button_response_id || "none", "wa_message_id:", body.wa_message_id || "none");
+      log("🔵 agent-process route, is_audio:", body.is_audio, "is_media:", body.is_media, "media_type:", body.media_type, "button_response:", body.button_response_id || "none", "wa_message_id:", body.wa_message_id || "none", "instance_id:", body.instance_id || "none");
       
       // If this is a button/list response, enrich the message with context
       let agentMessage = body.message;
@@ -321,6 +321,7 @@ Deno.serve(async (req) => {
       }, {
         skipIncomingSave: body.skip_incoming_save || false,
         existingConvId: body.existing_conv_id || undefined,
+        instanceId: body.instance_id || null,
       });
       return new Response(JSON.stringify(result), { headers: jsonH, status: result.error ? 500 : 200 });
     }
@@ -1128,18 +1129,49 @@ async function handleAgent(
   phone: string,
   msg: string,
   audioParams: AudioParams = { is_audio: false, audio_media_url: null, audio_media_key: null, audio_message_id: null },
-  agentOptions: { skipIncomingSave?: boolean; existingConvId?: string; _lockMsgId?: string } = {}
+  agentOptions: { skipIncomingSave?: boolean; existingConvId?: string; _lockMsgId?: string; instanceId?: string | null } = {}
 ): Promise<any> {
-  log("🤖 handleAgent START cid:", cid, "phone:", phone, "msg:", msg.substring(0, 100), "is_audio:", audioParams.is_audio);
+  log("🤖 handleAgent START cid:", cid, "phone:", phone, "msg:", msg.substring(0, 100), "is_audio:", audioParams.is_audio, "instanceId:", agentOptions.instanceId || "none");
 
   if (!cid || !phone || !msg) {
     log("🤖 ❌ Missing fields");
     return { error: "missing fields" };
   }
 
-  // Check agent settings
+  // Check agent settings — prefer instance-specific settings, fall back to company default (null instance_id)
   log("🤖 Fetching agent settings...");
-  const { data: ag, error: agErr } = await sb.from("whatsapp_agent_settings").select("*").eq("company_id", cid).single();
+  let ag: any = null;
+  let agErr: any = null;
+
+  // Try instance-specific settings first
+  if (agentOptions.instanceId) {
+    const { data: instAg, error: instErr } = await sb
+      .from("whatsapp_agent_settings")
+      .select("*")
+      .eq("company_id", cid)
+      .eq("instance_id", agentOptions.instanceId)
+      .maybeSingle();
+    if (instAg) {
+      ag = instAg;
+      log("🤖 Using instance-specific agent settings for instance:", agentOptions.instanceId);
+    } else {
+      agErr = instErr;
+      log("🤖 No instance-specific settings found, falling back to company default");
+    }
+  }
+
+  // Fall back to company-level default (instance_id IS NULL)
+  if (!ag) {
+    const { data: compAg, error: compErr } = await sb
+      .from("whatsapp_agent_settings")
+      .select("*")
+      .eq("company_id", cid)
+      .is("instance_id", null)
+      .maybeSingle();
+    ag = compAg;
+    agErr = compErr;
+  }
+
   log("🤖 Agent settings:", ag ? `enabled=${ag.enabled}` : "NOT FOUND", "error:", agErr?.message);
   if (!ag?.enabled) {
     log("🤖 Agent is DISABLED, skipping");

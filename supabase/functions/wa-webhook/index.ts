@@ -398,11 +398,13 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ── Resolve correct company_id from UAZAPI instanceName/token ──
+    // ── Resolve correct company_id and instance_id from UAZAPI instanceName/token ──
     // The global webhook may route all messages to a single URL, but the payload
     // contains the instanceName which maps to the actual owning company.
     const payloadInstanceName = body.instanceName || body.instance_name || null;
     const payloadToken = body.token || null;
+    let resolvedInstanceId: string | null = null; // NEW: per-instance ID for agent settings lookup
+
     if (payloadInstanceName || payloadToken) {
       try {
         const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -412,27 +414,51 @@ Deno.serve(async (req) => {
         
         let resolvedCompanyId: string | null = null;
         
-        // Try by instance_id first (most reliable)
+        // Try by instance_name in whatsapp_instances table (most reliable for multi-instance)
         if (payloadInstanceName) {
+          const { data: instRow } = await sb.from("whatsapp_instances")
+            .select("company_id, id")
+            .eq("instance_name", payloadInstanceName)
+            .maybeSingle();
+          if (instRow?.company_id) {
+            resolvedCompanyId = instRow.company_id;
+            resolvedInstanceId = instRow.id; // capture the instance DB id
+          }
+        }
+        
+        // Fallback: try by token in whatsapp_instances
+        if (!resolvedCompanyId && payloadToken) {
+          const { data: instRow } = await sb.from("whatsapp_instances")
+            .select("company_id, id")
+            .eq("token", payloadToken)
+            .maybeSingle();
+          if (instRow?.company_id) {
+            resolvedCompanyId = instRow.company_id;
+            resolvedInstanceId = instRow.id;
+          }
+        }
+        
+        // Final fallback: old whatsapp_settings table
+        if (!resolvedCompanyId && payloadInstanceName) {
           const { data } = await sb.from("whatsapp_settings")
             .select("company_id")
             .eq("instance_id", payloadInstanceName)
-            .single();
+            .maybeSingle();
           if (data?.company_id) resolvedCompanyId = data.company_id;
         }
-        
-        // Fallback: try by token
         if (!resolvedCompanyId && payloadToken) {
           const { data } = await sb.from("whatsapp_settings")
             .select("company_id")
             .eq("token", payloadToken)
-            .single();
+            .maybeSingle();
           if (data?.company_id) resolvedCompanyId = data.company_id;
         }
         
         if (resolvedCompanyId && resolvedCompanyId !== companyId) {
-          log("🔄 Company ID resolved from instance:", payloadInstanceName, "URL:", companyId, "→ Actual:", resolvedCompanyId);
+          log("🔄 Company ID resolved from instance:", payloadInstanceName, "URL:", companyId, "→ Actual:", resolvedCompanyId, "instance_id:", resolvedInstanceId);
           companyId = resolvedCompanyId;
+        } else if (resolvedInstanceId) {
+          log("🔄 Instance ID resolved:", resolvedInstanceId, "for company:", companyId);
         }
       } catch (resolveErr) {
         log("⚠️ Could not resolve company from instance:", resolveErr);
@@ -588,18 +614,21 @@ Deno.serve(async (req) => {
 
     // ── Check if message is from a group and if we should ignore it ──
     if (isGroupMessage(body)) {
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
-      const sb = createClient(supabaseUrl, serviceKey);
+      const { createClient: createClientGrp } = await import("https://esm.sh/@supabase/supabase-js@2");
+      const sbGrp = createClientGrp(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
       
-      const { data: agentSettings } = await sb
-        .from("whatsapp_agent_settings")
-        .select("ignore_groups")
-        .eq("company_id", companyId)
-        .single();
+      // Look up instance-specific settings first, then company default
+      let agentSettingsData: any = null;
+      if (resolvedInstanceId) {
+        const { data } = await sbGrp.from("whatsapp_agent_settings").select("ignore_groups").eq("company_id", companyId).eq("instance_id", resolvedInstanceId).maybeSingle();
+        agentSettingsData = data;
+      }
+      if (!agentSettingsData) {
+        const { data } = await sbGrp.from("whatsapp_agent_settings").select("ignore_groups").eq("company_id", companyId).is("instance_id", null).maybeSingle();
+        agentSettingsData = data;
+      }
       
-      if (agentSettings?.ignore_groups !== false) {
+      if (agentSettingsData?.ignore_groups !== false) {
         log("👥 Skipping group message (ignore_groups enabled)");
         return new Response(
           JSON.stringify({ ok: true, skipped: "group_message" }),
@@ -628,25 +657,20 @@ Deno.serve(async (req) => {
     }
 
     // ── Extract the unique WhatsApp message ID from the payload ──
-    // This is the canonical ID assigned by WhatsApp/UAZAPI to each message.
-    // It is used as the primary key for deduplication across the entire pipeline.
     const waMessageId: string | null =
-      body.message?.messageid ||   // UAZAPI hex internal ID (most reliable)
-      body.message?.id ||           // UAZAPI wa_message_id string
-      body.key?.id ||               // raw WhatsApp key
+      body.message?.messageid ||
+      body.message?.id ||
+      body.key?.id ||
       body.data?.key?.id ||
       body.data?.messageId ||
       null;
 
     log("📩 wa_message_id:", waMessageId);
 
-    // ── DEDUPLICATION GATE — check at the very entry point of the pipeline ──
-    // If we already have this wa_message_id in the DB (incoming direction), it
-    // means a previous webhook call (provider retry / duplicate delivery) already
-    // processed this exact message. Short-circuit immediately.
+    // ── DEDUPLICATION GATE ──
     if (waMessageId) {
-      const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
-      const dedupSb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      const { createClient: createClientDedup } = await import("https://esm.sh/@supabase/supabase-js@2");
+      const dedupSb = createClientDedup(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
       const { data: existingMsg } = await dedupSb
         .from("whatsapp_messages")
@@ -678,12 +702,16 @@ Deno.serve(async (req) => {
       const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
       const sb = createClient(supabaseUrl, serviceKey);
 
-      // Load agent settings to check if debounce is enabled
-      const { data: agSettings } = await sb
-        .from("whatsapp_agent_settings")
-        .select("message_delay_enabled, message_delay_seconds, enabled")
-        .eq("company_id", companyId)
-        .single();
+      // Load agent settings — prefer instance-specific, fall back to company default
+      let agSettings: any = null;
+      if (resolvedInstanceId) {
+        const { data } = await sb.from("whatsapp_agent_settings").select("message_delay_enabled, message_delay_seconds, enabled").eq("company_id", companyId).eq("instance_id", resolvedInstanceId).maybeSingle();
+        agSettings = data;
+      }
+      if (!agSettings) {
+        const { data } = await sb.from("whatsapp_agent_settings").select("message_delay_enabled, message_delay_seconds, enabled").eq("company_id", companyId).is("instance_id", null).maybeSingle();
+        agSettings = data;
+      }
 
       if (agSettings?.enabled && agSettings?.message_delay_enabled) {
         const delaySeconds = Math.max(2, Math.min(30, agSettings.message_delay_seconds || 8));
@@ -808,10 +836,11 @@ Deno.serve(async (req) => {
               company_id: companyId,
               phone,
               message: concatenatedMsg,
-              wa_message_id: waMessageId, // primary ID (first message that triggered the lock)
-              wa_message_ids: aggregatedWaIds, // all IDs in this burst
+              wa_message_id: waMessageId,
+              wa_message_ids: aggregatedWaIds,
               skip_incoming_save: true,
               existing_conv_id: convId,
+              instance_id: resolvedInstanceId, // per-instance agent settings
             };
 
             const res = await fetch(forwardUrl, {
@@ -845,6 +874,7 @@ Deno.serve(async (req) => {
       phone,
       message: effectiveMsg,
       wa_message_id: waMessageId,
+      instance_id: resolvedInstanceId, // pass instance_id so agent uses correct settings
     };
 
     if (btnResponse) {
