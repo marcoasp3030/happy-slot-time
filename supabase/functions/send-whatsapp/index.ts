@@ -385,7 +385,33 @@ Deno.serve(async (req) => {
   }
 });
 
-// ─── UAZAPI send ───
+// ─── Helper: get WS credentials for the correct instance ───
+// Prefers instance-specific row from whatsapp_instances (has per-instance token),
+// falls back to whatsapp_settings (legacy/primary).
+async function getWsCredentials(sb: any, companyId: string, instanceId?: string | null) {
+  if (instanceId) {
+    const { data: inst } = await sb
+      .from("whatsapp_instances")
+      .select("instance_name, token, status")
+      .eq("id", instanceId)
+      .maybeSingle();
+    if (inst?.token) {
+      // Get base_url from whatsapp_settings (shared per company)
+      const { data: ws } = await sb.from("whatsapp_settings").select("base_url").eq("company_id", companyId).maybeSingle();
+      return {
+        base_url: ws?.base_url || "https://sistembr.uazapi.com",
+        instance_id: inst.instance_name,
+        token: inst.token,
+        active: inst.status === "connected",
+      };
+    }
+  }
+  // Fallback to legacy whatsapp_settings
+  const { data: ws } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", companyId).maybeSingle();
+  return ws || null;
+}
+
+
 async function sendUazapiMessage(settings: { base_url: string; instance_id: string; token: string }, phone: string, message: string): Promise<any> {
   const url = settings.base_url.replace(/\/$/, "") + "/send/text";
   log("📤 SENDING via UAZAPI:", url, "phone:", phone, "len:", message.length);
@@ -1302,8 +1328,8 @@ async function handleAgent(
   if (isAudioMsg) {
     log("🎵 Audio message detected, attempting transcription...");
     
-    // Fetch WS settings to download media from UAZAPI
-    const { data: wsForAudio } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
+    // Fetch WS settings to download media from UAZAPI (use instance-specific credentials)
+    const wsForAudio = await getWsCredentials(sb, cid, agentOptions.instanceId);
     
     let audioUrl = audioParams.audio_media_url;
     
@@ -1429,7 +1455,7 @@ async function handleAgent(
       
       if (isSchedulingIntent) {
         log("🔘 Scheduling intent detected, auto-sending services menu...");
-        const { data: ws } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
+        const ws = await getWsCredentials(sb, cid, agentOptions.instanceId);
         if (ws?.active && ws?.base_url && ws?.token) {
           try {
             const svcs = ctx.svcs;
@@ -1634,7 +1660,7 @@ async function handleAgent(
       // If incoming was audio and audio response is enabled, send a natural TTS intro
       if (isAudioMsg && ag?.respond_audio_with_audio && ag?.elevenlabs_voice_id) {
         try {
-          const { data: ws } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
+          const ws = await getWsCredentials(sb, cid, agentOptions.instanceId);
           if (ws?.active && ws?.base_url && ws?.token) {
             const ttsIntro = "Tá aqui pra você escolher! Te mandei as opções aí.";
             log("🔊 Sending TTS audio for menu context...");
@@ -1650,8 +1676,8 @@ async function handleAgent(
       }
     } else {
       log("🤖 Fetching WhatsApp settings to send reply...");
-      const { data: ws, error: wsErr } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
-      log("🤖 WS settings:", ws ? `active=${ws.active} base_url=${ws.base_url}` : "NOT FOUND", "error:", wsErr?.message);
+      const ws = await getWsCredentials(sb, cid, agentOptions.instanceId);
+      log("🤖 WS settings:", ws ? `active=${ws.active} base_url=${ws.base_url}` : "NOT FOUND");
 
       if (ws?.active && ws?.base_url && ws?.token) {
         const cleanPhone = phone.replace(/\D/g, "");
@@ -1838,7 +1864,7 @@ async function handleAgent(
     // ── Auto-react to client's message based on agent settings ──
     if (ag?.auto_react_enabled) {
       try {
-        const { data: ws2 } = await sb.from("whatsapp_settings").select("base_url, token").eq("company_id", cid).single();
+        const ws2 = await getWsCredentials(sb, cid, agentOptions.instanceId);
         if (ws2?.base_url && ws2?.token) {
           // Get the last incoming message's wa_message_id
           const { data: lastIncoming } = await sb.from("whatsapp_messages")
@@ -2536,7 +2562,7 @@ ${caps.can_send_pix && caps.pix_key ? ("\nPAGAMENTO - PIX:\nChave PIX: " + caps.
           const dateLabel = formatDate(args.date);
           if (slots.length) {
             // Auto-send slots as interactive menu
-            const { data: ws } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
+            const ws = await getWsCredentials(sb, cid, agentOptions.instanceId);
             if (ws?.active && ws?.base_url && ws?.token) {
               const headerText = `Horários disponíveis ${dateLabel}${staffName ? " com " + staffName : ""} 📅\n\nEscolha um horário:`;
               const topSlots = slots.slice(0, 10);
@@ -2583,7 +2609,7 @@ ${caps.can_send_pix && caps.pix_key ? ("\nPAGAMENTO - PIX:\nChave PIX: " + caps.
         needsFollowUp = true; // Need AI to continue the conversation after saving name
       } else if (fn === "send_file" && args.file_url) {
         // Send file via UAZAPI
-        const { data: ws } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
+        const ws = await getWsCredentials(sb, cid, agentOptions.instanceId);
         if (ws?.active && ws?.base_url && ws?.token) {
           try {
             const fileType = args.file_type || "document";
@@ -2610,7 +2636,7 @@ ${caps.can_send_pix && caps.pix_key ? ("\nPAGAMENTO - PIX:\nChave PIX: " + caps.
         txt = txt || `Enviei o arquivo "${args.file_name}" pra você! 📎`;
       } else if (fn === "send_buttons" || fn === "send_list" || fn === "send_carousel") {
         // Send interactive menu via UAZAPI /send/menu
-        const { data: ws } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", cid).single();
+        const ws = await getWsCredentials(sb, cid, agentOptions.instanceId);
         let menuSentOk = false;
         if (ws?.active && ws?.base_url && ws?.token) {
           try {

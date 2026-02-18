@@ -57,8 +57,12 @@ export default function WhatsAppAgent() {
 
   // When selected instance changes (after initial load), reload settings only
   useEffect(() => {
-    if (companyId && !loading) fetchSettings(selectedInstanceId);
+    if (companyId && !loading) {
+      setSettings(null); // Clear current settings to avoid stale data
+      fetchSettings(selectedInstanceId);
+    }
   }, [selectedInstanceId]);
+
 
   async function fetchInstances() {
     if (!companyId) return;
