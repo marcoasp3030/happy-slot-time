@@ -55,10 +55,10 @@ export default function WhatsAppAgent() {
     if (companyId) fetchAll();
   }, [companyId]);
 
-  // When selected instance changes, reload settings
+  // When selected instance changes (after initial load), reload settings only
   useEffect(() => {
-    if (companyId) fetchSettings();
-  }, [selectedInstanceId, companyId]);
+    if (companyId && !loading) fetchSettings(selectedInstanceId);
+  }, [selectedInstanceId]);
 
   async function fetchInstances() {
     if (!companyId) return;
@@ -70,34 +70,53 @@ export default function WhatsAppAgent() {
     setInstances(data || []);
   }
 
-  async function fetchSettings() {
+  async function fetchSettings(instanceId: string | null = selectedInstanceId) {
     if (!companyId) return;
-    let query = supabase.from('whatsapp_agent_settings').select('*').eq('company_id', companyId);
-    if (selectedInstanceId) {
-      query = query.eq('instance_id', selectedInstanceId);
+
+    // Build fetch query based on instance
+    let fetchQuery = supabase
+      .from('whatsapp_agent_settings')
+      .select('*')
+      .eq('company_id', companyId);
+
+    if (instanceId) {
+      fetchQuery = fetchQuery.eq('instance_id', instanceId);
     } else {
-      query = query.is('instance_id', null);
+      fetchQuery = fetchQuery.is('instance_id', null);
     }
-    const { data: settingsData } = await query.maybeSingle();
+
+    const { data: settingsData } = await fetchQuery.maybeSingle();
 
     if (settingsData) {
       setSettings(settingsData);
-    } else {
-      // Create settings for this instance via upsert to avoid conflicts
-      const insertData: any = { company_id: companyId };
-      if (selectedInstanceId) insertData.instance_id = selectedInstanceId;
-      const { data: newSettings, error: insertError } = await supabase
+      return;
+    }
+
+    // No row found — create one
+    const insertData: any = { company_id: companyId };
+    if (instanceId) insertData.instance_id = instanceId;
+
+    const { data: newSettings, error: insertError } = await supabase
+      .from('whatsapp_agent_settings')
+      .insert(insertData)
+      .select()
+      .maybeSingle();
+
+    if (insertError) {
+      // Conflict: row was created concurrently — fetch it again
+      let retryQuery = supabase
         .from('whatsapp_agent_settings')
-        .insert(insertData)
-        .select()
-        .maybeSingle();
-      if (insertError) {
-        // Row may already exist due to race condition — try fetching again
-        const { data: retryData } = await query.maybeSingle();
-        setSettings(retryData);
+        .select('*')
+        .eq('company_id', companyId);
+      if (instanceId) {
+        retryQuery = retryQuery.eq('instance_id', instanceId);
       } else {
-        setSettings(newSettings);
+        retryQuery = retryQuery.is('instance_id', null);
       }
+      const { data: retryData } = await retryQuery.maybeSingle();
+      setSettings(retryData);
+    } else {
+      setSettings(newSettings);
     }
   }
 
@@ -110,7 +129,8 @@ export default function WhatsAppAgent() {
       supabase.from('whatsapp_agent_logs').select('*').eq('company_id', companyId!).order('created_at', { ascending: false }).limit(100),
       supabase.from('prompt_templates').select('*').eq('active', true).order('name'),
     ]);
-    await fetchSettings();
+    // Fetch settings ONCE inside fetchAll — the second useEffect only fires on instance change
+    await fetchSettings(selectedInstanceId);
     setKnowledgeItems(kbRes.data || []);
     setConversations(convsRes.data || []);
     setAgentLogs(logsRes.data || []);
