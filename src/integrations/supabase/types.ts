@@ -1531,6 +1531,7 @@ export type Database = {
           custom_business_info: string | null
           custom_collect_fields: Json | null
           custom_prompt: string | null
+          deduplicate_outgoing: boolean | null
           elevenlabs_api_key: string | null
           elevenlabs_voice_id: string | null
           enabled: boolean
@@ -1586,6 +1587,7 @@ export type Database = {
           custom_business_info?: string | null
           custom_collect_fields?: Json | null
           custom_prompt?: string | null
+          deduplicate_outgoing?: boolean | null
           elevenlabs_api_key?: string | null
           elevenlabs_voice_id?: string | null
           enabled?: boolean
@@ -1641,6 +1643,7 @@ export type Database = {
           custom_business_info?: string | null
           custom_collect_fields?: Json | null
           custom_prompt?: string | null
+          deduplicate_outgoing?: boolean | null
           elevenlabs_api_key?: string | null
           elevenlabs_voice_id?: string | null
           enabled?: boolean

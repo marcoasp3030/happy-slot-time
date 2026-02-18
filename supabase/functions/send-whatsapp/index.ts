@@ -1278,6 +1278,41 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
     // Save with a system note that won't be mimicked by the AI
     const displayReply = menuAlreadySent ? "(sistema: menu interativo enviado ao cliente)" : reply;
 
+    // ── Outgoing deduplication: skip if same reply was sent recently ──
+    const deduplicateOutgoing = ag?.deduplicate_outgoing !== false; // default true
+    if (deduplicateOutgoing && !menuAlreadySent) {
+      const thirtySecsAgo = new Date(Date.now() - 30000).toISOString();
+      const { data: recentOutgoing } = await sb.from("whatsapp_messages")
+        .select("content")
+        .eq("conversation_id", conv.id)
+        .eq("direction", "outgoing")
+        .gte("created_at", thirtySecsAgo)
+        .order("created_at", { ascending: false })
+        .limit(3);
+
+      if (recentOutgoing && recentOutgoing.length > 0) {
+        // Normalize for comparison: lowercase + strip whitespace
+        const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+        const replyNorm = normalize(displayReply);
+        const isDuplicate = recentOutgoing.some((r: any) => {
+          if (!r.content) return false;
+          const recNorm = normalize(r.content);
+          // Exact duplicate
+          if (recNorm === replyNorm) return true;
+          // Very similar: one contains the other (substring with 90%+ overlap)
+          const longer = recNorm.length > replyNorm.length ? recNorm : replyNorm;
+          const shorter = recNorm.length <= replyNorm.length ? recNorm : replyNorm;
+          if (shorter.length > 30 && longer.includes(shorter)) return true;
+          return false;
+        });
+
+        if (isDuplicate) {
+          log("🤖 ⚠️ OUTGOING DUPLICATE detected, skipping send. Reply was recently sent.");
+          return { ok: true, skipped: "outgoing_duplicate", conversation_id: conv.id };
+        }
+      }
+    }
+
     // Save outgoing message
     const { error: outErr } = await sb.from("whatsapp_messages").insert({ conversation_id: conv.id, company_id: cid, direction: "outgoing", message_type: menuAlreadySent ? "interactive" : "text", content: displayReply });
     log("🤖 Outgoing msg saved:", outErr ? `ERROR: ${outErr.message}` : "OK");

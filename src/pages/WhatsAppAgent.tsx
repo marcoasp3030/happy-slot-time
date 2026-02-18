@@ -117,6 +117,7 @@ export default function WhatsAppAgent() {
         preferred_provider: (settings as any).preferred_provider,
         auto_react_enabled: settings.auto_react_enabled,
         ignore_groups: settings.ignore_groups,
+        deduplicate_outgoing: (settings as any).deduplicate_outgoing !== false,
         react_on_confirm: settings.react_on_confirm,
         react_on_cancel: settings.react_on_cancel,
         react_on_thanks: settings.react_on_thanks,
