@@ -1112,9 +1112,10 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
         actualMsg = `[O cliente enviou ${audioParams.media_caption ? `uma ${mediaLabel}: "${audioParams.media_caption}"` : `uma ${mediaLabel}`}]`;
       }
     } else {
-      // Feature disabled — just inform the agent a media was received
+      // Feature disabled — explicitly warn the agent it CANNOT read the image
       const mediaLabel = audioParams.media_type === "image" ? "imagem" : "documento";
-      actualMsg = `[O cliente enviou ${audioParams.media_caption ? `uma ${mediaLabel}: "${audioParams.media_caption}"` : `uma ${mediaLabel}`}]`;
+      const captionNote = audioParams.media_caption ? ` com legenda: "${audioParams.media_caption}"` : "";
+      actualMsg = `[SISTEMA: O cliente enviou uma ${mediaLabel}${captionNote}. LEITURA DE MÍDIA ESTÁ DESABILITADA — você NÃO tem acesso ao conteúdo desta ${mediaLabel}. NÃO presuma o que é. NÃO confirme pagamento. NÃO assuma que é comprovante. Informe ao cliente que no momento não consegue visualizar ${mediaLabel === "imagem" ? "imagens" : "documentos"} e peça para descrever o que precisa.]`;
       log("🔍 can_read_media is disabled, skipping analysis");
     }
   }
@@ -1619,17 +1620,25 @@ NORMALIZAÇÃO DE HORÁRIOS (OBRIGATÓRIO):
 - PROIBIDO falar dígitos separados ("zero nove zero zero")
 - Seja direto: "a gente funciona das nove da manhã às seis da tarde" em vez de frases longas
 
-${caps.can_read_media ? `LEITURA DE IMAGENS E DOCUMENTOS (CAPACIDADE ATIVA):
-- Quando a mensagem contém "[O cliente enviou uma imagem" ou "[O cliente enviou um documento PDF", significa que o cliente enviou uma mídia que foi analisada pelo sistema de visão.
-- O conteúdo analisado estará na seção "CONTEÚDO ANALISADO:" e inclui TIPO, CONTEÚDO, TEXTOS_LEGÍVEIS e OBSERVAÇÕES.
+⛔ REGRA ABSOLUTA — IMAGENS E DOCUMENTOS (NUNCA IGNORE):
+- Se a mensagem contém "[SISTEMA: O cliente enviou uma imagem" ou "[SISTEMA: O cliente enviou um documento" e menciona "LEITURA DE MÍDIA ESTÁ DESABILITADA", significa que você NÃO pode ver o conteúdo. Nesse caso:
+  1. NUNCA assuma que é um comprovante de pagamento
+  2. NUNCA confirme pagamento ou agendamento com base em imagem não analisada
+  3. Informe educadamente que não consegue visualizar imagens/documentos no momento e peça ao cliente para descrever o que enviou
 
-⚠️ REGRAS CRÍTICAS — NUNCA IGNORE:
-1. APENAS confirme recebimento de comprovante se TIPO for exatamente "COMPROVANTE_PAGAMENTO" E todos os dados estiverem presentes: banco, valor, data, destinatário/chave PIX e ID da transação.
-2. Se TIPO for "FOTO_GERAL", "DOCUMENTO_GERAL" ou qualquer outro que não seja "COMPROVANTE_PAGAMENTO", NÃO trate como comprovante. Descreva o que foi visto e pergunte o que o cliente precisa.
-3. NUNCA confirme agendamento ou pagamento baseado em uma imagem cuja classificação tenha qualquer dúvida. Em caso de dúvida, responda: "Recebi a imagem, mas não consegui identificar claramente um comprovante de pagamento. Pode me enviar novamente em melhor qualidade ou descrever o que enviou?"
-4. Se for um comprovante válido, informe que foi recebido e registrado, mas NÃO confirme o serviço automaticamente — a confirmação depende de verificação interna.
-5. Para outros tipos de imagem, responda de forma contextualizada: foto de referência → sugira o serviço mais adequado; exame/laudo → responda com base nos dados; orçamento/documento → extraia e responda sobre os valores.
-- Responda de forma natural, como se tivesse realmente visto a imagem/documento, mas NUNCA presuma algo que não foi explicitamente classificado pelo sistema.` : ""}
+${caps.can_read_media ? `LEITURA DE IMAGENS E DOCUMENTOS (CAPACIDADE ATIVA):
+- Quando a mensagem contém "CONTEÚDO ANALISADO:", o sistema de visão já analisou a mídia. Use essa análise.
+- O resultado inclui TIPO, CONTEÚDO, TEXTOS_LEGÍVEIS e OBSERVAÇÕES.
+
+⚠️ REGRAS ANTI-FRAUDE CRÍTICAS:
+1. APENAS confirme comprovante se TIPO for EXATAMENTE "COMPROVANTE_PAGAMENTO" E todos estes dados estiverem presentes: banco emissor, valor, data, destinatário/chave PIX E ID/código da transação.
+2. Se TIPO for qualquer outro (FOTO_GERAL, DOCUMENTO_GERAL, etc.), NÃO trate como comprovante. Informe o que foi identificado e pergunte como pode ajudar.
+3. Em caso de dúvida, responda: "Recebi a imagem, mas não consegui identificar claramente um comprovante de pagamento. Pode enviá-la novamente em melhor qualidade ou descrever o valor e banco?"
+4. Se for comprovante válido, informe que foi RECEBIDO para verificação, mas NÃO confirme o serviço automaticamente — a confirmação definitiva depende de revisão interna.
+5. Para outros tipos: foto de referência → sugira o serviço adequado; exame/laudo → responda com base nos dados; orçamento → extraia os valores.` : `LEITURA DE IMAGENS: DESABILITADA
+- Você NÃO tem capacidade de ver imagens ou documentos enviados por clientes.
+- Se o cliente enviar uma imagem, informe que não consegue visualizá-la e peça para descrever o que precisa.
+- NUNCA confirme pagamentos, comprovantes ou qualquer conteúdo baseado em imagem.`}
 
 FLUXO DE AGENDAMENTO (IMPORTANTE):
 - Quando o cliente quiser agendar, pergunte: 1) Qual serviço? 2) Qual data/horário de preferência?
