@@ -94,9 +94,9 @@ Deno.serve(async (req) => {
       }
 
       // ── Message Delay / Aggregation ──
-      // If enabled, wait N seconds to collect all messages the client might send in quick succession
-      // before processing. Uses a "pending marker" in whatsapp_messages to detect if the agent
-      // should skip this call (another call will handle it after the full delay).
+      // If enabled: save each message immediately to DB (delivery_status='pending'),
+      // wait N seconds, then the LAST call in the burst collects ALL buffered messages,
+      // concatenates them, and calls handleAgent once with the full context.
       const { data: agSettingsDelay } = await supabase
         .from("whatsapp_agent_settings")
         .select("message_delay_enabled, message_delay_seconds, enabled")
@@ -105,18 +105,15 @@ Deno.serve(async (req) => {
 
       if (agSettingsDelay?.enabled && agSettingsDelay?.message_delay_enabled && !isAudio) {
         const delaySeconds = Math.max(1, Math.min(30, agSettingsDelay.message_delay_seconds || 8));
-        log("⏳ Message delay enabled:", delaySeconds, "s. Waiting before processing...");
+        log("⏳ Delay enabled:", delaySeconds, "s. Buffering message before processing...");
 
-        // Mark this message arrival time (used as the "last message" timestamp)
-        const arrivalKey = `__DELAY_${phone.replace(/\D/g, "")}_${uazapiCompanyId}`;
         const arrivalTime = Date.now();
+        const arrivalIso = new Date(arrivalTime).toISOString();
 
-        // Store the arrival timestamp in a DB record so concurrent calls can coordinate
-        // We use whatsapp_conversations.updated_at as a cheap shared clock
-        // Get/find the conversation
-        const { data: existingConv } = await supabase
+        // 1️⃣ Get or create conversation BEFORE the delay so we can buffer messages
+        let { data: delayConv } = await supabase
           .from("whatsapp_conversations")
-          .select("id, updated_at")
+          .select("id, last_message_at, handoff_requested")
           .eq("company_id", uazapiCompanyId)
           .eq("phone", phone)
           .eq("status", "active")
@@ -124,36 +121,116 @@ Deno.serve(async (req) => {
           .limit(1)
           .single();
 
-        // Touch the conversation to mark the latest message arrival
-        if (existingConv?.id) {
-          await supabase
+        if (!delayConv) {
+          const { data: nc } = await supabase
             .from("whatsapp_conversations")
-            .update({ last_message_at: new Date().toISOString() })
-            .eq("id", existingConv.id);
+            .insert({ company_id: uazapiCompanyId, phone, status: "active" })
+            .select("id, last_message_at, handoff_requested")
+            .single();
+          delayConv = nc;
         }
 
-        // Wait the delay
-        await new Promise(r => setTimeout(r, delaySeconds * 1000));
+        if (!delayConv?.id) {
+          log("⏳ ❌ Could not get/create conversation for delay buffer, falling through to handleAgent...");
+        } else {
+          // Skip if handoff active
+          if (delayConv.handoff_requested) {
+            log("⏳ Handoff active, skipping delay buffering");
+            return new Response(JSON.stringify({ ok: true, skipped: "handoff" }), { headers: jsonH });
+          }
 
-        // After the wait, check if a NEWER message arrived during our wait
-        // (by checking if last_message_at was updated AFTER our arrival time + 500ms tolerance)
-        if (existingConv?.id) {
+          // 2️⃣ Save this message immediately with delivery_status='pending' (buffered)
+          await supabase.from("whatsapp_messages").insert({
+            conversation_id: delayConv.id,
+            company_id: uazapiCompanyId,
+            direction: "incoming",
+            message_type: "text",
+            content: msg,
+            delivery_status: "pending",
+            metadata: { buffered: true, arrival_ms: arrivalTime },
+          });
+
+          // 3️⃣ Mark latest arrival time in conversation
+          await supabase
+            .from("whatsapp_conversations")
+            .update({ last_message_at: arrivalIso })
+            .eq("id", delayConv.id);
+
+          // 4️⃣ Wait the configured delay
+          await new Promise(r => setTimeout(r, delaySeconds * 1000));
+
+          // 5️⃣ Check if a NEWER message arrived after us
           const { data: convAfterWait } = await supabase
             .from("whatsapp_conversations")
             .select("last_message_at")
-            .eq("id", existingConv.id)
+            .eq("id", delayConv.id)
             .single();
 
           if (convAfterWait?.last_message_at) {
             const lastMsgTime = new Date(convAfterWait.last_message_at).getTime();
             if (lastMsgTime > arrivalTime + 500) {
-              log("⏳ Newer message arrived during delay, skipping this call. Another call will process.");
+              log("⏳ Newer message arrived during delay — skipping, another call will process all.");
               return new Response(JSON.stringify({ ok: true, skipped: "delay_superseded" }), { headers: jsonH });
             }
           }
-        }
 
-        log("⏳ Delay complete. No newer message arrived, proceeding with handleAgent...");
+          // 6️⃣ We are the LAST message in this burst — collect ALL buffered messages
+          const bufferWindowStart = new Date(arrivalTime - (delaySeconds * 1000) - 5000).toISOString();
+          const { data: bufferedMsgs } = await supabase
+            .from("whatsapp_messages")
+            .select("id, content, created_at")
+            .eq("conversation_id", delayConv.id)
+            .eq("direction", "incoming")
+            .eq("delivery_status", "pending")
+            .gte("created_at", bufferWindowStart)
+            .order("created_at", { ascending: true });
+
+          log("⏳ Buffered messages found:", bufferedMsgs?.length || 0);
+
+          if (bufferedMsgs && bufferedMsgs.length > 0) {
+            // 7️⃣ Concatenate all buffered messages into a single context string
+            const concatenatedMsg = bufferedMsgs
+              .map((m: any) => m.content)
+              .filter(Boolean)
+              .join("\n");
+            log("⏳ Concatenated message:", concatenatedMsg.substring(0, 300));
+
+            // 8️⃣ Mark buffered messages as processed (delivery_status='read')
+            const msgIds = bufferedMsgs.map((m: any) => m.id);
+            await supabase
+              .from("whatsapp_messages")
+              .update({ delivery_status: "read", metadata: { buffered: false, aggregated: true, source_count: bufferedMsgs.length } })
+              .in("id", msgIds);
+
+            // 9️⃣ Call handleAgent ONCE with the full concatenated context
+            //    Pass skipIncomingSave=true (messages already in DB) and existingConvId
+            log("🚀 CALLING handleAgent with aggregated message...");
+            const t0 = Date.now();
+            try {
+              const result = await handleAgent(
+                supabase, uazapiCompanyId, phone, concatenatedMsg,
+                { is_audio: false, audio_media_url: null, audio_media_key: null, audio_message_id: null },
+                { skipIncomingSave: true, existingConvId: delayConv.id }
+              );
+              const elapsed = Date.now() - t0;
+              log("✅ handleAgent (aggregated) done in", elapsed, "ms");
+
+              await supabase.from("whatsapp_agent_logs").insert({
+                company_id: uazapiCompanyId,
+                conversation_id: result.conversation_id || delayConv.id || null,
+                action: "response_sent",
+                details: { response_time_ms: elapsed, aggregated_messages: bufferedMsgs.length },
+              }).catch(() => {});
+
+              return new Response(JSON.stringify({ ok: true, ...result }), { headers: jsonH });
+            } catch (agentErr: any) {
+              logErr("❌ handleAgent (aggregated) THREW:", agentErr.message);
+              return new Response(JSON.stringify({ error: agentErr.message }), { status: 500, headers: jsonH });
+            }
+          }
+
+          log("⏳ No buffered messages found, falling through to normal handleAgent...");
+        }
       }
 
       log("🚀 CALLING handleAgent...");
@@ -1064,7 +1141,14 @@ interface AudioParams {
   media_caption?: string | null;
 }
 
-async function handleAgent(sb: any, cid: string, phone: string, msg: string, audioParams: AudioParams = { is_audio: false, audio_media_url: null, audio_media_key: null, audio_message_id: null }): Promise<any> {
+async function handleAgent(
+  sb: any,
+  cid: string,
+  phone: string,
+  msg: string,
+  audioParams: AudioParams = { is_audio: false, audio_media_url: null, audio_media_key: null, audio_message_id: null },
+  agentOptions: { skipIncomingSave?: boolean; existingConvId?: string } = {}
+): Promise<any> {
   log("🤖 handleAgent START cid:", cid, "phone:", phone, "msg:", msg.substring(0, 100), "is_audio:", audioParams.is_audio);
 
   if (!cid || !phone || !msg) {
@@ -1081,10 +1165,20 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
     return { ok: true, skipped: "agent_disabled" };
   }
 
-  // Get/create conversation
-  log("🤖 Looking for active conversation...");
-  let { data: conv, error: convErr } = await sb.from("whatsapp_conversations").select("*").eq("company_id", cid).eq("phone", phone).eq("status", "active").order("created_at", { ascending: false }).limit(1).single();
-  log("🤖 Existing conv:", conv?.id || "NONE", "error:", convErr?.message);
+  // Get/create conversation — if agentOptions.existingConvId provided, use it directly
+  let conv: any = null;
+  if (agentOptions.existingConvId) {
+    log("🤖 Using pre-existing conv from delay buffer:", agentOptions.existingConvId);
+    const { data: existingByIdConv } = await sb.from("whatsapp_conversations").select("*").eq("id", agentOptions.existingConvId).single();
+    conv = existingByIdConv;
+  }
+
+  if (!conv) {
+    log("🤖 Looking for active conversation...");
+    const { data: foundConv, error: convErr } = await sb.from("whatsapp_conversations").select("*").eq("company_id", cid).eq("phone", phone).eq("status", "active").order("created_at", { ascending: false }).limit(1).single();
+    log("🤖 Existing conv:", foundConv?.id || "NONE", "error:", convErr?.message);
+    conv = foundConv;
+  }
 
   if (!conv) {
     log("🤖 Creating new conversation...");
@@ -1102,20 +1196,23 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
     return { ok: true, skipped: "handoff" };
   }
 
-  // ── Deduplication: check if same message was already saved in last 15s ──
-  const fifteenSecsAgo = new Date(Date.now() - 15000).toISOString();
-  const { data: recentDups } = await sb.from("whatsapp_messages")
-    .select("id")
-    .eq("conversation_id", conv.id)
-    .eq("direction", "incoming")
-    .eq("content", msg)
-    .gte("created_at", fifteenSecsAgo)
-    .limit(1);
-  
-  if (recentDups && recentDups.length > 0) {
-    log("🤖 ⚠️ DUPLICATE detected, skipping. Existing msg:", recentDups[0].id);
-    return { ok: true, skipped: "duplicate", conversation_id: conv.id };
+  // ── Deduplication: only run if NOT a pre-aggregated message (those are already in DB) ──
+  if (!agentOptions.skipIncomingSave) {
+    const fifteenSecsAgo = new Date(Date.now() - 15000).toISOString();
+    const { data: recentDups } = await sb.from("whatsapp_messages")
+      .select("id")
+      .eq("conversation_id", conv.id)
+      .eq("direction", "incoming")
+      .eq("content", msg)
+      .gte("created_at", fifteenSecsAgo)
+      .limit(1);
+
+    if (recentDups && recentDups.length > 0) {
+      log("🤖 ⚠️ DUPLICATE detected, skipping. Existing msg:", recentDups[0].id);
+      return { ok: true, skipped: "duplicate", conversation_id: conv.id };
+    }
   }
+
 
   // ── Audio transcription: convert audio to text ──
   let actualMsg = msg;
@@ -1205,22 +1302,26 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
     }
   }
 
-  // Save incoming message (with wa_message_id for delivery tracking + reactions)
-  log("🤖 Saving incoming message...");
-  const messageType = audioParams.is_media && audioParams.media_type ? audioParams.media_type : (isAudioMsg ? "audio" : "text");
-  const incomingInsert: any = { 
-    conversation_id: conv.id, company_id: cid, direction: "incoming", 
-    message_type: messageType,
-    content: actualMsg,
-    delivery_status: "read",
-    metadata: isAudioMsg 
-      ? { original_type: "audio", transcribed: actualMsg !== msg }
-      : (audioParams.is_media ? { original_type: audioParams.media_type, analyzed: !!mediaAnalysis, caption: audioParams.media_caption } : {})
-  };
-  // wa_message_id passed from wa-webhook for reaction/tracking support
-  if (audioParams.wa_message_id) incomingInsert.wa_message_id = audioParams.wa_message_id;
-  const { error: msgErr } = await sb.from("whatsapp_messages").insert(incomingInsert);
-  log("🤖 Message saved:", msgErr ? `ERROR: ${msgErr.message}` : "OK");
+  // Save incoming message — SKIP if skipIncomingSave (messages already saved during delay buffering)
+  if (!agentOptions.skipIncomingSave) {
+    log("🤖 Saving incoming message...");
+    const messageType = audioParams.is_media && audioParams.media_type ? audioParams.media_type : (isAudioMsg ? "audio" : "text");
+    const incomingInsert: any = {
+      conversation_id: conv.id, company_id: cid, direction: "incoming",
+      message_type: messageType,
+      content: actualMsg,
+      delivery_status: "read",
+      metadata: isAudioMsg
+        ? { original_type: "audio", transcribed: actualMsg !== msg }
+        : (audioParams.is_media ? { original_type: audioParams.media_type, analyzed: !!mediaAnalysis, caption: audioParams.media_caption } : {})
+    };
+    // wa_message_id passed from wa-webhook for reaction/tracking support
+    if (audioParams.wa_message_id) incomingInsert.wa_message_id = audioParams.wa_message_id;
+    const { error: msgErr } = await sb.from("whatsapp_messages").insert(incomingInsert);
+    log("🤖 Message saved:", msgErr ? `ERROR: ${msgErr.message}` : "OK");
+  } else {
+    log("🤖 Skipping incoming save — messages already buffered in DB (skipIncomingSave=true)");
+  }
 
   await sb.from("whatsapp_conversations").update({ last_message_at: new Date().toISOString() }).eq("id", conv.id);
 
