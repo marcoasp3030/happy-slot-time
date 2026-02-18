@@ -1823,25 +1823,31 @@ async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
 async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string, opts?: { isAudioMsg?: boolean; agentSettings?: any }): Promise<string> {
   const ag = opts?.agentSettings;
   const preferredProvider = ag?.preferred_provider || "lovable";
+  const aiModelRaw = ag?.ai_model || "google/gemini-3-flash-preview";
   
   // Determine API endpoint and key based on preferred provider
+  // Smart routing: if preferred_provider=openai but model is google/*, fallback to lovable gateway
   let apiUrl = "https://ai.gateway.lovable.dev/v1/chat/completions";
   let apiKey = Deno.env.get("LOVABLE_API_KEY");
   let providerLabel = "lovable";
   
-  if (preferredProvider === "openai" && ag?.openai_api_key) {
+  const modelIsOpenAI = aiModelRaw.startsWith("openai/") || (!aiModelRaw.includes("/") && !aiModelRaw.startsWith("gemini-"));
+  const modelIsGemini = aiModelRaw.startsWith("google/") || aiModelRaw.startsWith("gemini-");
+  
+  if (preferredProvider === "openai" && ag?.openai_api_key && modelIsOpenAI) {
     apiUrl = "https://api.openai.com/v1/chat/completions";
     apiKey = ag.openai_api_key;
     providerLabel = "openai";
     log("🧠 Using tenant's OWN OpenAI key");
-  } else if (preferredProvider === "gemini" && ag?.gemini_api_key) {
+  } else if (preferredProvider === "gemini" && ag?.gemini_api_key && modelIsGemini) {
     // Use Gemini via OpenAI-compatible endpoint
     apiUrl = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
     apiKey = ag.gemini_api_key;
     providerLabel = "gemini";
     log("🧠 Using tenant's OWN Gemini key");
   } else {
-    log("🧠 Using platform LOVABLE_API_KEY");
+    // Lovable gateway handles both openai/* and google/* models
+    log("🧠 Using platform LOVABLE_API_KEY (provider:", preferredProvider, "model:", aiModelRaw, ")");
   }
   
   if (!apiKey) throw new Error("No API key available for provider: " + preferredProvider);
