@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import {
-  LayoutDashboard, Building2, Users, CreditCard, BarChart3, Bell, Calendar,
-  Menu, X, LogOut, ChevronRight, Shield, ArrowLeft, Settings, ScrollText, Activity,
+  Building2, Users, CreditCard, BarChart3, Bell, Calendar,
+  Menu, X, LogOut, ChevronRight, Shield, ArrowLeft, Settings, ScrollText, Activity, Package,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -12,6 +12,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 const adminNavItems = [
   { title: 'Visão Geral', icon: BarChart3, path: '/admin' },
   { title: 'Empresas', icon: Building2, path: '/admin/empresas' },
+  { title: 'Planos', icon: Package, path: '/admin/planos' },
   { title: 'Assinaturas', icon: CreditCard, path: '/admin/assinaturas' },
   { title: 'Usuários', icon: Users, path: '/admin/usuarios' },
   { title: 'Notificações', icon: Bell, path: '/admin/notificacoes' },

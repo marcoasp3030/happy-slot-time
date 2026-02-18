@@ -885,6 +885,48 @@ export type Database = {
           },
         ]
       }
+      plans: {
+        Row: {
+          created_at: string
+          description: string | null
+          features: Json | null
+          id: string
+          is_active: boolean
+          max_whatsapp_instances: number
+          monthly_token_limit: number
+          name: string
+          price: number | null
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          features?: Json | null
+          id?: string
+          is_active?: boolean
+          max_whatsapp_instances?: number
+          monthly_token_limit?: number
+          name: string
+          price?: number | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          features?: Json | null
+          id?: string
+          is_active?: boolean
+          max_whatsapp_instances?: number
+          monthly_token_limit?: number
+          name?: string
+          price?: number | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       platform_settings: {
         Row: {
           cta_subtitle: string | null
@@ -1321,6 +1363,7 @@ export type Database = {
           created_at: string
           id: string
           max_whatsapp_instances: number
+          plan_id: string | null
           plan_name: string | null
           status: string
           trial_end: string
@@ -1331,6 +1374,7 @@ export type Database = {
           created_at?: string
           id?: string
           max_whatsapp_instances?: number
+          plan_id?: string | null
           plan_name?: string | null
           status?: string
           trial_end?: string
@@ -1341,6 +1385,7 @@ export type Database = {
           created_at?: string
           id?: string
           max_whatsapp_instances?: number
+          plan_id?: string | null
           plan_name?: string | null
           status?: string
           trial_end?: string
@@ -1352,6 +1397,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: true
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscriptions_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
             referencedColumns: ["id"]
           },
         ]
