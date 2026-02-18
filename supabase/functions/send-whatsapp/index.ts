@@ -1465,54 +1465,108 @@ async function handleAgent(
     // Save with a system note that won't be mimicked by the AI
     const displayReply = menuAlreadySent ? "(sistema: menu interativo enviado ao cliente)" : reply;
 
-    // ── Outgoing deduplication: skip if same reply was sent recently ──
+    // ── Outgoing deduplication: two-layer fallback (hash + token similarity) ──
     const deduplicateOutgoing = ag?.deduplicate_outgoing !== false; // default true
     if (deduplicateOutgoing && !menuAlreadySent) {
-      const thirtySecsAgo = new Date(Date.now() - 30000).toISOString();
+      // Layer 1: SHA-256 hash of normalized content (exact duplicate)
+      const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+      const replyNorm = normalize(displayReply);
+
+      async function sha256hex(text: string): Promise<string> {
+        const encoded = new TextEncoder().encode(text);
+        const hashBuf = await crypto.subtle.digest("SHA-256", encoded);
+        return Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, "0")).join("");
+      }
+
+      // Token-based similarity: Jaccard coefficient on word n-grams
+      function tokenSimilarity(a: string, b: string): number {
+        const tokens = (s: string) => new Set(s.split(/\s+/).filter(w => w.length > 2));
+        const setA = tokens(a);
+        const setB = tokens(b);
+        if (setA.size === 0 || setB.size === 0) return 0;
+        const intersection = new Set([...setA].filter(t => setB.has(t)));
+        const union = new Set([...setA, ...setB]);
+        return intersection.size / union.size;
+      }
+
+      const replyHash = await sha256hex(replyNorm);
+      log("🔍 Dedup hash:", replyHash.substring(0, 16), "| len:", displayReply.length);
+
+      const sixtySecsAgo = new Date(Date.now() - 60000).toISOString();
       const { data: recentOutgoing } = await sb.from("whatsapp_messages")
-        .select("content")
+        .select("content, metadata")
         .eq("conversation_id", conv.id)
         .eq("direction", "outgoing")
-        .eq("delivery_status", "sent")  // Only compare real sent messages, not processing locks
-        .gte("created_at", thirtySecsAgo)
+        .eq("delivery_status", "sent")
+        .gte("created_at", sixtySecsAgo)
         .order("created_at", { ascending: false })
-        .limit(3);
+        .limit(5);
 
       if (recentOutgoing && recentOutgoing.length > 0) {
-        // Normalize for comparison: lowercase + strip whitespace
-        const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
-        const replyNorm = normalize(displayReply);
-        const isDuplicate = recentOutgoing.some((r: any) => {
-          if (!r.content) return false;
+        let isDuplicate = false;
+        let dupReason = "";
+
+        for (const r of recentOutgoing as any[]) {
+          if (!r.content) continue;
+          const storedHash = r.metadata?.content_hash as string | undefined;
           const recNorm = normalize(r.content);
-          // Exact duplicate
-          if (recNorm === replyNorm) return true;
-          // Very similar: one contains the other (substring with 90%+ overlap)
-          const longer = recNorm.length > replyNorm.length ? recNorm : replyNorm;
-          const shorter = recNorm.length <= replyNorm.length ? recNorm : replyNorm;
-          if (shorter.length > 30 && longer.includes(shorter)) return true;
-          return false;
-        });
+
+          // Layer 1: SHA-256 exact match (via stored hash or recomputed)
+          const hashToCompare = storedHash || await sha256hex(recNorm);
+          if (hashToCompare === replyHash) {
+            isDuplicate = true;
+            dupReason = "sha256_exact";
+            break;
+          }
+
+          // Layer 2: Token Jaccard similarity ≥ 85% (near-duplicate)
+          if (replyNorm.length > 40 && recNorm.length > 40) {
+            const sim = tokenSimilarity(replyNorm, recNorm);
+            if (sim >= 0.85) {
+              isDuplicate = true;
+              dupReason = `jaccard_${Math.round(sim * 100)}pct`;
+              break;
+            }
+          }
+        }
 
         if (isDuplicate) {
-          log("🤖 ⚠️ OUTGOING DUPLICATE detected, skipping send. Reply was recently sent.");
-          // Release processing lock
+          log("🤖 ⚠️ OUTGOING DUPLICATE blocked [" + dupReason + "] — skipping send.");
           if (agentOptions._lockMsgId) {
-            await sb.from("whatsapp_messages").delete().eq("id", agentOptions._lockMsgId).catch(() => {});
+            try { await sb.from("whatsapp_messages").delete().eq("id", agentOptions._lockMsgId); } catch (_) {}
           }
-          return { ok: true, skipped: "outgoing_duplicate", conversation_id: conv.id };
+          return { ok: true, skipped: "outgoing_duplicate", reason: dupReason, conversation_id: conv.id };
         }
       }
+
+      // Store hash in metadata so future checks can skip recomputing
+      agentOptions._contentHash = replyHash;
     }
 
     // Save outgoing message — if we have a lock placeholder, update it in place; otherwise insert new
+    const outMeta: Record<string, any> = {};
+    if (agentOptions._contentHash) outMeta.content_hash = agentOptions._contentHash;
+
     if (agentOptions._lockMsgId) {
       await sb.from("whatsapp_messages")
-        .update({ content: displayReply, message_type: menuAlreadySent ? "interactive" : "text", delivery_status: "sent" })
+        .update({
+          content: displayReply,
+          message_type: menuAlreadySent ? "interactive" : "text",
+          delivery_status: "sent",
+          metadata: outMeta,
+        })
         .eq("id", agentOptions._lockMsgId);
       log("🤖 Outgoing msg updated from lock placeholder:", agentOptions._lockMsgId);
     } else {
-      const { error: outErr } = await sb.from("whatsapp_messages").insert({ conversation_id: conv.id, company_id: cid, direction: "outgoing", message_type: menuAlreadySent ? "interactive" : "text", content: displayReply, delivery_status: "sent" });
+      const { error: outErr } = await sb.from("whatsapp_messages").insert({
+        conversation_id: conv.id,
+        company_id: cid,
+        direction: "outgoing",
+        message_type: menuAlreadySent ? "interactive" : "text",
+        content: displayReply,
+        delivery_status: "sent",
+        metadata: outMeta,
+      });
       log("🤖 Outgoing msg saved:", outErr ? `ERROR: ${outErr.message}` : "OK");
     }
 
