@@ -14,11 +14,12 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Slider } from '@/components/ui/slider';
 import { toast } from '@/hooks/use-toast';
-import { Bot, Settings, MessageSquare, Plus, Trash2, BookOpen, History, Copy, ExternalLink, BarChart3, Clock, PhoneForwarded, Mic, Zap, ShieldCheck, Heart, Sparkles, Wand2, SlidersHorizontal } from 'lucide-react';
+import { Bot, Settings, MessageSquare, Plus, Trash2, BookOpen, History, Copy, ExternalLink, BarChart3, Clock, PhoneForwarded, Mic, Zap, ShieldCheck, Heart, Sparkles, Wand2, SlidersHorizontal, Smartphone, ChevronDown } from 'lucide-react';
 import AgentCapabilities from '@/components/AgentCapabilities';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
 import { useMemo } from 'react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function WhatsAppAgent() {
   const { companyId } = useAuth();
@@ -31,6 +32,12 @@ export default function WhatsAppAgent() {
   const [selectedConversation, setSelectedConversation] = useState<any>(null);
   const [conversationMessages, setConversationMessages] = useState<any[]>([]);
   const [promptTemplates, setPromptTemplates] = useState<any[]>([]);
+
+  // Multi-instance support
+  const [instances, setInstances] = useState<any[]>([]);
+  // Read initial instance from URL ?instance=<id>
+  const initialInstanceId = new URLSearchParams(window.location.search).get('instance');
+  const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(initialInstanceId || null);
 
   const [generatingPrompt, setGeneratingPrompt] = useState(false);
   const [improvingPrompt, setImprovingPrompt] = useState(false);
@@ -48,24 +55,56 @@ export default function WhatsAppAgent() {
     if (companyId) fetchAll();
   }, [companyId]);
 
+  // When selected instance changes, reload settings
+  useEffect(() => {
+    if (companyId) fetchSettings();
+  }, [selectedInstanceId, companyId]);
+
+  async function fetchInstances() {
+    if (!companyId) return;
+    const { data } = await supabase
+      .from('whatsapp_instances')
+      .select('id, label, instance_name, status, phone_number, is_primary')
+      .eq('company_id', companyId)
+      .order('is_primary', { ascending: false });
+    setInstances(data || []);
+  }
+
+  async function fetchSettings() {
+    if (!companyId) return;
+    let query = supabase.from('whatsapp_agent_settings').select('*').eq('company_id', companyId);
+    if (selectedInstanceId) {
+      query = query.eq('instance_id', selectedInstanceId);
+    } else {
+      query = query.is('instance_id', null);
+    }
+    const { data: settingsData } = await query.maybeSingle();
+
+    if (settingsData) {
+      setSettings(settingsData);
+    } else {
+      // Create settings for this instance
+      const insertData: any = { company_id: companyId };
+      if (selectedInstanceId) insertData.instance_id = selectedInstanceId;
+      const { data: newSettings } = await supabase
+        .from('whatsapp_agent_settings')
+        .insert(insertData)
+        .select()
+        .maybeSingle();
+      setSettings(newSettings);
+    }
+  }
+
   async function fetchAll() {
     setLoading(true);
-    const [settingsRes, kbRes, convsRes, logsRes, promptsRes] = await Promise.all([
-      supabase.from('whatsapp_agent_settings').select('*').eq('company_id', companyId!).single(),
+    await fetchInstances();
+    const [kbRes, convsRes, logsRes, promptsRes] = await Promise.all([
       supabase.from('whatsapp_knowledge_base').select('*').eq('company_id', companyId!).order('created_at', { ascending: false }),
       supabase.from('whatsapp_conversations').select('*').eq('company_id', companyId!).order('last_message_at', { ascending: false }).limit(50),
       supabase.from('whatsapp_agent_logs').select('*').eq('company_id', companyId!).order('created_at', { ascending: false }).limit(100),
       supabase.from('prompt_templates').select('*').eq('active', true).order('name'),
     ]);
-
-    if (settingsRes.data) {
-      setSettings(settingsRes.data);
-    } else {
-      // Create default settings
-      const { data } = await supabase.from('whatsapp_agent_settings').insert({ company_id: companyId! }).select().single();
-      setSettings(data);
-    }
-
+    await fetchSettings();
     setKnowledgeItems(kbRes.data || []);
     setConversations(convsRes.data || []);
     setAgentLogs(logsRes.data || []);
@@ -269,7 +308,7 @@ export default function WhatsAppAgent() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Bot className="h-6 w-6 text-primary" />
@@ -279,12 +318,60 @@ export default function WhatsAppAgent() {
               Atendimento automatizado via WhatsApp com inteligência artificial
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <Badge variant={settings?.enabled ? 'default' : 'secondary'}>
               {settings?.enabled ? '🟢 Ativo' : '⚪ Inativo'}
             </Badge>
           </div>
         </div>
+
+        {/* Instance selector — shown only when there are multiple instances */}
+        {instances.length > 1 && (
+          <Card className="border-primary/20 bg-primary/5">
+            <CardContent className="py-3 px-4 flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Smartphone className="h-4 w-4 text-primary" />
+                Configurando agente para:
+              </div>
+              <Select
+                value={selectedInstanceId ?? 'default'}
+                onValueChange={(v) => setSelectedInstanceId(v === 'default' ? null : v)}
+              >
+                <SelectTrigger className="w-auto min-w-[200px] h-9 border-primary/30 bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">
+                    <span className="flex items-center gap-2">
+                      <Bot className="h-3.5 w-3.5" />
+                      Padrão da empresa (todos os números)
+                    </span>
+                  </SelectItem>
+                  {instances.map((inst) => (
+                    <SelectItem key={inst.id} value={inst.id}>
+                      <span className="flex items-center gap-2">
+                        <span className={`h-2 w-2 rounded-full ${inst.status === 'connected' ? 'bg-green-500' : 'bg-gray-400'}`} />
+                        {inst.label}
+                        {inst.phone_number && <span className="text-muted-foreground text-xs">({inst.phone_number})</span>}
+                        {inst.is_primary && <Badge variant="outline" className="text-xs h-4 py-0">Principal</Badge>}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedInstanceId && (
+                <p className="text-xs text-muted-foreground">
+                  As configurações abaixo são exclusivas para este número. Se não configurado, herda o padrão da empresa.
+                </p>
+              )}
+              {!selectedInstanceId && (
+                <p className="text-xs text-muted-foreground">
+                  Configuração padrão: aplicada a números sem configuração própria.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         <Tabs defaultValue="settings" className="space-y-4">
           <TabsList className="flex-wrap">
@@ -310,6 +397,7 @@ export default function WhatsAppAgent() {
               <BarChart3 className="h-3.5 w-3.5" /> Métricas
             </TabsTrigger>
           </TabsList>
+
 
           {/* SETTINGS TAB */}
           <TabsContent value="settings" className="space-y-4">

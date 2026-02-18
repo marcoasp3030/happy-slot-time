@@ -4,9 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { useNavigate } from 'react-router-dom';
 import {
   Loader2, Wifi, WifiOff, QrCode, RefreshCw, Smartphone,
-  CheckCircle2, Pencil, Trash2, X, Check
+  CheckCircle2, Pencil, Trash2, X, Check, Bot
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -20,6 +21,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+
 
 type ConnectionStatus = 'idle' | 'checking' | 'connecting' | 'polling' | 'connected' | 'error';
 
@@ -39,6 +41,7 @@ interface WhatsAppInstanceCardProps {
 }
 
 export default function WhatsAppInstanceCard({ instance, onDeleted, onUpdated }: WhatsAppInstanceCardProps) {
+  const navigate = useNavigate();
   const [status, setStatus] = useState<ConnectionStatus>('checking');
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [pairCode, setPairCode] = useState<string | null>(null);
@@ -286,6 +289,14 @@ export default function WhatsAppInstanceCard({ instance, onDeleted, onUpdated }:
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                className="gradient-primary border-0 font-semibold"
+                onClick={() => navigate(`/agente-ia?instance=${instance.id}`)}
+              >
+                <Bot className="h-3.5 w-3.5 mr-1.5" />
+                Configurar Agente
+              </Button>
               <Button variant="outline" size="sm" onClick={async () => {
                 toast.loading('Verificando...');
                 await checkStatus();

@@ -1599,6 +1599,7 @@ export type Database = {
           handoff_after_failures: number | null
           id: string
           ignore_groups: boolean | null
+          instance_id: string | null
           max_reschedule_suggestions: number | null
           max_tokens: number | null
           media_vision_model: string | null
@@ -1662,6 +1663,7 @@ export type Database = {
           handoff_after_failures?: number | null
           id?: string
           ignore_groups?: boolean | null
+          instance_id?: string | null
           max_reschedule_suggestions?: number | null
           max_tokens?: number | null
           media_vision_model?: string | null
@@ -1725,6 +1727,7 @@ export type Database = {
           handoff_after_failures?: number | null
           id?: string
           ignore_groups?: boolean | null
+          instance_id?: string | null
           max_reschedule_suggestions?: number | null
           max_tokens?: number | null
           media_vision_model?: string | null
@@ -1756,6 +1759,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: true
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_agent_settings_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_instances"
             referencedColumns: ["id"]
           },
         ]
