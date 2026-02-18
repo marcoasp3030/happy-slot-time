@@ -10,7 +10,8 @@ import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
-import { MapPin, Phone, Clock, Scissors, Users, FileText, Image, Mic, Upload, Trash2, Info, ShieldCheck, UserCheck, Mail, Building2, Globe, MapPinned, Briefcase, CreditCard, QrCode, Link, Sparkles, Loader2, UsersRound, ScanLine } from 'lucide-react';
+import { MapPin, Phone, Clock, Scissors, Users, FileText, Image, Mic, Upload, Trash2, Info, ShieldCheck, UserCheck, Mail, Building2, Globe, MapPinned, Briefcase, CreditCard, QrCode, Link, Sparkles, Loader2, UsersRound, ScanLine, Timer } from 'lucide-react';
+import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface AgentCapabilitiesProps {
@@ -224,6 +225,61 @@ export default function AgentCapabilities({ settings, onSettingsChange, onSave, 
             </div>
             <Switch checked={settings?.ignore_groups ?? true} onCheckedChange={(v) => u('ignore_groups', v)} />
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Message Delay / Aggregation */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Timer className="h-4.5 w-4.5 text-primary" />
+            Delay de Mensagens
+          </CardTitle>
+          <CardDescription>
+            Aguarda alguns segundos antes de responder para juntar múltiplas mensagens enviadas em sequência pelo cliente
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/40">
+            <div className="flex items-center gap-3">
+              <Timer className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <Label className="font-medium text-sm">Ativar delay de resposta</Label>
+                <p className="text-xs text-muted-foreground">
+                  O agente espera antes de processar, permitindo juntar mensagens enviadas em sequência
+                </p>
+              </div>
+            </div>
+            <Switch
+              checked={(settings as any)?.message_delay_enabled === true}
+              onCheckedChange={(v) => u('message_delay_enabled' as any, v)}
+            />
+          </div>
+
+          {(settings as any)?.message_delay_enabled && (
+            <div className="space-y-3 px-1">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Tempo de espera</Label>
+                <span className="text-sm font-semibold text-primary">
+                  {(settings as any)?.message_delay_seconds ?? 8}s
+                </span>
+              </div>
+              <Slider
+                min={2}
+                max={30}
+                step={1}
+                value={[(settings as any)?.message_delay_seconds ?? 8]}
+                onValueChange={([v]) => u('message_delay_seconds' as any, v)}
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>2s (mais rápido)</span>
+                <span>30s (mais paciente)</span>
+              </div>
+              <p className="text-xs text-muted-foreground bg-muted/60 rounded-md px-3 py-2">
+                💡 Recomendado entre 5–12 segundos. Se o cliente enviar outra mensagem dentro do período, o agente aguarda e processa tudo junto.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
