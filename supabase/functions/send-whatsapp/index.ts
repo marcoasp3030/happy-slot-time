@@ -1786,7 +1786,7 @@ async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
     sb.from("business_hours").select("day_of_week, open_time, close_time, is_open").eq("company_id", cid),
     sb.from("whatsapp_knowledge_base").select("category, title, content").eq("company_id", cid).eq("active", true),
     sb.from("company_settings").select("slot_interval, max_capacity_per_slot, min_advance_hours").eq("company_id", cid).single(),
-    sb.from("whatsapp_agent_settings").select("custom_prompt, timezone, can_share_address, can_share_phone, can_share_business_hours, can_share_services, can_share_professionals, can_handle_anamnesis, can_send_files, can_send_images, can_send_audio, custom_business_info, can_send_payment_link, payment_link_url, can_send_pix, pix_key, pix_name, pix_instructions, pix_send_as_text, can_read_media, media_vision_model").eq("company_id", cid).single(),
+    sb.from("whatsapp_agent_settings").select("custom_prompt, timezone, can_share_address, can_share_phone, can_share_business_hours, can_share_services, can_share_professionals, can_handle_anamnesis, can_send_files, can_send_images, can_send_audio, custom_business_info, can_send_payment_link, payment_link_url, can_send_pix, pix_key, pix_name, pix_instructions, pix_send_as_text, can_read_media, media_vision_model, temperature, top_p, frequency_penalty, presence_penalty, max_tokens").eq("company_id", cid).single(),
     sb.from("staff").select("id, name").eq("company_id", cid).eq("active", true),
     sb.from("staff_services").select("staff_id, service_id").in("staff_id", (await sb.from("staff").select("id").eq("company_id", cid).eq("active", true)).data?.map((x: any) => x.id) || []),
     sb.from("whatsapp_agent_files").select("file_name, file_url, file_type, description").eq("company_id", cid).eq("active", true),
@@ -1794,7 +1794,7 @@ async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
   const agentCaps = as_.data || {};
   return {
     msgs: (m.data || []).reverse(), appts: a.data || [], co: c.data || {}, svcs: s.data || [], hrs: h.data || [],
-    kb: k.data || [], cs: { ...(cs.data || {}), custom_prompt: agentCaps.custom_prompt, timezone: agentCaps.timezone || "America/Sao_Paulo", ai_model: agentCaps.ai_model || "google/gemini-3-flash-preview" },
+    kb: k.data || [], cs: { ...(cs.data || {}), custom_prompt: agentCaps.custom_prompt, timezone: agentCaps.timezone || "America/Sao_Paulo", ai_model: agentCaps.ai_model || "google/gemini-3-flash-preview", temperature: agentCaps.temperature ?? 0.3, top_p: agentCaps.top_p ?? 0.9, frequency_penalty: agentCaps.frequency_penalty ?? 0.4, presence_penalty: agentCaps.presence_penalty ?? 0.1, max_tokens: agentCaps.max_tokens ?? 500 },
     staff: st.data || [], staffServices: ss.data || [], agentFiles: af.data || [],
     caps: {
       can_share_address: agentCaps.can_share_address ?? true,
@@ -2165,10 +2165,32 @@ ${caps.can_send_pix && caps.pix_key ? ("\nPAGAMENTO - PIX:\nChave PIX: " + caps.
   const isNewOpenAI = providerLabel === "openai" && (requestModel.includes("gpt-5") || requestModel.includes("o1") || requestModel.includes("o3"));
   const tokenLimitKey = isNewOpenAI ? "max_completion_tokens" : "max_tokens";
 
+  // Inference parameters from agent settings
+  const temperature = ctx.cs?.temperature ?? 0.3;
+  const topP = ctx.cs?.top_p ?? 0.9;
+  const maxTokens = ctx.cs?.max_tokens ?? 500;
+  // frequency_penalty and presence_penalty only supported by OpenAI/Lovable (not Gemini direct)
+  const frequencyPenalty = ctx.cs?.frequency_penalty ?? 0.4;
+  const presencePenalty = ctx.cs?.presence_penalty ?? 0.1;
+
+  const inferenceParams: Record<string, any> = {
+    model: requestModel,
+    messages,
+    tools: tools.length > 0 ? tools : undefined,
+    [tokenLimitKey]: maxTokens,
+    temperature,
+    top_p: topP,
+  };
+  // Penalty params only for OpenAI-compatible endpoints (not Gemini direct API)
+  if (providerLabel !== "gemini") {
+    inferenceParams.frequency_penalty = frequencyPenalty;
+    inferenceParams.presence_penalty = presencePenalty;
+  }
+
   const r = await fetch(apiUrl, {
     method: "POST",
     headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: requestModel, messages, tools: tools.length > 0 ? tools : undefined, [tokenLimitKey]: 500 }),
+    body: JSON.stringify(inferenceParams),
   });
   log("🧠 AI response status:", r.status, "in", Date.now() - t0, "ms");
 
@@ -2515,7 +2537,7 @@ ${caps.can_send_pix && caps.pix_key ? ("\nPAGAMENTO - PIX:\nChave PIX: " + caps.
       const followUpRes = await fetch(apiUrl, {
         method: "POST",
         headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: requestModel, messages: followUpMessages, [tokenLimitKey]: 500 }),
+        body: JSON.stringify({ model: requestModel, messages: followUpMessages, [tokenLimitKey]: maxTokens, temperature, top_p: topP, ...(providerLabel !== "gemini" ? { frequency_penalty: frequencyPenalty, presence_penalty: presencePenalty } : {}) }),
       });
       
       if (followUpRes.ok) {

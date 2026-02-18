@@ -12,8 +12,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Slider } from '@/components/ui/slider';
 import { toast } from '@/hooks/use-toast';
-import { Bot, Settings, MessageSquare, Plus, Trash2, BookOpen, History, Copy, ExternalLink, BarChart3, Clock, PhoneForwarded, Mic, Zap, ShieldCheck, Heart, Sparkles, Wand2 } from 'lucide-react';
+import { Bot, Settings, MessageSquare, Plus, Trash2, BookOpen, History, Copy, ExternalLink, BarChart3, Clock, PhoneForwarded, Mic, Zap, ShieldCheck, Heart, Sparkles, Wand2, SlidersHorizontal } from 'lucide-react';
 import AgentCapabilities from '@/components/AgentCapabilities';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
@@ -126,6 +127,12 @@ export default function WhatsAppAgent() {
         react_on_booking: settings.react_on_booking,
         react_on_greeting: settings.react_on_greeting,
         reaction_triggers: settings.reaction_triggers,
+        // AI inference parameters
+        temperature: (settings as any).temperature ?? 0.3,
+        top_p: (settings as any).top_p ?? 0.9,
+        frequency_penalty: (settings as any).frequency_penalty ?? 0.4,
+        presence_penalty: (settings as any).presence_penalty ?? 0.1,
+        max_tokens: (settings as any).max_tokens ?? 500,
       } as any)
       .eq('id', settings.id);
     setSaving(false);
@@ -351,6 +358,160 @@ export default function WhatsAppAgent() {
                   <p className="text-xs text-muted-foreground">
                     💡 <strong>Gemini 3 Flash Preview</strong> é o padrão recomendado: geração mais recente do Google, muito mais rápido e inteligente que o 2.5. Modelos Pro são mais poderosos mas mais lentos.
                   </p>
+                </div>
+
+                <Separator />
+
+                {/* AI Inference Parameters */}
+                <div className="space-y-5">
+                  <div>
+                    <h4 className="font-medium text-sm flex items-center gap-2">
+                      <SlidersHorizontal className="h-4 w-4 text-primary" />
+                      Parâmetros de Inferência
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Ajuste fino do comportamento da IA. Valores mais baixos = respostas mais precisas e previsíveis. Valores mais altos = mais criatividade e variação.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Temperature */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <Label className="text-sm font-medium">
+                          Temperatura
+                        </Label>
+                        <span className="text-sm font-mono font-semibold text-primary">
+                          {((settings as any)?.temperature ?? 0.3).toFixed(2)}
+                        </span>
+                      </div>
+                      <Slider
+                        min={0} max={1} step={0.05}
+                        value={[(settings as any)?.temperature ?? 0.3]}
+                        onValueChange={([v]) => setSettings({ ...settings, temperature: v })}
+                      />
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Preciso (0)</span>
+                        <span>Criativo (1)</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Controla a aleatoriedade. <strong>0.1–0.4</strong> para respostas factuais e consistentes (recomendado para atendimento).
+                      </p>
+                    </div>
+
+                    {/* Top P */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <Label className="text-sm font-medium">
+                          Top P (Amostragem Nuclear)
+                        </Label>
+                        <span className="text-sm font-mono font-semibold text-primary">
+                          {((settings as any)?.top_p ?? 0.9).toFixed(2)}
+                        </span>
+                      </div>
+                      <Slider
+                        min={0.1} max={1} step={0.05}
+                        value={[(settings as any)?.top_p ?? 0.9]}
+                        onValueChange={([v]) => setSettings({ ...settings, top_p: v })}
+                      />
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Focado (0.1)</span>
+                        <span>Abrangente (1)</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Limita o vocabulário usado. <strong>0.7–0.9</strong> é o equilíbrio ideal entre diversidade e coerência.
+                      </p>
+                    </div>
+
+                    {/* Frequency Penalty */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <Label className="text-sm font-medium">
+                          Penalidade de Frequência
+                        </Label>
+                        <span className="text-sm font-mono font-semibold text-primary">
+                          {((settings as any)?.frequency_penalty ?? 0.4).toFixed(2)}
+                        </span>
+                      </div>
+                      <Slider
+                        min={0} max={2} step={0.05}
+                        value={[(settings as any)?.frequency_penalty ?? 0.4]}
+                        onValueChange={([v]) => setSettings({ ...settings, frequency_penalty: v })}
+                      />
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Sem penalidade (0)</span>
+                        <span>Máxima (2)</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Reduz repetição de palavras/frases já usadas. <strong>0.3–0.6</strong> evita respostas repetitivas sem perder naturalidade.
+                      </p>
+                    </div>
+
+                    {/* Presence Penalty */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <Label className="text-sm font-medium">
+                          Penalidade de Presença
+                        </Label>
+                        <span className="text-sm font-mono font-semibold text-primary">
+                          {((settings as any)?.presence_penalty ?? 0.1).toFixed(2)}
+                        </span>
+                      </div>
+                      <Slider
+                        min={0} max={2} step={0.05}
+                        value={[(settings as any)?.presence_penalty ?? 0.1]}
+                        onValueChange={([v]) => setSettings({ ...settings, presence_penalty: v })}
+                      />
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Sem penalidade (0)</span>
+                        <span>Máxima (2)</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Encoraja explorar novos tópicos. Mantenha baixo (<strong>0–0.2</strong>) para que o agente fique focado no assunto do cliente.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Max Tokens */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <Label className="text-sm font-medium">
+                        Tamanho máximo de resposta (tokens)
+                      </Label>
+                      <span className="text-sm font-mono font-semibold text-primary">
+                        {(settings as any)?.max_tokens ?? 500}
+                      </span>
+                    </div>
+                    <Slider
+                      min={100} max={1500} step={50}
+                      value={[(settings as any)?.max_tokens ?? 500]}
+                      onValueChange={([v]) => setSettings({ ...settings, max_tokens: v })}
+                    />
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Muito curto (100)</span>
+                      <span>Longo (1500)</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Limite de tokens por resposta. <strong>400–600</strong> é ideal para WhatsApp: respostas completas sem serem longas demais.
+                    </p>
+                  </div>
+
+                  {/* Preset buttons */}
+                  <div className="flex flex-wrap gap-2">
+                    <span className="text-xs text-muted-foreground self-center">Presets rápidos:</span>
+                    <Button variant="outline" size="sm" className="h-7 text-xs"
+                      onClick={() => setSettings({ ...settings, temperature: 0.1, top_p: 0.8, frequency_penalty: 0.5, presence_penalty: 0.0, max_tokens: 400 })}>
+                      🎯 Máxima Precisão
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-7 text-xs"
+                      onClick={() => setSettings({ ...settings, temperature: 0.3, top_p: 0.9, frequency_penalty: 0.4, presence_penalty: 0.1, max_tokens: 500 })}>
+                      ⚖️ Balanceado (padrão)
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-7 text-xs"
+                      onClick={() => setSettings({ ...settings, temperature: 0.7, top_p: 0.95, frequency_penalty: 0.3, presence_penalty: 0.2, max_tokens: 700 })}>
+                      ✨ Mais Natural
+                    </Button>
+                  </div>
                 </div>
 
                 <Separator />

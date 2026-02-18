@@ -1535,12 +1535,14 @@ export type Database = {
           elevenlabs_api_key: string | null
           elevenlabs_voice_id: string | null
           enabled: boolean
+          frequency_penalty: number | null
           gemini_api_key: string | null
           greeting_message: string | null
           handoff_after_failures: number | null
           id: string
           ignore_groups: boolean | null
           max_reschedule_suggestions: number | null
+          max_tokens: number | null
           media_vision_model: string | null
           message_delay_enabled: boolean | null
           message_delay_seconds: number | null
@@ -1551,6 +1553,7 @@ export type Database = {
           pix_name: string | null
           pix_send_as_text: boolean | null
           preferred_provider: string | null
+          presence_penalty: number | null
           react_on_booking: string | null
           react_on_cancel: string | null
           react_on_confirm: string | null
@@ -1558,7 +1561,9 @@ export type Database = {
           react_on_thanks: string | null
           reaction_triggers: Json | null
           respond_audio_with_audio: boolean | null
+          temperature: number | null
           timezone: string | null
+          top_p: number | null
           updated_at: string
         }
         Insert: {
@@ -1593,12 +1598,14 @@ export type Database = {
           elevenlabs_api_key?: string | null
           elevenlabs_voice_id?: string | null
           enabled?: boolean
+          frequency_penalty?: number | null
           gemini_api_key?: string | null
           greeting_message?: string | null
           handoff_after_failures?: number | null
           id?: string
           ignore_groups?: boolean | null
           max_reschedule_suggestions?: number | null
+          max_tokens?: number | null
           media_vision_model?: string | null
           message_delay_enabled?: boolean | null
           message_delay_seconds?: number | null
@@ -1609,6 +1616,7 @@ export type Database = {
           pix_name?: string | null
           pix_send_as_text?: boolean | null
           preferred_provider?: string | null
+          presence_penalty?: number | null
           react_on_booking?: string | null
           react_on_cancel?: string | null
           react_on_confirm?: string | null
@@ -1616,7 +1624,9 @@ export type Database = {
           react_on_thanks?: string | null
           reaction_triggers?: Json | null
           respond_audio_with_audio?: boolean | null
+          temperature?: number | null
           timezone?: string | null
+          top_p?: number | null
           updated_at?: string
         }
         Update: {
@@ -1651,12 +1661,14 @@ export type Database = {
           elevenlabs_api_key?: string | null
           elevenlabs_voice_id?: string | null
           enabled?: boolean
+          frequency_penalty?: number | null
           gemini_api_key?: string | null
           greeting_message?: string | null
           handoff_after_failures?: number | null
           id?: string
           ignore_groups?: boolean | null
           max_reschedule_suggestions?: number | null
+          max_tokens?: number | null
           media_vision_model?: string | null
           message_delay_enabled?: boolean | null
           message_delay_seconds?: number | null
@@ -1667,6 +1679,7 @@ export type Database = {
           pix_name?: string | null
           pix_send_as_text?: boolean | null
           preferred_provider?: string | null
+          presence_penalty?: number | null
           react_on_booking?: string | null
           react_on_cancel?: string | null
           react_on_confirm?: string | null
@@ -1674,7 +1687,9 @@ export type Database = {
           react_on_thanks?: string | null
           reaction_triggers?: Json | null
           respond_audio_with_audio?: boolean | null
+          temperature?: number | null
           timezone?: string | null
+          top_p?: number | null
           updated_at?: string
         }
         Relationships: [
