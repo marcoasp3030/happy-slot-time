@@ -83,15 +83,21 @@ export default function WhatsAppAgent() {
     if (settingsData) {
       setSettings(settingsData);
     } else {
-      // Create settings for this instance
+      // Create settings for this instance via upsert to avoid conflicts
       const insertData: any = { company_id: companyId };
       if (selectedInstanceId) insertData.instance_id = selectedInstanceId;
-      const { data: newSettings } = await supabase
+      const { data: newSettings, error: insertError } = await supabase
         .from('whatsapp_agent_settings')
         .insert(insertData)
         .select()
         .maybeSingle();
-      setSettings(newSettings);
+      if (insertError) {
+        // Row may already exist due to race condition — try fetching again
+        const { data: retryData } = await query.maybeSingle();
+        setSettings(retryData);
+      } else {
+        setSettings(newSettings);
+      }
     }
   }
 
@@ -113,8 +119,15 @@ export default function WhatsAppAgent() {
   }
 
   async function saveSettings() {
-    if (!settings) return;
+    if (!settings || !companyId) return;
     setSaving(true);
+
+    if (!settings.id) {
+      toast({ title: 'Erro ao salvar', description: 'Configurações não carregadas. Recarregue a página.', variant: 'destructive' });
+      setSaving(false);
+      return;
+    }
+
     const { error } = await supabase
       .from('whatsapp_agent_settings')
       .update({
