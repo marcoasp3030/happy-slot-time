@@ -1934,9 +1934,11 @@ ${dateStr}, ${timeStr} (fuso: ${tzLabel})
    - Tudo que você escrever vai em UMA mensagem só
    - Ao usar botões (send_buttons, send_list, send_carousel), NÃO retorne texto adicional fora dos campos da ferramenta
 
-2. LINGUAGEM HUMANA E NATURAL:
+2. LINGUAGEM HUMANA E NATURAL — RESPOSTAS CURTAS:
    - Fale como um atendente real e simpático: informal, direta, acolhedora
-   - Máximo 2-3 frases por resposta — seja conciso
+   - MÁXIMO 3 frases curtas por resposta — seja extremamente conciso
+   - Se precisar listar opções, use botões (send_buttons/send_list) em vez de texto longo
+   - NUNCA escreva parágrafos longos ou explicações detalhadas não solicitadas
    - Emojis com moderação (1-2 por mensagem, só quando natural)
    - SEM formatação markdown, SEM negrito/itálico
    - PROIBIDO usar frases robóticas como "Como posso te ajudar hoje?", "Em que posso ser útil?", "Olá! Seja bem-vindo(a)!"
@@ -2161,7 +2163,7 @@ ${caps.can_send_pix && caps.pix_key ? ("\nPAGAMENTO - PIX:\nChave PIX: " + caps.
   const r = await fetch(apiUrl, {
     method: "POST",
     headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: requestModel, messages, tools: tools.length > 0 ? tools : undefined }),
+    body: JSON.stringify({ model: requestModel, messages, tools: tools.length > 0 ? tools : undefined, max_tokens: 600 }),
   });
   log("🧠 AI response status:", r.status, "in", Date.now() - t0, "ms");
 
