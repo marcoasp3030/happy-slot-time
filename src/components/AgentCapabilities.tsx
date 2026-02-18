@@ -227,6 +227,29 @@ export default function AgentCapabilities({ settings, onSettingsChange, onSave, 
         </CardContent>
       </Card>
 
+      {/* Message Deduplication */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <ShieldCheck className="h-4.5 w-4.5 text-primary" />
+            Deduplicação de Mensagens
+          </CardTitle>
+          <CardDescription>Evita que o agente envie respostas repetidas ou com o mesmo conteúdo</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/40">
+            <div className="flex items-center gap-3">
+              <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <Label className="font-medium text-sm">Evitar respostas duplicadas</Label>
+                <p className="text-xs text-muted-foreground">Se o agente já enviou a mesma resposta nos últimos 30 segundos, ela não será enviada novamente</p>
+              </div>
+            </div>
+            <Switch checked={(settings as any)?.deduplicate_outgoing !== false} onCheckedChange={(v) => u('deduplicate_outgoing' as any, v)} />
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Feature Capabilities */}
       <Card>
         <CardHeader>

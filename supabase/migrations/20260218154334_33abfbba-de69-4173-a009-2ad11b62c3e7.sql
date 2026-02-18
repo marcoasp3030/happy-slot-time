@@ -1,0 +1,1 @@
+ALTER TABLE public.whatsapp_agent_settings ADD COLUMN IF NOT EXISTS deduplicate_outgoing boolean DEFAULT true;
