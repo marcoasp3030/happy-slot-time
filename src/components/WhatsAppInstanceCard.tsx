@@ -21,7 +21,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 
-type ConnectionStatus = 'idle' | 'connecting' | 'polling' | 'connected' | 'error';
+type ConnectionStatus = 'idle' | 'checking' | 'connecting' | 'polling' | 'connected' | 'error';
 
 interface WhatsAppInstance {
   id: string;
@@ -39,9 +39,7 @@ interface WhatsAppInstanceCardProps {
 }
 
 export default function WhatsAppInstanceCard({ instance, onDeleted, onUpdated }: WhatsAppInstanceCardProps) {
-  const [status, setStatus] = useState<ConnectionStatus>(
-    instance.status === 'connected' ? 'connected' : 'idle'
-  );
+  const [status, setStatus] = useState<ConnectionStatus>('checking');
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [pairCode, setPairCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -60,13 +58,13 @@ export default function WhatsAppInstanceCard({ instance, onDeleted, onUpdated }:
   }, []);
 
   useEffect(() => {
-    if (instance.status === 'connected') {
-      checkStatus();
-    }
+    // Always check real status from API on mount, regardless of DB value
+    checkStatus();
     return () => stopPolling();
   }, []);
 
   const checkStatus = async () => {
+    setStatus('checking');
     try {
       const { data, error: fnError } = await supabase.functions.invoke(
         `whatsapp-connect?action=status&instanceId=${instance.id}`, { method: 'GET' }
@@ -196,10 +194,12 @@ export default function WhatsAppInstanceCard({ instance, onDeleted, onUpdated }:
   };
 
   const statusBadge = status === 'connected'
-    ? <Badge variant="default" className="text-xs">🟢 Conectado</Badge>
+    ? <Badge variant="outline" className="text-xs gap-1 border-primary/40 text-primary bg-primary/10">🟢 Conectado</Badge>
     : status === 'polling'
     ? <Badge variant="secondary" className="text-xs">🔄 Conectando...</Badge>
-    : <Badge variant="secondary" className="text-xs">⚪ Desconectado</Badge>;
+    : status === 'checking'
+    ? <Badge variant="secondary" className="text-xs gap-1"><Loader2 className="h-3 w-3 animate-spin" />Verificando</Badge>
+    : <Badge variant="secondary" className="text-xs text-muted-foreground">⚪ Desconectado</Badge>;
 
   return (
     <Card className="glass-card-static rounded-2xl">
@@ -261,7 +261,12 @@ export default function WhatsAppInstanceCard({ instance, onDeleted, onUpdated }:
       </CardHeader>
 
       <CardContent className="px-4 sm:px-5 space-y-3">
-        {status === 'connected' ? (
+        {status === 'checking' ? (
+          <div className="flex items-center justify-center gap-2 py-6 text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <span className="text-sm">Verificando conexão...</span>
+          </div>
+        ) : status === 'connected' ? (
           <div className="space-y-3">
             <div className="flex items-start gap-3 p-3 rounded-xl bg-primary/5 border border-primary/10">
               <CheckCircle2 className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
