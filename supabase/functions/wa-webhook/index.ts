@@ -631,19 +631,178 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const forwardUrl = `${supabaseUrl}/functions/v1/send-whatsapp`;
-    log("🚀 Forwarding to:", forwardUrl, audioInfo.isAudio ? "(AUDIO)" : mediaInfo.isMedia ? `(MEDIA:${mediaInfo.mediaType})` : "(TEXT)");
+
+    const btnResponse = extractButtonResponse(body);
+    const effectiveMsg = msg || (audioInfo.isAudio ? "[áudio]" : mediaInfo.isMedia ? `[${mediaInfo.mediaType === "image" ? "imagem" : "documento"}]` : "");
+
+    // ── Message Debounce / Aggregation (only for text, non-button messages) ──
+    const isTextMsg = !audioInfo.isAudio && !mediaInfo.isMedia && !btnResponse;
+    if (isTextMsg && effectiveMsg) {
+      const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
+      const sb = createClient(supabaseUrl, serviceKey);
+
+      // Load agent settings to check if debounce is enabled
+      const { data: agSettings } = await sb
+        .from("whatsapp_agent_settings")
+        .select("message_delay_enabled, message_delay_seconds, enabled")
+        .eq("company_id", companyId)
+        .single();
+
+      if (agSettings?.enabled && agSettings?.message_delay_enabled) {
+        const delaySeconds = Math.max(2, Math.min(30, agSettings.message_delay_seconds || 8));
+        log("⏳ Debounce enabled:", delaySeconds, "s");
+
+        // Get or create conversation
+        let { data: conv } = await sb
+          .from("whatsapp_conversations")
+          .select("id, handoff_requested")
+          .eq("company_id", companyId)
+          .eq("phone", phone)
+          .eq("status", "active")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+
+        if (!conv) {
+          const { data: nc } = await sb
+            .from("whatsapp_conversations")
+            .insert({ company_id: companyId, phone, status: "active" })
+            .select("id, handoff_requested")
+            .single();
+          conv = nc;
+        }
+
+        if (conv?.id && !conv.handoff_requested) {
+          const convId = conv.id;
+          const arrivalMs = Date.now();
+
+          // Save this message as pending
+          await sb.from("whatsapp_messages").insert({
+            conversation_id: convId,
+            company_id: companyId,
+            direction: "incoming",
+            message_type: "text",
+            content: effectiveMsg,
+            delivery_status: "pending",
+            metadata: { buffered: true, arrival_ms: arrivalMs },
+          });
+          log("⏳ Message saved as pending");
+
+          // Try to acquire processing LOCK
+          const lockWindowStart = new Date(arrivalMs - (delaySeconds + 60) * 1000).toISOString();
+          const { data: existingLock } = await sb
+            .from("whatsapp_messages")
+            .select("id")
+            .eq("conversation_id", convId)
+            .eq("direction", "outgoing")
+            .eq("delivery_status", "locking")
+            .gte("created_at", lockWindowStart)
+            .limit(1)
+            .single();
+
+          if (existingLock) {
+            log("⏳ Lock held by another worker — exiting.");
+            return new Response(JSON.stringify({ ok: true, skipped: "lock_held_by_other" }), {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+
+          // Acquire lock
+          const { data: lockRow, error: lockErr } = await sb.from("whatsapp_messages").insert({
+            conversation_id: convId,
+            company_id: companyId,
+            direction: "outgoing",
+            message_type: "text",
+            content: "__DEBOUNCE_LOCK__",
+            delivery_status: "locking",
+            metadata: { lock: true, acquired_ms: arrivalMs, delay_seconds: delaySeconds },
+          }).select("id").single();
+
+          if (!lockErr && lockRow?.id) {
+            const lockId = lockRow.id;
+            log("⏳ 🔒 Lock acquired! Waiting", delaySeconds, "s...");
+
+            // Wait the debounce delay
+            await new Promise(r => setTimeout(r, delaySeconds * 1000));
+
+            // Collect all pending messages
+            const bufferWindowStart = new Date(arrivalMs - 5000).toISOString();
+            const { data: bufferedMsgs } = await sb
+              .from("whatsapp_messages")
+              .select("id, content, created_at")
+              .eq("conversation_id", convId)
+              .eq("direction", "incoming")
+              .eq("delivery_status", "pending")
+              .gte("created_at", bufferWindowStart)
+              .order("created_at", { ascending: true });
+
+            // Release lock
+            await sb.from("whatsapp_messages").delete().eq("id", lockId);
+            log("⏳ 🔓 Lock released. Buffered msgs:", bufferedMsgs?.length || 0);
+
+            if (!bufferedMsgs || bufferedMsgs.length === 0) {
+              return new Response(JSON.stringify({ ok: true, skipped: "no_pending_after_delay" }), {
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+              });
+            }
+
+            // Mark all as processed
+            const msgIds = bufferedMsgs.map((m: any) => m.id);
+            await sb.from("whatsapp_messages")
+              .update({ delivery_status: "read", metadata: { buffered: false, aggregated: true, source_count: bufferedMsgs.length } })
+              .in("id", msgIds);
+
+            // Concatenate all messages
+            const concatenatedMsg = bufferedMsgs
+              .map((m: any) => m.content?.trim())
+              .filter(Boolean)
+              .join("\n");
+            log("⏳ Aggregated (", bufferedMsgs.length, "msgs):", concatenatedMsg.substring(0, 200));
+
+            // Forward aggregated message to send-whatsapp with skipIncomingSave
+            const aggregatedBody = {
+              action: "agent-process",
+              company_id: companyId,
+              phone,
+              message: concatenatedMsg,
+              wa_message_id: body.message?.messageid || body.message?.id || null,
+              skip_incoming_save: true,
+              existing_conv_id: convId,
+            };
+
+            const res = await fetch(forwardUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+              body: JSON.stringify(aggregatedBody),
+            });
+
+            const result = await res.text();
+            log("✅ Aggregated result:", res.status, result.substring(0, 200));
+            return new Response(result, {
+              status: res.status,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+        } else if (conv?.handoff_requested) {
+          log("⏳ Handoff active, skipping agent");
+          return new Response(JSON.stringify({ ok: true, skipped: "handoff" }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+    }
+
+    // Fallback: no debounce (audio, media, button responses, or debounce disabled)
+    log("🚀 Forwarding to:", forwardUrl, audioInfo.isAudio ? "(AUDIO)" : mediaInfo.isMedia ? `(MEDIA:${mediaInfo.mediaType})` : btnResponse ? "(BUTTON)" : "(TEXT-no-debounce)");
 
     const forwardBody: any = {
       action: "agent-process",
       company_id: companyId,
       phone,
-      message: msg || (audioInfo.isAudio ? "[áudio]" : mediaInfo.isMedia ? `[${mediaInfo.mediaType === "image" ? "imagem" : "documento"}]` : ""),
-      // Pass the UAZAPI message ID for delivery tracking and reactions
+      message: effectiveMsg,
       wa_message_id: body.message?.messageid || body.message?.id || null,
     };
 
-    // Include button/list response context if present
-    const btnResponse = extractButtonResponse(body);
     if (btnResponse) {
       forwardBody.button_response_id = btnResponse.buttonId;
       forwardBody.button_response_text = btnResponse.buttonText;
