@@ -96,9 +96,8 @@ export default function WhatsAppAgent() {
       return;
     }
 
-    // No row found — create one
-    // If creating for a specific instance, inherit settings from the global (null instance_id) record
-    let insertData: any = { company_id: companyId };
+    // No row found — build insert data, inheriting from global settings if instance-specific
+    let insertData: any = { company_id: companyId, enabled: false };
     if (instanceId) {
       insertData.instance_id = instanceId;
       // Inherit from global settings so the new instance starts with the same config
@@ -122,7 +121,7 @@ export default function WhatsAppAgent() {
       .maybeSingle();
 
     if (insertError) {
-      // Conflict: row was created concurrently — fetch it again
+      // Conflict or error: try fetching again
       let retryQuery = supabase
         .from('whatsapp_agent_settings')
         .select('*')
@@ -133,7 +132,12 @@ export default function WhatsAppAgent() {
         retryQuery = retryQuery.is('instance_id', null);
       }
       const { data: retryData } = await retryQuery.maybeSingle();
-      setSettings(retryData);
+      if (retryData) {
+        setSettings(retryData);
+      } else {
+        // Last resort: set placeholder with insertData so save can use upsert
+        setSettings({ ...insertData, id: null });
+      }
     } else {
       setSettings(newSettings);
     }
@@ -161,71 +165,84 @@ export default function WhatsAppAgent() {
     if (!settings || !companyId) return;
     setSaving(true);
 
-    if (!settings.id) {
-      toast({ title: 'Erro ao salvar', description: 'Configurações não carregadas. Recarregue a página.', variant: 'destructive' });
-      setSaving(false);
-      return;
+    const settingsPayload: any = {
+      company_id: companyId,
+      instance_id: settings.instance_id ?? null,
+      enabled: settings.enabled,
+      greeting_message: settings.greeting_message,
+      cancellation_policy_hours: settings.cancellation_policy_hours,
+      max_reschedule_suggestions: settings.max_reschedule_suggestions,
+      respond_audio_with_audio: settings.respond_audio_with_audio,
+      handoff_after_failures: settings.handoff_after_failures,
+      elevenlabs_voice_id: settings.elevenlabs_voice_id,
+      custom_prompt: settings.custom_prompt,
+      timezone: settings.timezone,
+      can_share_address: settings.can_share_address,
+      can_share_phone: settings.can_share_phone,
+      can_share_business_hours: settings.can_share_business_hours,
+      can_share_services: settings.can_share_services,
+      can_share_professionals: settings.can_share_professionals,
+      can_handle_anamnesis: settings.can_handle_anamnesis,
+      can_send_files: settings.can_send_files,
+      can_send_images: settings.can_send_images,
+      can_send_audio: settings.can_send_audio,
+      custom_business_info: settings.custom_business_info,
+      ai_model: settings.ai_model,
+      collect_client_name: settings.collect_client_name,
+      collect_client_phone: settings.collect_client_phone,
+      collect_client_email: settings.collect_client_email,
+      collect_company_name: settings.collect_company_name,
+      collect_segment: settings.collect_segment,
+      collect_region: settings.collect_region,
+      collect_area: settings.collect_area,
+      can_send_payment_link: settings.can_send_payment_link,
+      payment_link_url: settings.payment_link_url,
+      can_send_pix: settings.can_send_pix,
+      pix_key: settings.pix_key,
+      pix_name: settings.pix_name,
+      pix_instructions: settings.pix_instructions,
+      pix_send_as_text: settings.pix_send_as_text ?? true,
+      openai_api_key: settings.openai_api_key,
+      gemini_api_key: settings.gemini_api_key,
+      preferred_provider: settings.preferred_provider,
+      auto_react_enabled: settings.auto_react_enabled,
+      ignore_groups: settings.ignore_groups,
+      deduplicate_outgoing: settings.deduplicate_outgoing !== false,
+      message_delay_enabled: settings.message_delay_enabled === true,
+      message_delay_seconds: settings.message_delay_seconds ?? 8,
+      react_on_confirm: settings.react_on_confirm,
+      react_on_cancel: settings.react_on_cancel,
+      react_on_thanks: settings.react_on_thanks,
+      react_on_booking: settings.react_on_booking,
+      react_on_greeting: settings.react_on_greeting,
+      reaction_triggers: settings.reaction_triggers,
+      temperature: settings.temperature ?? 0.3,
+      top_p: settings.top_p ?? 0.9,
+      frequency_penalty: settings.frequency_penalty ?? 0.4,
+      presence_penalty: settings.presence_penalty ?? 0.1,
+      max_tokens: settings.max_tokens ?? 500,
+    };
+
+    let error: any = null;
+
+    if (settings.id) {
+      // Row exists — update normally
+      const res = await supabase
+        .from('whatsapp_agent_settings')
+        .update(settingsPayload)
+        .eq('id', settings.id);
+      error = res.error;
+    } else {
+      // No id yet (insert failed before) — try upsert
+      const res = await supabase
+        .from('whatsapp_agent_settings')
+        .upsert(settingsPayload, { onConflict: 'company_id,instance_id' })
+        .select()
+        .maybeSingle();
+      error = res.error;
+      if (!error && res.data) setSettings(res.data);
     }
 
-    const { error } = await supabase
-      .from('whatsapp_agent_settings')
-      .update({
-        enabled: settings.enabled,
-        greeting_message: settings.greeting_message,
-        cancellation_policy_hours: settings.cancellation_policy_hours,
-        max_reschedule_suggestions: settings.max_reschedule_suggestions,
-        respond_audio_with_audio: settings.respond_audio_with_audio,
-        handoff_after_failures: settings.handoff_after_failures,
-        elevenlabs_voice_id: settings.elevenlabs_voice_id,
-        custom_prompt: settings.custom_prompt,
-        timezone: settings.timezone,
-        can_share_address: settings.can_share_address,
-        can_share_phone: settings.can_share_phone,
-        can_share_business_hours: settings.can_share_business_hours,
-        can_share_services: settings.can_share_services,
-        can_share_professionals: settings.can_share_professionals,
-        can_handle_anamnesis: settings.can_handle_anamnesis,
-        can_send_files: settings.can_send_files,
-        can_send_images: settings.can_send_images,
-        can_send_audio: settings.can_send_audio,
-        custom_business_info: settings.custom_business_info,
-        ai_model: settings.ai_model,
-        collect_client_name: settings.collect_client_name,
-        collect_client_phone: settings.collect_client_phone,
-        collect_client_email: settings.collect_client_email,
-        collect_company_name: settings.collect_company_name,
-        collect_segment: settings.collect_segment,
-        collect_region: settings.collect_region,
-        collect_area: settings.collect_area,
-        can_send_payment_link: settings.can_send_payment_link,
-        payment_link_url: settings.payment_link_url,
-        can_send_pix: settings.can_send_pix,
-        pix_key: settings.pix_key,
-        pix_name: settings.pix_name,
-        pix_instructions: settings.pix_instructions,
-        pix_send_as_text: settings.pix_send_as_text ?? true,
-        openai_api_key: settings.openai_api_key,
-        gemini_api_key: (settings as any).gemini_api_key,
-        preferred_provider: (settings as any).preferred_provider,
-        auto_react_enabled: settings.auto_react_enabled,
-        ignore_groups: settings.ignore_groups,
-        deduplicate_outgoing: (settings as any).deduplicate_outgoing !== false,
-        message_delay_enabled: (settings as any).message_delay_enabled === true,
-        message_delay_seconds: (settings as any).message_delay_seconds ?? 8,
-        react_on_confirm: settings.react_on_confirm,
-        react_on_cancel: settings.react_on_cancel,
-        react_on_thanks: settings.react_on_thanks,
-        react_on_booking: settings.react_on_booking,
-        react_on_greeting: settings.react_on_greeting,
-        reaction_triggers: settings.reaction_triggers,
-        // AI inference parameters
-        temperature: (settings as any).temperature ?? 0.3,
-        top_p: (settings as any).top_p ?? 0.9,
-        frequency_penalty: (settings as any).frequency_penalty ?? 0.4,
-        presence_penalty: (settings as any).presence_penalty ?? 0.1,
-        max_tokens: (settings as any).max_tokens ?? 500,
-      } as any)
-      .eq('id', settings.id);
     setSaving(false);
     if (error) {
       toast({ title: 'Erro ao salvar', description: error.message, variant: 'destructive' });
