@@ -386,28 +386,68 @@ Deno.serve(async (req) => {
 });
 
 // ─── Helper: get WS credentials for the correct instance ───
-// Prefers instance-specific row from whatsapp_instances (has per-instance token),
-// falls back to whatsapp_settings (legacy/primary).
+// Strategy:
+// 1. If instanceId provided, fetch token from whatsapp_instances.
+// 2. Always also fetch whatsapp_settings (has the authoritative/current token for primary).
+// 3. For primary instance: prefer whatsapp_settings token (kept more up-to-date by the platform).
+// 4. For secondary instances: use whatsapp_instances token.
+// 5. If whatsapp_instances token is stale/missing, sync from whatsapp_settings.
 async function getWsCredentials(sb: any, companyId: string, instanceId?: string | null) {
+  // Always fetch whatsapp_settings (base_url + primary token — most reliable)
+  const { data: ws } = await sb
+    .from("whatsapp_settings")
+    .select("base_url, instance_id, token, active")
+    .eq("company_id", companyId)
+    .maybeSingle();
+
+  const baseUrl = ws?.base_url || "https://sistembr.uazapi.com";
+
   if (instanceId) {
     const { data: inst } = await sb
       .from("whatsapp_instances")
-      .select("instance_name, token, status")
+      .select("instance_name, token, status, is_primary")
       .eq("id", instanceId)
+      .eq("company_id", companyId)
       .maybeSingle();
-    if (inst?.token) {
-      // Get base_url from whatsapp_settings (shared per company)
-      const { data: ws } = await sb.from("whatsapp_settings").select("base_url").eq("company_id", companyId).maybeSingle();
-      return {
-        base_url: ws?.base_url || "https://sistembr.uazapi.com",
-        instance_id: inst.instance_name,
-        token: inst.token,
-        active: inst.status === "connected",
-      };
+
+    if (inst) {
+      // For primary instance: whatsapp_settings token is authoritative
+      // (it's the one the platform originally issued and keeps in sync)
+      if (inst.is_primary && ws?.token) {
+        log("🔑 Using whatsapp_settings token for primary instance");
+        return {
+          base_url: baseUrl,
+          instance_id: inst.instance_name,
+          token: ws.token,
+          active: inst.status === "connected",
+        };
+      }
+
+      // For secondary instances: use whatsapp_instances token
+      if (inst.token) {
+        log("🔑 Using whatsapp_instances token for secondary instance:", inst.instance_name);
+        return {
+          base_url: baseUrl,
+          instance_id: inst.instance_name,
+          token: inst.token,
+          active: inst.status === "connected",
+        };
+      }
+
+      // Instance has no token — fallback to whatsapp_settings if same instance_name
+      if (ws?.token && ws?.instance_id === inst.instance_name) {
+        log("🔑 Instance token missing, falling back to whatsapp_settings token (same instance)");
+        return {
+          base_url: baseUrl,
+          instance_id: inst.instance_name,
+          token: ws.token,
+          active: inst.status === "connected",
+        };
+      }
     }
   }
-  // Fallback to legacy whatsapp_settings
-  const { data: ws } = await sb.from("whatsapp_settings").select("base_url, instance_id, token, active").eq("company_id", companyId).maybeSingle();
+
+  // Fallback to legacy whatsapp_settings (primary instance)
   return ws || null;
 }
 
