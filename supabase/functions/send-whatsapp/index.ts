@@ -2160,10 +2160,15 @@ ${caps.can_send_pix && caps.pix_key ? ("\nPAGAMENTO - PIX:\nChave PIX: " + caps.
 
   log("🧠 Sending request to", providerLabel, "provider, model:", requestModel);
   const t0 = Date.now();
+
+  // OpenAI gpt-5+ usa max_completion_tokens; modelos legados e Gemini usam max_tokens
+  const isNewOpenAI = providerLabel === "openai" && (requestModel.includes("gpt-5") || requestModel.includes("o1") || requestModel.includes("o3"));
+  const tokenLimitKey = isNewOpenAI ? "max_completion_tokens" : "max_tokens";
+
   const r = await fetch(apiUrl, {
     method: "POST",
     headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: requestModel, messages, tools: tools.length > 0 ? tools : undefined, max_tokens: 600 }),
+    body: JSON.stringify({ model: requestModel, messages, tools: tools.length > 0 ? tools : undefined, [tokenLimitKey]: 500 }),
   });
   log("🧠 AI response status:", r.status, "in", Date.now() - t0, "ms");
 
@@ -2510,7 +2515,7 @@ ${caps.can_send_pix && caps.pix_key ? ("\nPAGAMENTO - PIX:\nChave PIX: " + caps.
       const followUpRes = await fetch(apiUrl, {
         method: "POST",
         headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: requestModel, messages: followUpMessages }),
+        body: JSON.stringify({ model: requestModel, messages: followUpMessages, [tokenLimitKey]: 500 }),
       });
       
       if (followUpRes.ok) {
