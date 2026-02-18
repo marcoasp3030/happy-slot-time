@@ -1671,20 +1671,24 @@ async function handleAgent(
         // ── STEP 2: Build the PIX card — only send if not recently sent ──
         let pixTextMessage: string | null = null;
         if (replyContainsPix && pixSendAsText) {
-          // Deduplication: skip card if same key was sent in the last 5 min
+          // Deduplication: skip card ONLY if the actual PIX card header was sent recently.
+          // IMPORTANT: We must NOT match against the AI's conversational reply (which also
+          // contains the key) — otherwise the card is forever skipped. We use the unique
+          // card header text as the marker, since that only appears in card messages.
           let pixAlreadySentRecently = false;
           const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-          const { data: recentPixMsg } = await sb.from("whatsapp_messages")
+          const { data: recentPixCard } = await sb.from("whatsapp_messages")
             .select("id")
             .eq("conversation_id", conv.id)
             .eq("direction", "outgoing")
             .gte("created_at", fiveMinutesAgo)
-            .ilike("content", `%${pixKey!.substring(0, 12)}%`)
+            .ilike("content", "%DADOS PARA PAGAMENTO VIA PIX%")
             .limit(1);
-          if (recentPixMsg && recentPixMsg.length > 0) {
+          if (recentPixCard && recentPixCard.length > 0) {
             pixAlreadySentRecently = true;
-            log("💳 PIX card already sent in last 5 minutes — skipping card resend (but key is still stripped from audio)");
+            log("💳 PIX card already sent in last 5 minutes — skipping duplicate card");
           }
+
 
           if (!pixAlreadySentRecently) {
             const pixName = caps.pix_name || ag?.pix_name || null;
@@ -1748,6 +1752,8 @@ async function handleAgent(
         if (pixTextMessage) {
           try {
             log("💳 Sending modern PIX card...");
+            let pixCardSent = false;
+
             // Try button format first (best UX — shows key prominently with confirm button)
             try {
               await sendMenuViaUazapi(
@@ -1760,12 +1766,33 @@ async function handleAgent(
                   choices: [`✅ Recebi os dados|pix_ok`],
                 }
               );
+              pixCardSent = true;
               log("💳 ✅ PIX modern card (button) sent!");
             } catch (btnErr: any) {
               // Fallback: plain text — still professional, just no interactive button
               log("💳 Button fallback — sending as plain text:", btnErr.message);
               await sendUazapiMessage(ws, cleanPhone, pixTextMessage);
+              pixCardSent = true;
               log("💳 ✅ PIX plain text card sent!");
+            }
+
+            // ── Save PIX card to DB so deduplication works correctly ──
+            // Without this, the dedup check never finds the card marker and always re-sends (or
+            // worse, matches against the AI's conversational reply and never sends).
+            if (pixCardSent) {
+              try {
+                await sb.from("whatsapp_messages").insert({
+                  conversation_id: conv.id,
+                  company_id: cid,
+                  direction: "outgoing",
+                  message_type: "text",
+                  content: pixTextMessage,
+                  delivery_status: "sent",
+                });
+                log("💳 ✅ PIX card saved to DB for dedup tracking");
+              } catch (saveErr: any) {
+                log("💳 ⚠️ Could not save PIX card to DB (non-fatal):", saveErr.message);
+              }
             }
           } catch (e: any) {
             logErr("💳 ❌ PIX card failed entirely:", e.message);
