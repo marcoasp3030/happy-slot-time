@@ -118,6 +118,8 @@ export default function WhatsAppAgent() {
         auto_react_enabled: settings.auto_react_enabled,
         ignore_groups: settings.ignore_groups,
         deduplicate_outgoing: (settings as any).deduplicate_outgoing !== false,
+        message_delay_enabled: (settings as any).message_delay_enabled === true,
+        message_delay_seconds: (settings as any).message_delay_seconds ?? 8,
         react_on_confirm: settings.react_on_confirm,
         react_on_cancel: settings.react_on_cancel,
         react_on_thanks: settings.react_on_thanks,

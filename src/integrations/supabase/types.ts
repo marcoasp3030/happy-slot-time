@@ -1542,6 +1542,8 @@ export type Database = {
           ignore_groups: boolean | null
           max_reschedule_suggestions: number | null
           media_vision_model: string | null
+          message_delay_enabled: boolean | null
+          message_delay_seconds: number | null
           openai_api_key: string | null
           payment_link_url: string | null
           pix_instructions: string | null
@@ -1598,6 +1600,8 @@ export type Database = {
           ignore_groups?: boolean | null
           max_reschedule_suggestions?: number | null
           media_vision_model?: string | null
+          message_delay_enabled?: boolean | null
+          message_delay_seconds?: number | null
           openai_api_key?: string | null
           payment_link_url?: string | null
           pix_instructions?: string | null
@@ -1654,6 +1658,8 @@ export type Database = {
           ignore_groups?: boolean | null
           max_reschedule_suggestions?: number | null
           media_vision_model?: string | null
+          message_delay_enabled?: boolean | null
+          message_delay_seconds?: number | null
           openai_api_key?: string | null
           payment_link_url?: string | null
           pix_instructions?: string | null

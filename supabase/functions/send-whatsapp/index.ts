@@ -93,6 +93,69 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ ok: true, skipped: "no_msg" }), { headers: jsonH });
       }
 
+      // ── Message Delay / Aggregation ──
+      // If enabled, wait N seconds to collect all messages the client might send in quick succession
+      // before processing. Uses a "pending marker" in whatsapp_messages to detect if the agent
+      // should skip this call (another call will handle it after the full delay).
+      const { data: agSettingsDelay } = await supabase
+        .from("whatsapp_agent_settings")
+        .select("message_delay_enabled, message_delay_seconds, enabled")
+        .eq("company_id", uazapiCompanyId)
+        .single();
+
+      if (agSettingsDelay?.enabled && agSettingsDelay?.message_delay_enabled && !isAudio) {
+        const delaySeconds = Math.max(1, Math.min(30, agSettingsDelay.message_delay_seconds || 8));
+        log("⏳ Message delay enabled:", delaySeconds, "s. Waiting before processing...");
+
+        // Mark this message arrival time (used as the "last message" timestamp)
+        const arrivalKey = `__DELAY_${phone.replace(/\D/g, "")}_${uazapiCompanyId}`;
+        const arrivalTime = Date.now();
+
+        // Store the arrival timestamp in a DB record so concurrent calls can coordinate
+        // We use whatsapp_conversations.updated_at as a cheap shared clock
+        // Get/find the conversation
+        const { data: existingConv } = await supabase
+          .from("whatsapp_conversations")
+          .select("id, updated_at")
+          .eq("company_id", uazapiCompanyId)
+          .eq("phone", phone)
+          .eq("status", "active")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+
+        // Touch the conversation to mark the latest message arrival
+        if (existingConv?.id) {
+          await supabase
+            .from("whatsapp_conversations")
+            .update({ last_message_at: new Date().toISOString() })
+            .eq("id", existingConv.id);
+        }
+
+        // Wait the delay
+        await new Promise(r => setTimeout(r, delaySeconds * 1000));
+
+        // After the wait, check if a NEWER message arrived during our wait
+        // (by checking if last_message_at was updated AFTER our arrival time + 500ms tolerance)
+        if (existingConv?.id) {
+          const { data: convAfterWait } = await supabase
+            .from("whatsapp_conversations")
+            .select("last_message_at")
+            .eq("id", existingConv.id)
+            .single();
+
+          if (convAfterWait?.last_message_at) {
+            const lastMsgTime = new Date(convAfterWait.last_message_at).getTime();
+            if (lastMsgTime > arrivalTime + 500) {
+              log("⏳ Newer message arrived during delay, skipping this call. Another call will process.");
+              return new Response(JSON.stringify({ ok: true, skipped: "delay_superseded" }), { headers: jsonH });
+            }
+          }
+        }
+
+        log("⏳ Delay complete. No newer message arrived, proceeding with handleAgent...");
+      }
+
       log("🚀 CALLING handleAgent...");
       const t0 = Date.now();
       try {
@@ -1352,10 +1415,27 @@ async function handleAgent(sb: any, cid: string, phone: string, msg: string, aud
         const pixSendAsText = caps.pix_send_as_text ?? ag?.pix_send_as_text ?? true;
         const replyContainsPix = pixKey && reply.includes(pixKey);
 
+        // ── PIX deduplication: don't resend PIX if already sent in this conversation recently ──
+        let pixAlreadySentRecently = false;
+        if (replyContainsPix && pixKey) {
+          const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+          const { data: recentPixMsg } = await sb.from("whatsapp_messages")
+            .select("id")
+            .eq("conversation_id", conv.id)
+            .eq("direction", "outgoing")
+            .gte("created_at", fiveMinutesAgo)
+            .ilike("content", `%${pixKey.substring(0, 10)}%`)
+            .limit(1);
+          if (recentPixMsg && recentPixMsg.length > 0) {
+            pixAlreadySentRecently = true;
+            log("💳 PIX key already sent in last 5 minutes — skipping PIX resend");
+          }
+        }
+
         let audioReply = reply;
         let pixTextMessage: string | null = null;
 
-        if (replyContainsPix && pixSendAsText) {
+        if (replyContainsPix && pixSendAsText && !pixAlreadySentRecently) {
           // Split: remove PIX key from audio reply, build a clean text message with PIX info
           const pixName = caps.pix_name || ag?.pix_name || null;
           const pixInstructions = caps.pix_instructions || ag?.pix_instructions || null;
