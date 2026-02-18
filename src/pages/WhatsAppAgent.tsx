@@ -326,27 +326,31 @@ export default function WhatsAppAgent() {
                 <Separator />
 
                 <div className="space-y-2">
-                  <Label>Modelo de IA</Label>
+                  <Label>Modelo de IA — Conversação</Label>
                   <select
-                    value={settings?.ai_model || 'google/gemini-2.5-flash'}
+                    value={settings?.ai_model || 'google/gemini-3-flash-preview'}
                     onChange={(e) => setSettings({ ...settings, ai_model: e.target.value })}
                     className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
                   >
-                    <optgroup label="Google Gemini">
-                      <option value="google/gemini-2.5-flash">Gemini 2.5 Flash (Rápido, recomendado)</option>
-                      <option value="google/gemini-2.5-flash-lite">Gemini 2.5 Flash Lite (Mais rápido, básico)</option>
-                      <option value="google/gemini-2.5-pro">Gemini 2.5 Pro (Mais inteligente, mais lento)</option>
-                      <option value="google/gemini-3-flash-preview">Gemini 3 Flash Preview (Nova geração)</option>
-                      <option value="google/gemini-3-pro-preview">Gemini 3 Pro Preview (Top, nova geração)</option>
+                    <optgroup label="✨ Google Gemini 3 (Nova Geração — Recomendado)">
+                      <option value="google/gemini-3-flash-preview">Gemini 3 Flash Preview ⚡ — Rápido, inteligente, equilíbrio ideal (padrão)</option>
+                      <option value="google/gemini-3-pro-preview">Gemini 3 Pro Preview 🧠 — Máxima inteligência e raciocínio</option>
                     </optgroup>
-                    <optgroup label="OpenAI GPT">
-                      <option value="openai/gpt-5-nano">GPT-5 Nano (Rápido, econômico)</option>
-                      <option value="openai/gpt-5-mini">GPT-5 Mini (Balanceado)</option>
-                      <option value="openai/gpt-5">GPT-5 (Mais inteligente)</option>
-                      <option value="openai/gpt-5.2">GPT-5.2 (Último modelo, raciocínio avançado)</option>
+                    <optgroup label="Google Gemini 2.5">
+                      <option value="google/gemini-2.5-flash">Gemini 2.5 Flash — Rápido e estável</option>
+                      <option value="google/gemini-2.5-flash-lite">Gemini 2.5 Flash Lite — Mais rápido, para conversas simples</option>
+                      <option value="google/gemini-2.5-pro">Gemini 2.5 Pro — Alta precisão em contextos complexos</option>
+                    </optgroup>
+                    <optgroup label="OpenAI GPT-5 (requer chave própria)">
+                      <option value="openai/gpt-5-nano">GPT-5 Nano — Econômico e veloz</option>
+                      <option value="openai/gpt-5-mini">GPT-5 Mini — Balanceado</option>
+                      <option value="openai/gpt-5">GPT-5 — Alta inteligência</option>
+                      <option value="openai/gpt-5.2">GPT-5.2 — Raciocínio avançado</option>
                     </optgroup>
                   </select>
-                  <p className="text-xs text-muted-foreground">Modelos mais inteligentes entendem melhor as respostas dos clientes, mas são mais lentos e custam mais</p>
+                  <p className="text-xs text-muted-foreground">
+                    💡 <strong>Gemini 3 Flash Preview</strong> é o padrão recomendado: geração mais recente do Google, muito mais rápido e inteligente que o 2.5. Modelos Pro são mais poderosos mas mais lentos.
+                  </p>
                 </div>
 
                 <Separator />

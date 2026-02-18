@@ -683,11 +683,17 @@ export default function AgentCapabilities({ settings, onSettingsChange, onSave, 
                     <SelectValue placeholder="Selecione o modelo" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="google/gemini-3-flash-preview">
+                      ⚡ Gemini 3 Flash Preview — Nova geração, rápido e preciso (recomendado)
+                    </SelectItem>
+                    <SelectItem value="google/gemini-3-pro-preview">
+                      🧠 Gemini 3 Pro Preview — Máxima precisão em documentos complexos
+                    </SelectItem>
                     <SelectItem value="google/gemini-2.5-flash">
-                      Gemini 2.5 Flash — Rápido e eficiente (recomendado)
+                      Gemini 2.5 Flash — Rápido e estável
                     </SelectItem>
                     <SelectItem value="google/gemini-2.5-pro">
-                      Gemini 2.5 Pro — Maior precisão em documentos complexos
+                      Gemini 2.5 Pro — Alta precisão, geração anterior
                     </SelectItem>
                     <SelectItem value="openai/gpt-5-mini">
                       GPT-5 Mini — Alternativa OpenAI balanceada
