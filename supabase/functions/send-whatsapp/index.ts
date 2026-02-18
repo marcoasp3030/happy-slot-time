@@ -372,88 +372,32 @@ async function sendTypingPresence(settings: { base_url: string; token: string },
   }
 }
 
-// ─── Split long reply into human-like message chunks ───
+// ─── Send reply as a SINGLE unified message ───
+// All AI responses are sent as one message to avoid confusion, ordering issues,
+// and duplicate greetings caused by multiple message chunks.
 function splitIntoHumanMessages(text: string): string[] {
-  // First split by double newlines (paragraphs)
-  const paragraphs = text.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
-  
-  const chunks: string[] = [];
-  for (const para of paragraphs) {
-    // If paragraph is short enough, keep as single message
-    if (para.length <= 200) {
-      chunks.push(para);
-      continue;
-    }
-    // Split long paragraphs by single newlines
-    const lines = para.split(/\n/).map(l => l.trim()).filter(Boolean);
-    if (lines.length > 1) {
-      // Group every 2-3 lines together
-      let group = "";
-      for (const line of lines) {
-        if (group && (group + "\n" + line).length > 200) {
-          chunks.push(group);
-          group = line;
-        } else {
-          group = group ? group + "\n" + line : line;
-        }
-      }
-      if (group) chunks.push(group);
-    } else {
-      // Single long line - split by sentences
-      const sentences = para.match(/[^.!?]+[.!?]+\s*/g) || [para];
-      let group = "";
-      for (const s of sentences) {
-        if (group && (group + s).length > 200) {
-          chunks.push(group.trim());
-          group = s;
-        } else {
-          group += s;
-        }
-      }
-      if (group.trim()) chunks.push(group.trim());
-    }
-  }
-  
-  // If nothing was split, return original as single message
-  return chunks.length > 0 ? chunks : [text];
+  // Always return as a single message — no splitting
+  const clean = text.trim();
+  return clean ? [clean] : [];
 }
 
-// ─── Calculate realistic typing delay based on message length ───
-function typingDelay(text: string): number {
-  // Average reading speed ~40 chars/sec for typing simulation
-  // Min 1.5s, max 4s
-  const base = Math.max(1500, Math.min(4000, text.length * 50));
-  // Add some randomness (±300ms)
-  return base + Math.floor(Math.random() * 600) - 300;
-}
-
-// ─── Send reply in humanized chunks with typing indicators ───
+// ─── Send reply as a SINGLE message with a brief typing indicator ───
+// Sending one unified message prevents ordering issues and duplicate senders.
 async function sendHumanizedReply(
   settings: { base_url: string; instance_id: string; token: string },
   phone: string,
   fullReply: string
 ): Promise<void> {
   const chunks = splitIntoHumanMessages(fullReply);
-  log("🗣️ Humanized send:", chunks.length, "chunks for reply of", fullReply.length, "chars");
+  if (chunks.length === 0) return;
   
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i];
-    
-    // Send typing indicator before each message (except first which is immediate)
-    if (i > 0) {
-      await sendTypingPresence(settings, phone);
-      const delay = typingDelay(chunk);
-      log("🗣️ Typing delay:", delay, "ms for chunk", i + 1);
-      await new Promise(r => setTimeout(r, delay));
-    } else {
-      // Small initial delay to seem natural
-      await sendTypingPresence(settings, phone);
-      await new Promise(r => setTimeout(r, 800 + Math.floor(Math.random() * 500)));
-    }
-    
-    await sendUazapiMessage(settings, phone, chunk);
-    log("🗣️ Chunk", i + 1, "/", chunks.length, "sent");
-  }
+  // Brief typing presence before sending — feels natural
+  await sendTypingPresence(settings, phone);
+  await new Promise(r => setTimeout(r, 600 + Math.floor(Math.random() * 400)));
+  
+  // Send as a single unified message
+  await sendUazapiMessage(settings, phone, chunks[0]);
+  log("🗣️ Single reply sent:", chunks[0].length, "chars");
 }
 
 function formatDate(dateStr: string): string { const [y, m, d] = dateStr.split("-"); return `${d}/${m}/${y}`; }
@@ -1147,7 +1091,7 @@ async function handleAgent(
   phone: string,
   msg: string,
   audioParams: AudioParams = { is_audio: false, audio_media_url: null, audio_media_key: null, audio_message_id: null },
-  agentOptions: { skipIncomingSave?: boolean; existingConvId?: string } = {}
+  agentOptions: { skipIncomingSave?: boolean; existingConvId?: string; _lockMsgId?: string } = {}
 ): Promise<any> {
   log("🤖 handleAgent START cid:", cid, "phone:", phone, "msg:", msg.substring(0, 100), "is_audio:", audioParams.is_audio);
 
@@ -1196,6 +1140,41 @@ async function handleAgent(
     return { ok: true, skipped: "handoff" };
   }
 
+  // ── Concurrency lock: prevent parallel executions for the same conversation ──
+  // If another request is already processing this conversation (within 45s), skip.
+  // This prevents duplicate responses when multiple webhook calls arrive simultaneously.
+  if (!agentOptions.skipIncomingSave) {
+    const lockWindowStart = new Date(Date.now() - 45000).toISOString();
+    const { data: recentOutgoing } = await sb.from("whatsapp_messages")
+      .select("id, created_at")
+      .eq("conversation_id", conv.id)
+      .eq("direction", "outgoing")
+      .eq("delivery_status", "processing")
+      .gte("created_at", lockWindowStart)
+      .limit(1);
+
+    if (recentOutgoing && recentOutgoing.length > 0) {
+      log("🤖 ⚠️ CONCURRENT PROCESSING LOCK: another call is already handling this conversation. Skipping.");
+      return { ok: true, skipped: "concurrent_lock", conversation_id: conv.id };
+    }
+
+    // Acquire lock: insert a processing placeholder message
+    const { data: lockMsg } = await sb.from("whatsapp_messages").insert({
+      conversation_id: conv.id,
+      company_id: cid,
+      direction: "outgoing",
+      message_type: "text",
+      content: "__PROCESSING__",
+      delivery_status: "processing",
+    }).select("id").single();
+
+    // Register cleanup at end of execution (will update this lock to released/real content)
+    if (lockMsg?.id) {
+      agentOptions._lockMsgId = lockMsg.id;
+      log("🔒 Processing lock acquired. lockMsgId:", lockMsg.id);
+    }
+  }
+
   // ── Deduplication: only run if NOT a pre-aggregated message (those are already in DB) ──
   if (!agentOptions.skipIncomingSave) {
     const fifteenSecsAgo = new Date(Date.now() - 15000).toISOString();
@@ -1204,11 +1183,16 @@ async function handleAgent(
       .eq("conversation_id", conv.id)
       .eq("direction", "incoming")
       .eq("content", msg)
+      .eq("delivery_status", "read")
       .gte("created_at", fifteenSecsAgo)
       .limit(1);
 
     if (recentDups && recentDups.length > 0) {
       log("🤖 ⚠️ DUPLICATE detected, skipping. Existing msg:", recentDups[0].id);
+      // Release lock
+      if (agentOptions._lockMsgId) {
+        await sb.from("whatsapp_messages").delete().eq("id", agentOptions._lockMsgId).catch(() => {});
+      }
       return { ok: true, skipped: "duplicate", conversation_id: conv.id };
     }
   }
@@ -1450,6 +1434,7 @@ async function handleAgent(
         .select("content")
         .eq("conversation_id", conv.id)
         .eq("direction", "outgoing")
+        .eq("delivery_status", "sent")  // Only compare real sent messages, not processing locks
         .gte("created_at", thirtySecsAgo)
         .order("created_at", { ascending: false })
         .limit(3);
@@ -1472,14 +1457,25 @@ async function handleAgent(
 
         if (isDuplicate) {
           log("🤖 ⚠️ OUTGOING DUPLICATE detected, skipping send. Reply was recently sent.");
+          // Release processing lock
+          if (agentOptions._lockMsgId) {
+            await sb.from("whatsapp_messages").delete().eq("id", agentOptions._lockMsgId).catch(() => {});
+          }
           return { ok: true, skipped: "outgoing_duplicate", conversation_id: conv.id };
         }
       }
     }
 
-    // Save outgoing message
-    const { error: outErr } = await sb.from("whatsapp_messages").insert({ conversation_id: conv.id, company_id: cid, direction: "outgoing", message_type: menuAlreadySent ? "interactive" : "text", content: displayReply });
-    log("🤖 Outgoing msg saved:", outErr ? `ERROR: ${outErr.message}` : "OK");
+    // Save outgoing message — if we have a lock placeholder, update it in place; otherwise insert new
+    if (agentOptions._lockMsgId) {
+      await sb.from("whatsapp_messages")
+        .update({ content: displayReply, message_type: menuAlreadySent ? "interactive" : "text", delivery_status: "sent" })
+        .eq("id", agentOptions._lockMsgId);
+      log("🤖 Outgoing msg updated from lock placeholder:", agentOptions._lockMsgId);
+    } else {
+      const { error: outErr } = await sb.from("whatsapp_messages").insert({ conversation_id: conv.id, company_id: cid, direction: "outgoing", message_type: menuAlreadySent ? "interactive" : "text", content: displayReply, delivery_status: "sent" });
+      log("🤖 Outgoing msg saved:", outErr ? `ERROR: ${outErr.message}` : "OK");
+    }
 
     // Send via UAZAPI (skip if menu was already sent)
     if (menuAlreadySent) {
@@ -1678,7 +1674,12 @@ async function handleAgent(
     return { ok: true, response: displayReply, conversation_id: conv.id, is_audio: isAudioMsg };
   } catch (aiErr: any) {
     logErr("🤖 ❌ AI call FAILED:", aiErr.message, aiErr.stack);
-    return { error: aiErr.message, conversation_id: conv.id };
+    // Release processing lock on error so next message isn't blocked
+    if (agentOptions._lockMsgId) {
+      await sb.from("whatsapp_messages").delete().eq("id", agentOptions._lockMsgId).catch(() => {});
+      log("🔓 Processing lock released (error path)");
+    }
+    return { error: aiErr.message, conversation_id: conv?.id };
   }
 }
 
@@ -1835,9 +1836,16 @@ REGRAS COMPLEMENTARES (NÃO sobrescreva a identidade/comportamento definidos aci
 - Fale como pessoa real: informal, curta, acolhedora
 - Máximo 2-3 frases por resposta
 - Emojis com moderação (1-2 por mensagem)
-- SEM listas, SEM formatação markdown, SEM negrito/itálico
-- Separe assuntos com \\n\\n (enviados como mensagens separadas)
+- SEM formatação markdown, SEM negrito/itálico
 - NÃO repita o que o cliente já sabe ou que já foi dito na conversa
+
+⛔ REGRA CRÍTICA — UMA ÚNICA RESPOSTA:
+- Você SEMPRE deve responder com UMA ÚNICA mensagem de texto completa
+- NUNCA divida sua resposta em múltiplas partes ou mensagens
+- NUNCA use "\\n\\n" para separar blocos como se fossem mensagens distintas
+- Se precisar cobrir vários pontos, escreva tudo em sequência natural na mesma mensagem
+- O sistema enviará UMA mensagem ao cliente — tudo que você escrever vai junto
+- Quando usar botões interativos (send_buttons, send_list, send_carousel), NÃO retorne texto adicional fora dos campos da ferramenta
 ${capabilityRules.length > 0 ? "\nRESTRIÇÕES DE INFORMAÇÃO (OBEDEÇA RIGOROSAMENTE):\n" + capabilityRules.join("\n") : ""}
 
 REGRA DE NOME DO CLIENTE (IMPORTANTE):
