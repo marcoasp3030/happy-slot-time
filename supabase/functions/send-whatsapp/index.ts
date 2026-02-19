@@ -1242,14 +1242,32 @@ async function handleAgent(
 
   if (!conv) {
     log("🤖 Looking for active conversation...");
-    const { data: foundConv, error: convErr } = await sb.from("whatsapp_conversations").select("*").eq("company_id", cid).eq("phone", phone).eq("status", "active").order("created_at", { ascending: false }).limit(1).single();
+    let convQuery = sb
+      .from("whatsapp_conversations")
+      .select("*")
+      .eq("company_id", cid)
+      .eq("phone", phone)
+      .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    // Scope conversation to this specific instance
+    if (agentOptions.instanceId) {
+      convQuery = convQuery.eq("instance_id", agentOptions.instanceId);
+    } else {
+      convQuery = convQuery.is("instance_id", null);
+    }
+
+    const { data: foundConv, error: convErr } = await convQuery.single();
     log("🤖 Existing conv:", foundConv?.id || "NONE", "error:", convErr?.message);
     conv = foundConv;
   }
 
   if (!conv) {
     log("🤖 Creating new conversation...");
-    const { data: nc, error: ncErr } = await sb.from("whatsapp_conversations").insert({ company_id: cid, phone, status: "active" }).select().single();
+    const newConvData: any = { company_id: cid, phone, status: "active" };
+    if (agentOptions.instanceId) newConvData.instance_id = agentOptions.instanceId;
+    const { data: nc, error: ncErr } = await sb.from("whatsapp_conversations").insert(newConvData).select().single();
     conv = nc;
     log("🤖 New conv:", nc?.id || "FAILED", "error:", ncErr?.message);
   }

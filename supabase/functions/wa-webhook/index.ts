@@ -717,21 +717,31 @@ Deno.serve(async (req) => {
         const delaySeconds = Math.max(2, Math.min(30, agSettings.message_delay_seconds || 8));
         log("⏳ Debounce enabled:", delaySeconds, "s");
 
-        // Get or create conversation
-        let { data: conv } = await sb
+        // Get or create conversation — scoped to this specific instance
+        let convQuery = sb
           .from("whatsapp_conversations")
           .select("id, handoff_requested")
           .eq("company_id", companyId)
           .eq("phone", phone)
           .eq("status", "active")
           .order("created_at", { ascending: false })
-          .limit(1)
-          .single();
+          .limit(1);
+
+        // Filter by instance_id to isolate each WhatsApp number's conversation
+        if (resolvedInstanceId) {
+          convQuery = convQuery.eq("instance_id", resolvedInstanceId);
+        } else {
+          convQuery = convQuery.is("instance_id", null);
+        }
+
+        let { data: conv } = await convQuery.single();
 
         if (!conv) {
+          const insertConv: any = { company_id: companyId, phone, status: "active" };
+          if (resolvedInstanceId) insertConv.instance_id = resolvedInstanceId;
           const { data: nc } = await sb
             .from("whatsapp_conversations")
-            .insert({ company_id: companyId, phone, status: "active" })
+            .insert(insertConv)
             .select("id, handoff_requested")
             .single();
           conv = nc;
