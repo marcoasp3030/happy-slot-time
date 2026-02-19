@@ -1488,7 +1488,7 @@ async function handleAgent(
   log("🤖 Calling AI...");
   const t2 = Date.now();
   try {
-    let reply = await callAI(sb, cid, conv, ctx, actualMsg, { isAudioMsg, agentSettings: ag });
+    let reply = await callAI(sb, cid, conv, ctx, actualMsg, { isAudioMsg, agentSettings: ag, instanceId: agentOptions.instanceId });
     // Normalize times in reply for natural PT-BR speech
     if (reply !== "__MENU_SENT__") reply = normalizeTimeForSpeech(reply);
     log("🤖 AI reply in", Date.now() - t2, "ms:", reply.substring(0, 150));
@@ -2006,8 +2006,9 @@ async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
   };
 }
 
-async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string, opts?: { isAudioMsg?: boolean; agentSettings?: any }): Promise<string> {
+async function callAI(sb: any, cid: string, conv: any, ctx: any, userMsg: string, opts?: { isAudioMsg?: boolean; agentSettings?: any; instanceId?: string | null }): Promise<string> {
   const ag = opts?.agentSettings;
+  const agentOptions = { instanceId: opts?.instanceId ?? null };
   const preferredProvider = ag?.preferred_provider || "lovable";
   const aiModelRaw = ag?.ai_model || "google/gemini-3-flash-preview";
   
