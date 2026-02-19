@@ -41,6 +41,7 @@ import AdminTokenUsage from "./pages/admin/AdminTokenUsage";
 import AdminPromptTemplates from "./pages/admin/AdminPromptTemplates";
 import AdminPlans from "./pages/admin/AdminPlans";
 import TokenUsage from "./pages/TokenUsage";
+import Atendimentos from "./pages/Atendimentos";
 
 const queryClient = new QueryClient();
 
@@ -133,6 +134,7 @@ function AnimatedRoutes() {
       <Route path="/privacidade" element={<ProtectedRoute><PageTransition><PrivacyPolicySettings /></PageTransition></ProtectedRoute>} />
       <Route path="/logs" element={<ProtectedRoute><PageTransition><AuditLogs /></PageTransition></ProtectedRoute>} />
       <Route path="/agente-ia" element={<ProtectedRoute><PageTransition><WhatsAppAgent /></PageTransition></ProtectedRoute>} />
+      <Route path="/atendimentos" element={<ProtectedRoute><PageTransition><Atendimentos /></PageTransition></ProtectedRoute>} />
       <Route path="/consumo-tokens" element={<ProtectedRoute><PageTransition><TokenUsage /></PageTransition></ProtectedRoute>} />
       
       {/* Super admin routes */}
