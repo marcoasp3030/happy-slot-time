@@ -2571,12 +2571,32 @@ ${caps.can_send_pix && caps.pix_key ? ("\nPAGAMENTO - PIX:\nChave PIX: " + caps.
     inferenceParams.presence_penalty = presencePenalty;
   }
 
-  const r = await fetch(apiUrl, {
+  let r = await fetch(apiUrl, {
     method: "POST",
     headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json" },
     body: JSON.stringify(inferenceParams),
   });
   log("🧠 AI response status:", r.status, "in", Date.now() - t0, "ms");
+
+  // Fallback: if Lovable gateway returns 402 (out of credits), try with OPENAI_API_KEY secret
+  if (!r.ok && r.status === 402 && providerLabel === "lovable") {
+    const fallbackKey = Deno.env.get("OPENAI_API_KEY");
+    if (fallbackKey) {
+      log("🧠 ⚠️ Lovable gateway 402 — falling back to OPENAI_API_KEY with gpt-4o-mini");
+      await r.text(); // consume body to avoid resource leak
+      const fallbackModel = "gpt-4o-mini";
+      const fallbackParams = { ...inferenceParams, model: fallbackModel };
+      // gpt-4o-mini uses max_tokens
+      delete fallbackParams.max_completion_tokens;
+      const t1 = Date.now();
+      r = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + fallbackKey, "Content-Type": "application/json" },
+        body: JSON.stringify(fallbackParams),
+      });
+      log("🧠 Fallback AI response status:", r.status, "in", Date.now() - t1, "ms");
+    }
+  }
 
   if (!r.ok) {
     const t = await r.text();
