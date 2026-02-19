@@ -14,7 +14,8 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Slider } from '@/components/ui/slider';
 import { toast } from '@/hooks/use-toast';
-import { Bot, Settings, MessageSquare, Plus, Trash2, BookOpen, History, Copy, ExternalLink, BarChart3, Clock, PhoneForwarded, Mic, Zap, ShieldCheck, Heart, Sparkles, Wand2, SlidersHorizontal, Smartphone, ChevronDown } from 'lucide-react';
+import { Bot, Settings, MessageSquare, Plus, Trash2, BookOpen, History, Copy, ExternalLink, BarChart3, Clock, PhoneForwarded, Mic, Zap, ShieldCheck, Heart, Sparkles, Wand2, SlidersHorizontal, Smartphone, ChevronDown, Activity } from 'lucide-react';
+import InstanceQueueMonitor from '@/components/InstanceQueueMonitor';
 import AgentCapabilities from '@/components/AgentCapabilities';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
@@ -458,6 +459,9 @@ export default function WhatsAppAgent() {
             </TabsTrigger>
             <TabsTrigger value="conversations" className="gap-1.5">
               <MessageSquare className="h-3.5 w-3.5" /> Conversas
+            </TabsTrigger>
+            <TabsTrigger value="monitor" className="gap-1.5">
+              <Activity className="h-3.5 w-3.5" /> Monitor
             </TabsTrigger>
             <TabsTrigger value="logs" className="gap-1.5">
               <History className="h-3.5 w-3.5" /> Logs
@@ -1526,6 +1530,11 @@ export default function WhatsAppAgent() {
             )}
           </TabsContent>
 
+
+          {/* MONITOR TAB */}
+          <TabsContent value="monitor" className="space-y-4">
+            {companyId && <InstanceQueueMonitor companyId={companyId} />}
+          </TabsContent>
 
           {/* METRICS TAB */}
           <TabsContent value="metrics" className="space-y-4">
