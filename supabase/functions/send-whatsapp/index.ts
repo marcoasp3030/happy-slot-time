@@ -295,11 +295,37 @@ Deno.serve(async (req) => {
               log("✅ handleAgent (debounced) done in", elapsed, "ms, msgs aggregated:", bufferedMsgs.length, "instanceId:", resolvedInstanceId);
 
               try {
+                // Fetch instance name for enriched log
+                let instanceName: string | null = null;
+                if (resolvedInstanceId) {
+                  const { data: instRow } = await supabase.from("whatsapp_instances").select("instance_name, label, phone_number").eq("id", resolvedInstanceId).maybeSingle();
+                  instanceName = instRow?.label || instRow?.instance_name || null;
+                }
+                // Load agent settings for model/temp logging
+                let agLog: any = null;
+                if (resolvedInstanceId) {
+                  const { data: d } = await supabase.from("whatsapp_agent_settings").select("ai_model, temperature, preferred_provider").eq("company_id", uazapiCompanyId).eq("instance_id", resolvedInstanceId).maybeSingle();
+                  agLog = d;
+                }
+                if (!agLog) {
+                  const { data: d } = await supabase.from("whatsapp_agent_settings").select("ai_model, temperature, preferred_provider").eq("company_id", uazapiCompanyId).is("instance_id", null).maybeSingle();
+                  agLog = d;
+                }
                 await supabase.from("whatsapp_agent_logs").insert({
                   company_id: uazapiCompanyId,
                   conversation_id: result.conversation_id || convId,
                   action: "response_sent",
-                  details: { response_time_ms: elapsed, aggregated_messages: bufferedMsgs.length, debounce_seconds: delaySeconds, instance_id: resolvedInstanceId },
+                  details: {
+                    response_time_ms: elapsed,
+                    aggregated_messages: bufferedMsgs.length,
+                    debounce_seconds: delaySeconds,
+                    instance_id: resolvedInstanceId,
+                    instance_name: instanceName,
+                    ai_model: agLog?.ai_model || "google/gemini-3-flash-preview",
+                    temperature: agLog?.temperature ?? 0.3,
+                    provider: agLog?.preferred_provider || "lovable",
+                    phone,
+                  },
                 });
               } catch (_logErr) { /* non-critical */ }
 
@@ -325,11 +351,36 @@ Deno.serve(async (req) => {
         log("✅ handleAgent completed in", elapsed, "ms, instanceId:", resolvedInstanceId);
 
         try {
+          // Fetch instance name for enriched log
+          let instanceNameFb: string | null = null;
+          if (resolvedInstanceId) {
+            const { data: instRowFb } = await supabase.from("whatsapp_instances").select("instance_name, label, phone_number").eq("id", resolvedInstanceId).maybeSingle();
+            instanceNameFb = instRowFb?.label || instRowFb?.instance_name || null;
+          }
+          // Load agent settings for model/temp logging
+          let agLogFb: any = null;
+          if (resolvedInstanceId) {
+            const { data: d } = await supabase.from("whatsapp_agent_settings").select("ai_model, temperature, preferred_provider").eq("company_id", uazapiCompanyId).eq("instance_id", resolvedInstanceId).maybeSingle();
+            agLogFb = d;
+          }
+          if (!agLogFb) {
+            const { data: d } = await supabase.from("whatsapp_agent_settings").select("ai_model, temperature, preferred_provider").eq("company_id", uazapiCompanyId).is("instance_id", null).maybeSingle();
+            agLogFb = d;
+          }
           await supabase.from("whatsapp_agent_logs").insert({
             company_id: uazapiCompanyId,
             conversation_id: result.conversation_id || null,
             action: "response_sent",
-            details: { response_time_ms: elapsed, is_audio: !!isAudio, instance_id: resolvedInstanceId },
+            details: {
+              response_time_ms: elapsed,
+              is_audio: !!isAudio,
+              instance_id: resolvedInstanceId,
+              instance_name: instanceNameFb,
+              ai_model: agLogFb?.ai_model || "google/gemini-3-flash-preview",
+              temperature: agLogFb?.temperature ?? 0.3,
+              provider: agLogFb?.preferred_provider || "lovable",
+              phone,
+            },
           });
         } catch (_logErr) { /* non-critical */ }
 
