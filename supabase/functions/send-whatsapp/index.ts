@@ -1230,10 +1230,19 @@ OBSERVAÇÕES: [outras informações relevantes ou dúvidas sobre a classificaç
     content.push({ type: "image_url", image_url: { url: dataUri } });
   }
 
+  // For Gemini models going directly to Google API, strip the "google/" prefix
+  const resolvedVisionModel = (apiUrl.includes("generativelanguage.googleapis.com") && visionModel.startsWith("google/"))
+    ? visionModel.replace("google/", "")
+    : visionModel;
+
+  // New OpenAI models (gpt-5*) don't support temperature
+  const visionModelIsNewOpenAI = resolvedVisionModel.includes("gpt-5") || resolvedVisionModel.includes("o1") || resolvedVisionModel.includes("o3");
+
   const requestBody: any = {
-    model: visionModel,
+    model: resolvedVisionModel,
     messages: [{ role: "user", content }],
     max_tokens: 1500,
+    ...(visionModelIsNewOpenAI ? {} : { temperature: 0.1 }),
   };
 
   log("🔍 Calling vision model:", visionModel, "via:", apiUrl);
@@ -1545,14 +1554,25 @@ async function handleAgent(
       let visionApiUrl = "https://ai.gateway.lovable.dev/v1/chat/completions";
       let visionApiKey = Deno.env.get("LOVABLE_API_KEY");
 
-      // If lojista uses their own key and it's a compatible provider, use it
+      // Route vision model to the correct provider based on model family
+      // A Gemini model must NEVER go to the OpenAI endpoint and vice-versa
       const preferredProvider = ag?.preferred_provider || "lovable";
-      if (preferredProvider === "openai" && ag?.openai_api_key) {
+      const visionModelIsGemini = visionModel.startsWith("google/") || visionModel.startsWith("gemini-");
+      const visionModelIsOpenAI = !visionModelIsGemini;
+
+      if (visionModelIsOpenAI && preferredProvider === "openai" && ag?.openai_api_key) {
+        // OpenAI model + tenant has OpenAI key → use OpenAI directly
         visionApiUrl = "https://api.openai.com/v1/chat/completions";
         visionApiKey = ag.openai_api_key;
-      } else if (preferredProvider === "gemini" && ag?.gemini_api_key) {
+      } else if (visionModelIsGemini && preferredProvider === "gemini" && ag?.gemini_api_key) {
+        // Gemini model + tenant has Gemini key → use Google directly
         visionApiUrl = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
         visionApiKey = ag.gemini_api_key;
+      } else {
+        // Fallback: always use Lovable gateway (supports both Google and OpenAI models)
+        visionApiUrl = "https://ai.gateway.lovable.dev/v1/chat/completions";
+        visionApiKey = Deno.env.get("LOVABLE_API_KEY");
+        log("🔍 Vision routing via Lovable gateway (cross-provider or no dedicated key)");
       }
 
       if (visionApiKey) {
