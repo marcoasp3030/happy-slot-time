@@ -2546,8 +2546,13 @@ ${caps.can_send_pix && caps.pix_key ? ("\nPAGAMENTO - PIX:\nChave PIX: " + caps.
   const t0 = Date.now();
 
   // OpenAI gpt-5+ usa max_completion_tokens; modelos legados e Gemini usam max_tokens
-  const isNewOpenAI = providerLabel === "openai" && (requestModel.includes("gpt-5") || requestModel.includes("o1") || requestModel.includes("o3"));
-  const tokenLimitKey = isNewOpenAI ? "max_completion_tokens" : "max_tokens";
+  // gpt-5, o1, o3 families don't support temperature/top_p (only default=1 is allowed)
+  const isNewOpenAIModel = requestModel.includes("gpt-5") || requestModel.includes("o1") || requestModel.includes("o3");
+  const isNewOpenAI = providerLabel === "openai" && isNewOpenAIModel;
+  const isLovableNewModel = providerLabel === "lovable" && isNewOpenAIModel;
+  const supportsTemperature = !isNewOpenAI && !isLovableNewModel;
+  // max_completion_tokens for new OpenAI models (both direct and via lovable gateway)
+  const tokenLimitKey = (isNewOpenAI || isLovableNewModel) ? "max_completion_tokens" : "max_tokens";
 
   // Inference parameters from agent settings
   const temperature = ctx.cs?.temperature ?? 0.3;
@@ -2562,11 +2567,11 @@ ${caps.can_send_pix && caps.pix_key ? ("\nPAGAMENTO - PIX:\nChave PIX: " + caps.
     messages,
     tools: tools.length > 0 ? tools : undefined,
     [tokenLimitKey]: maxTokens,
-    temperature,
-    top_p: topP,
+    // Only include temperature/top_p for models that support it
+    ...(supportsTemperature ? { temperature, top_p: topP } : {}),
   };
-  // Penalty params only for OpenAI-compatible endpoints (not Gemini direct API)
-  if (providerLabel !== "gemini") {
+  // Penalty params only for OpenAI-compatible endpoints (not Gemini direct API) and only when temperature is supported
+  if (providerLabel !== "gemini" && supportsTemperature) {
     inferenceParams.frequency_penalty = frequencyPenalty;
     inferenceParams.presence_penalty = presencePenalty;
   }
@@ -2941,7 +2946,7 @@ ${caps.can_send_pix && caps.pix_key ? ("\nPAGAMENTO - PIX:\nChave PIX: " + caps.
       const followUpRes = await fetch(apiUrl, {
         method: "POST",
         headers: { Authorization: "Bearer " + apiKey, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: requestModel, messages: followUpMessages, [tokenLimitKey]: maxTokens, temperature, top_p: topP, ...(providerLabel !== "gemini" ? { frequency_penalty: frequencyPenalty, presence_penalty: presencePenalty } : {}) }),
+        body: JSON.stringify({ model: requestModel, messages: followUpMessages, [tokenLimitKey]: maxTokens, ...(supportsTemperature ? { temperature, top_p: topP } : {}), ...(providerLabel !== "gemini" && supportsTemperature ? { frequency_penalty: frequencyPenalty, presence_penalty: presencePenalty } : {}) }),
       });
       
       if (followUpRes.ok) {
