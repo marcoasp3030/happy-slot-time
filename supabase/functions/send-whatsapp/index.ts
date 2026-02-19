@@ -64,6 +64,29 @@ Deno.serve(async (req) => {
     if (isUazapiWebhook) {
       log("📩 UAZAPI WEBHOOK DETECTED, cid:", uazapiCompanyId);
 
+      // ── Resolve instance_id from payload (instanceName or token) ──
+      const payloadInstanceName = body.instanceName || body.instance_name || null;
+      const payloadToken = body.token || null;
+      let resolvedInstanceId: string | null = null;
+
+      if (payloadInstanceName || payloadToken) {
+        try {
+          if (payloadInstanceName) {
+            const { data: instRow } = await supabase.from("whatsapp_instances")
+              .select("id, company_id").eq("instance_name", payloadInstanceName).maybeSingle();
+            if (instRow?.id) resolvedInstanceId = instRow.id;
+          }
+          if (!resolvedInstanceId && payloadToken) {
+            const { data: instRow } = await supabase.from("whatsapp_instances")
+              .select("id, company_id").eq("token", payloadToken).maybeSingle();
+            if (instRow?.id) resolvedInstanceId = instRow.id;
+          }
+          log("📩 Resolved instance_id:", resolvedInstanceId, "from instanceName:", payloadInstanceName);
+        } catch (resolveErr) {
+          log("⚠️ Could not resolve instance_id in send-whatsapp:", resolveErr);
+        }
+      }
+
       const phone = body.phone || body.from || body.data?.from ||
         body.data?.key?.remoteJid?.replace("@s.whatsapp.net", "") || null;
       const msg = body.message || body.text || body.data?.message?.conversation ||
@@ -100,31 +123,56 @@ Deno.serve(async (req) => {
       // (unique constraint via metadata check). The lock winner waits the debounce
       // delay, collects ALL pending msgs, concatenates, calls handleAgent ONCE.
       // Losers (concurrent workers) detect the existing lock and exit immediately.
-      const { data: agSettingsDelay } = await supabase
-        .from("whatsapp_agent_settings")
-        .select("message_delay_enabled, message_delay_seconds, enabled")
-        .eq("company_id", uazapiCompanyId)
-        .single();
+
+      // ── Load agent settings scoped to this specific instance (with company fallback) ──
+      let agSettingsDelay: any = null;
+      if (resolvedInstanceId) {
+        const { data } = await supabase
+          .from("whatsapp_agent_settings")
+          .select("message_delay_enabled, message_delay_seconds, enabled")
+          .eq("company_id", uazapiCompanyId)
+          .eq("instance_id", resolvedInstanceId)
+          .maybeSingle();
+        agSettingsDelay = data;
+        log("📩 Loaded instance-specific agent settings for debounce, instance:", resolvedInstanceId, "found:", !!agSettingsDelay);
+      }
+      if (!agSettingsDelay) {
+        const { data } = await supabase
+          .from("whatsapp_agent_settings")
+          .select("message_delay_enabled, message_delay_seconds, enabled")
+          .eq("company_id", uazapiCompanyId)
+          .is("instance_id", null)
+          .maybeSingle();
+        agSettingsDelay = data;
+        log("📩 Loaded company-default agent settings for debounce, found:", !!agSettingsDelay);
+      }
 
       if (agSettingsDelay?.enabled && agSettingsDelay?.message_delay_enabled && !isAudio) {
         const delaySeconds = Math.max(2, Math.min(30, agSettingsDelay.message_delay_seconds || 8));
         log("⏳ Debounce enabled:", delaySeconds, "s");
 
-        // ── Step 1: Get or create conversation ──
-        let { data: delayConv } = await supabase
+        // ── Step 1: Get or create conversation (scoped to this instance) ──
+        let convQueryDelay = supabase
           .from("whatsapp_conversations")
           .select("id, handoff_requested")
           .eq("company_id", uazapiCompanyId)
           .eq("phone", phone)
           .eq("status", "active")
           .order("created_at", { ascending: false })
-          .limit(1)
-          .single();
+          .limit(1);
+        if (resolvedInstanceId) {
+          convQueryDelay = convQueryDelay.eq("instance_id", resolvedInstanceId);
+        } else {
+          convQueryDelay = convQueryDelay.is("instance_id", null);
+        }
+        let { data: delayConv } = await convQueryDelay.single();
 
         if (!delayConv) {
+          const newConvData: any = { company_id: uazapiCompanyId, phone, status: "active" };
+          if (resolvedInstanceId) newConvData.instance_id = resolvedInstanceId;
           const { data: nc } = await supabase
             .from("whatsapp_conversations")
-            .insert({ company_id: uazapiCompanyId, phone, status: "active" })
+            .insert(newConvData)
             .select("id, handoff_requested")
             .single();
           delayConv = nc;
@@ -241,17 +289,17 @@ Deno.serve(async (req) => {
               const result = await handleAgent(
                 supabase, uazapiCompanyId, phone, concatenatedMsg,
                 { is_audio: false, audio_media_url: null, audio_media_key: null, audio_message_id: null },
-                { skipIncomingSave: true, existingConvId: convId }
+                { skipIncomingSave: true, existingConvId: convId, instanceId: resolvedInstanceId }
               );
               const elapsed = Date.now() - t0;
-              log("✅ handleAgent (debounced) done in", elapsed, "ms, msgs aggregated:", bufferedMsgs.length);
+              log("✅ handleAgent (debounced) done in", elapsed, "ms, msgs aggregated:", bufferedMsgs.length, "instanceId:", resolvedInstanceId);
 
               try {
                 await supabase.from("whatsapp_agent_logs").insert({
                   company_id: uazapiCompanyId,
                   conversation_id: result.conversation_id || convId,
                   action: "response_sent",
-                  details: { response_time_ms: elapsed, aggregated_messages: bufferedMsgs.length, debounce_seconds: delaySeconds },
+                  details: { response_time_ms: elapsed, aggregated_messages: bufferedMsgs.length, debounce_seconds: delaySeconds, instance_id: resolvedInstanceId },
                 });
               } catch (_logErr) { /* non-critical */ }
 
@@ -265,23 +313,23 @@ Deno.serve(async (req) => {
       }
 
       // ── Fallback (debounce disabled): simple per-conversation lock already inside handleAgent
-      log("🚀 CALLING handleAgent (debounce disabled)...");
+      log("🚀 CALLING handleAgent (debounce disabled)... instanceId:", resolvedInstanceId);
       const t0 = Date.now();
       try {
         const result = await handleAgent(supabase, uazapiCompanyId, phone, msg || "[áudio]", {
           is_audio: !!isAudio,
           audio_media_url: audioMediaUrl,
           audio_message_id: audioMsgId,
-        });
+        }, { instanceId: resolvedInstanceId });
         const elapsed = Date.now() - t0;
-        log("✅ handleAgent completed in", elapsed, "ms");
+        log("✅ handleAgent completed in", elapsed, "ms, instanceId:", resolvedInstanceId);
 
         try {
           await supabase.from("whatsapp_agent_logs").insert({
             company_id: uazapiCompanyId,
             conversation_id: result.conversation_id || null,
             action: "response_sent",
-            details: { response_time_ms: elapsed, is_audio: !!isAudio },
+            details: { response_time_ms: elapsed, is_audio: !!isAudio, instance_id: resolvedInstanceId },
           });
         } catch (_logErr) { /* non-critical */ }
 
@@ -1479,9 +1527,9 @@ async function handleAgent(
   await sb.from("whatsapp_conversations").update({ last_message_at: new Date().toISOString() }).eq("id", conv.id);
 
   // Load context
-  log("🤖 Loading context...");
+  log("🤖 Loading context... instanceId:", agentOptions.instanceId || "company-default");
   const t1 = Date.now();
-  const ctx = await loadCtx(sb, cid, phone, conv.id);
+  const ctx = await loadCtx(sb, cid, phone, conv.id, agentOptions.instanceId);
   log("🤖 Context loaded in", Date.now() - t1, "ms. msgs:", ctx.msgs.length, "appts:", ctx.appts.length, "svcs:", ctx.svcs.length, "kb:", ctx.kb.length);
 
   // Call AI
@@ -1962,9 +2010,35 @@ async function handleAgent(
   }
 }
 
-async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
+async function loadCtx(sb: any, cid: string, ph: string, convId: string, instanceId?: string | null) {
   const cp = ph.replace(/\D/g, "");
-  const [m, a, c, s, h, k, cs, as_, st, ss, af] = await Promise.all([
+
+  // Load agent settings scoped to instance, with company-level fallback
+  let agentCaps: any = {};
+  if (instanceId) {
+    const { data: instCaps } = await sb
+      .from("whatsapp_agent_settings")
+      .select("custom_prompt, timezone, can_share_address, can_share_phone, can_share_business_hours, can_share_services, can_share_professionals, can_handle_anamnesis, can_send_files, can_send_images, can_send_audio, custom_business_info, can_send_payment_link, payment_link_url, can_send_pix, pix_key, pix_name, pix_instructions, pix_send_as_text, can_read_media, media_vision_model, temperature, top_p, frequency_penalty, presence_penalty, max_tokens, ai_model, preferred_provider, greeting_message, elevenlabs_api_key, elevenlabs_voice_id, openai_api_key, gemini_api_key")
+      .eq("company_id", cid)
+      .eq("instance_id", instanceId)
+      .maybeSingle();
+    if (instCaps) {
+      agentCaps = instCaps;
+      log("📚 loadCtx: using INSTANCE-SPECIFIC agent caps for instance:", instanceId);
+    }
+  }
+  if (!agentCaps || Object.keys(agentCaps).length === 0) {
+    const { data: companyCaps } = await sb
+      .from("whatsapp_agent_settings")
+      .select("custom_prompt, timezone, can_share_address, can_share_phone, can_share_business_hours, can_share_services, can_share_professionals, can_handle_anamnesis, can_send_files, can_send_images, can_send_audio, custom_business_info, can_send_payment_link, payment_link_url, can_send_pix, pix_key, pix_name, pix_instructions, pix_send_as_text, can_read_media, media_vision_model, temperature, top_p, frequency_penalty, presence_penalty, max_tokens, ai_model, preferred_provider, greeting_message, elevenlabs_api_key, elevenlabs_voice_id, openai_api_key, gemini_api_key")
+      .eq("company_id", cid)
+      .is("instance_id", null)
+      .maybeSingle();
+    agentCaps = companyCaps || {};
+    log("📚 loadCtx: using COMPANY-DEFAULT agent caps (instanceId:", instanceId || "none", ")");
+  }
+
+  const [m, a, c, s, h, k, cs, st, ss, af] = await Promise.all([
     sb.from("whatsapp_messages").select("direction, content, created_at").eq("conversation_id", convId).order("created_at", { ascending: false }).limit(20),
     sb.from("appointments").select("id, client_name, appointment_date, start_time, end_time, status, services(name), staff(name)").eq("company_id", cid).or("client_phone.eq." + cp + ",client_phone.eq.+" + cp).in("status", ["pending", "confirmed"]).order("appointment_date", { ascending: true }).limit(10),
     sb.from("companies").select("name, address, phone").eq("id", cid).single(),
@@ -1972,12 +2046,11 @@ async function loadCtx(sb: any, cid: string, ph: string, convId: string) {
     sb.from("business_hours").select("day_of_week, open_time, close_time, is_open").eq("company_id", cid),
     sb.from("whatsapp_knowledge_base").select("category, title, content").eq("company_id", cid).eq("active", true),
     sb.from("company_settings").select("slot_interval, max_capacity_per_slot, min_advance_hours").eq("company_id", cid).single(),
-    sb.from("whatsapp_agent_settings").select("custom_prompt, timezone, can_share_address, can_share_phone, can_share_business_hours, can_share_services, can_share_professionals, can_handle_anamnesis, can_send_files, can_send_images, can_send_audio, custom_business_info, can_send_payment_link, payment_link_url, can_send_pix, pix_key, pix_name, pix_instructions, pix_send_as_text, can_read_media, media_vision_model, temperature, top_p, frequency_penalty, presence_penalty, max_tokens").eq("company_id", cid).single(),
     sb.from("staff").select("id, name").eq("company_id", cid).eq("active", true),
     sb.from("staff_services").select("staff_id, service_id").in("staff_id", (await sb.from("staff").select("id").eq("company_id", cid).eq("active", true)).data?.map((x: any) => x.id) || []),
     sb.from("whatsapp_agent_files").select("file_name, file_url, file_type, description").eq("company_id", cid).eq("active", true),
   ]);
-  const agentCaps = as_.data || {};
+
   return {
     msgs: (m.data || []).reverse(), appts: a.data || [], co: c.data || {}, svcs: s.data || [], hrs: h.data || [],
     kb: k.data || [], cs: { ...(cs.data || {}), custom_prompt: agentCaps.custom_prompt, timezone: agentCaps.timezone || "America/Sao_Paulo", ai_model: agentCaps.ai_model || "google/gemini-3-flash-preview", temperature: agentCaps.temperature ?? 0.3, top_p: agentCaps.top_p ?? 0.9, frequency_penalty: agentCaps.frequency_penalty ?? 0.4, presence_penalty: agentCaps.presence_penalty ?? 0.1, max_tokens: agentCaps.max_tokens ?? 500 },
