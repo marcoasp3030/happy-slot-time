@@ -1350,35 +1350,182 @@ export default function WhatsAppAgent() {
           </TabsContent>
 
           {/* LOGS TAB */}
-          <TabsContent value="logs">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Logs do Agente</CardTitle>
-                <CardDescription>Ações realizadas pelo agente nos agendamentos</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {agentLogs.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Nenhum log registrado</p>
-                ) : (
-                  <div className="space-y-2">
-                    {agentLogs.map((log) => (
-                      <div key={log.id} className="flex items-center gap-3 p-2 rounded-lg bg-muted/30 text-sm">
-                        <Badge variant="outline" className="text-[10px] shrink-0">
-                          {log.action}
-                        </Badge>
-                        <span className="text-muted-foreground text-xs flex-1 truncate">
-                          {JSON.stringify(log.details)}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground shrink-0">
-                          {new Date(log.created_at).toLocaleString('pt-BR')}
-                        </span>
-                      </div>
-                    ))}
+          <TabsContent value="logs" className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold">Logs do Agente</h3>
+                <p className="text-xs text-muted-foreground">Histórico de processamento por instância — modelo, temperatura e tempo de resposta</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={fetchAll} className="gap-1.5 text-xs h-8">
+                <History className="h-3.5 w-3.5" />
+                Atualizar
+              </Button>
+            </div>
+
+            {agentLogs.length === 0 ? (
+              <Card className="rounded-2xl">
+                <CardContent className="flex flex-col items-center justify-center py-14 px-4">
+                  <div className="h-12 w-12 rounded-2xl bg-muted flex items-center justify-center mb-3">
+                    <History className="h-5 w-5 text-muted-foreground" />
                   </div>
-                )}
-              </CardContent>
-            </Card>
+                  <p className="text-muted-foreground font-semibold text-sm">Nenhum log registrado ainda</p>
+                  <p className="text-xs text-muted-foreground mt-1">Os logs aparecerão aqui conforme o agente processa mensagens</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-2">
+                {agentLogs.map((logEntry) => {
+                  const d = logEntry.details || {};
+                  const isResponseSent = logEntry.action === 'response_sent';
+                  const isToolAction = !isResponseSent;
+                  const responseMs = d.response_time_ms;
+                  const model = d.ai_model;
+                  const temperature = d.temperature;
+                  const provider = d.provider;
+                  const instanceName = d.instance_name;
+                  const instanceId = d.instance_id;
+                  const phone = d.phone;
+                  const isAudio = d.is_audio;
+                  const aggregatedMsgs = d.aggregated_messages;
+
+                  // Map action label
+                  const actionLabels: Record<string, string> = {
+                    response_sent: 'Resposta Enviada',
+                    book_appointment: 'Agendamento',
+                    cancel_appointment: 'Cancelamento',
+                    reschedule_appointment: 'Reagendamento',
+                    request_handoff: 'Handoff Humano',
+                    check_availability: 'Disponibilidade',
+                    send_file: 'Arquivo Enviado',
+                    send_buttons: 'Menu Enviado',
+                    send_pix: 'PIX Enviado',
+                    audio_processed: 'Áudio Processado',
+                    save_client_name: 'Nome Salvo',
+                  };
+                  const actionLabel = actionLabels[logEntry.action] || logEntry.action;
+
+                  // Color scheme by action
+                  const actionColors: Record<string, string> = {
+                    response_sent: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30',
+                    book_appointment: 'text-blue-600 bg-blue-50 dark:bg-blue-950/30',
+                    cancel_appointment: 'text-destructive bg-destructive/10',
+                    reschedule_appointment: 'text-amber-600 bg-amber-50 dark:bg-amber-950/30',
+                    request_handoff: 'text-purple-600 bg-purple-50 dark:bg-purple-950/30',
+                    send_file: 'text-indigo-600 bg-indigo-50 dark:bg-indigo-950/30',
+                    send_buttons: 'text-cyan-600 bg-cyan-50 dark:bg-cyan-950/30',
+                    audio_processed: 'text-pink-600 bg-pink-50 dark:bg-pink-950/30',
+                  };
+                  const actionColor = actionColors[logEntry.action] || 'text-muted-foreground bg-muted';
+
+                  // Model display name
+                  const modelShort = model
+                    ? model.replace('google/', '').replace('openai/', '').replace('-preview', '')
+                    : null;
+
+                  // Provider badge
+                  const providerLabel = provider === 'openai' ? 'OpenAI' : provider === 'gemini' ? 'Gemini' : 'Lovable AI';
+
+                  return (
+                    <div key={logEntry.id} className="flex items-start gap-3 bg-card rounded-xl border px-3.5 py-2.5 hover:shadow-sm transition-shadow">
+                      {/* Action badge */}
+                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 ${actionColor}`}>
+                        {isResponseSent ? (
+                          <Bot className="h-3.5 w-3.5" />
+                        ) : (
+                          <Zap className="h-3.5 w-3.5" />
+                        )}
+                      </div>
+
+                      {/* Main content */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                              <span className="text-sm font-semibold text-foreground">{actionLabel}</span>
+                              {isAudio && (
+                                <Badge variant="secondary" className="text-[9px] h-4 px-1 gap-0.5">
+                                  <Mic className="h-2.5 w-2.5" /> Áudio
+                                </Badge>
+                              )}
+                              {aggregatedMsgs > 1 && (
+                                <Badge variant="secondary" className="text-[9px] h-4 px-1">
+                                  {aggregatedMsgs} msgs
+                                </Badge>
+                              )}
+                            </div>
+
+                            {/* Instance + Phone row */}
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                              {instanceName && (
+                                <span className="flex items-center gap-1 text-primary font-medium">
+                                  <Smartphone className="h-2.5 w-2.5" />
+                                  {instanceName}
+                                </span>
+                              )}
+                              {!instanceName && instanceId && (
+                                <span className="flex items-center gap-1 text-muted-foreground/70 font-mono">
+                                  <Smartphone className="h-2.5 w-2.5" />
+                                  {instanceId.slice(0, 8)}…
+                                </span>
+                              )}
+                              {phone && (
+                                <span className="font-mono">{phone}</span>
+                              )}
+                            </div>
+
+                            {/* Model + Temp row (only for response_sent) */}
+                            {isResponseSent && (modelShort || temperature !== undefined) && (
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
+                                {modelShort && (
+                                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/60 rounded px-1.5 py-0.5 font-mono">
+                                    <SlidersHorizontal className="h-2.5 w-2.5" />
+                                    {modelShort}
+                                  </span>
+                                )}
+                                {temperature !== undefined && temperature !== null && (
+                                  <span className="text-[10px] text-muted-foreground bg-muted/60 rounded px-1.5 py-0.5">
+                                    temp {temperature}
+                                  </span>
+                                )}
+                                {providerLabel && provider !== 'lovable' && (
+                                  <span className="text-[10px] text-muted-foreground bg-muted/60 rounded px-1.5 py-0.5">
+                                    via {providerLabel}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Tool call details (non-response_sent) */}
+                            {isToolAction && Object.keys(d).length > 0 && (
+                              <p className="text-[10px] text-muted-foreground/60 mt-1 truncate">
+                                {Object.entries(d).filter(([k]) => !['instance_id'].includes(k)).map(([k, v]) => `${k}: ${v}`).join(' · ')}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Time + Response time */}
+                          <div className="flex flex-col items-end flex-shrink-0 gap-0.5">
+                            <span className="text-[11px] text-muted-foreground font-medium">
+                              {new Date(logEntry.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground/60">
+                              {new Date(logEntry.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                            </span>
+                            {responseMs && (
+                              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${responseMs < 3000 ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30' : responseMs < 8000 ? 'text-amber-600 bg-amber-50 dark:bg-amber-950/30' : 'text-destructive bg-destructive/10'}`}>
+                                {responseMs < 1000 ? `${responseMs}ms` : `${(responseMs / 1000).toFixed(1)}s`}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </TabsContent>
+
 
           {/* METRICS TAB */}
           <TabsContent value="metrics" className="space-y-4">
