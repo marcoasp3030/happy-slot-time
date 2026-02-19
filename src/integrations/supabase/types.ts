@@ -1779,6 +1779,7 @@ export type Database = {
           current_intent: string | null
           handoff_requested: boolean | null
           id: string
+          instance_id: string | null
           last_message_at: string | null
           phone: string
           status: string
@@ -1792,6 +1793,7 @@ export type Database = {
           current_intent?: string | null
           handoff_requested?: boolean | null
           id?: string
+          instance_id?: string | null
           last_message_at?: string | null
           phone: string
           status?: string
@@ -1805,6 +1807,7 @@ export type Database = {
           current_intent?: string | null
           handoff_requested?: boolean | null
           id?: string
+          instance_id?: string | null
           last_message_at?: string | null
           phone?: string
           status?: string
@@ -1823,6 +1826,13 @@ export type Database = {
             columns: ["current_appointment_id"]
             isOneToOne: false
             referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_conversations_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_instances"
             referencedColumns: ["id"]
           },
         ]
