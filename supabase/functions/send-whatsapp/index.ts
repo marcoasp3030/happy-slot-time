@@ -1255,6 +1255,114 @@ OBSERVAÇÕES: [outras informações relevantes ou dúvidas sobre a classificaç
   return analysis;
 }
 
+// ─── Auto-register atendimento (complaint/issue detection) ───
+// Keywords that suggest a complaint or issue (not scheduling)
+const COMPLAINT_KEYWORDS = /\b(reclamação|reclamacao|reclamar|reclamando|problema|problemas|defeito|defeituoso|quebrado|estragou|estragado|não funcionou|nao funcionou|insatisfeito|insatisfação|insatisfacao|ruim|péssimo|pessimo|horrível|horrible|horroroso|errado|errou|errei|cobrança errada|cobranca errada|cobraram|cobrança indevida|cobrança a mais|cobrar|reembolso|devolver|devolutiva|devolução|devolucao|não recebi|nao recebi|atrasou|atrasada|atrasado|entrega|demora|demorou|demorando|fui mal atendido|mal atendido|mau atendimento|sem resposta|não responderam|nao responderam|não resolveu|nao resolveu|produto errado|produto danificado|danificado|danificou|arranhado|sujo|estragado|faltou|faltando|incompleto|incompleta|lojista|gerente|responsável|responsavel|quero falar com|falar com alguém|falar com alguem|quero reclamar|quero registrar|registrar ocorrência|registrar ocorrencia|ocorrência|ocorrencia)\b/i;
+
+// Map message content to a known problem category
+function classifyProblemType(msg: string): string {
+  const m = msg.toLowerCase();
+  if (/produto|defeito|quebrado|danificado|estragado|arranhado|sujo|danificou/.test(m)) return "Reclamação de Produto";
+  if (/entrega|não recebi|nao recebi|atrasou|atraso|demora/.test(m)) return "Problema de Entrega";
+  if (/cobran[çc]|cobrou|cobrar|reembolso|pagar|pagamento|devolver|devolução|devolucao/.test(m)) return "Solicitação de Reembolso";
+  if (/atendimento|mal atendido|ignorad|não responderam|nao responderam/.test(m)) return "Reclamação de Atendimento";
+  if (/loja|unidade|filial|estabelecimento/.test(m)) return "Reclamação da Loja";
+  if (/técnico|tecnico|sistema|app|aplicativo|site|não funciona|nao funciona/.test(m)) return "Problema Técnico";
+  return "Outros";
+}
+
+// Extract condominium/place name from message (simple heuristic)
+function extractCondominiumName(msg: string): string | null {
+  // Match patterns like "no Condomínio X", "do condomínio X", "condomínio X", "no X condomínio"
+  const condMatch = msg.match(/\b(?:condom[íi]nio|cond\.?|resid[êe]ncia|resid\.?|edif[íi]cio|ed\.?|loteamento|vila|bairro)\s+([A-ZÀ-Ú][a-zà-ú\s]{2,30})/i);
+  if (condMatch) return condMatch[0].trim().substring(0, 100);
+  return null;
+}
+
+async function autoRegisterAtendimento(
+  sb: any,
+  companyId: string,
+  phone: string,
+  message: string,
+  clientName: string | null
+): Promise<void> {
+  // Only trigger on complaint signals
+  if (!COMPLAINT_KEYWORDS.test(message)) {
+    return;
+  }
+
+  log("📋 autoRegisterAtendimento: complaint detected, registering...");
+
+  const cleanPhone = phone.replace(/\D/g, "");
+  const problemType = classifyProblemType(message);
+  const condominiumName = extractCondominiumName(message);
+
+  // Use a quick AI call to extract structured info from the message
+  let aiExtracted: { client_name?: string; condominium_name?: string; problem_type?: string; priority?: string } = {};
+  try {
+    const apiKey = Deno.env.get("LOVABLE_API_KEY");
+    if (apiKey) {
+      const extractionPrompt = `Analise a mensagem abaixo e extraia APENAS em JSON (sem markdown, sem explicação):
+- client_name: nome do cliente se mencionado (ou null)
+- condominium_name: nome do condomínio/local/endereço se mencionado (ou null)
+- problem_type: uma das opções: "Reclamação de Produto", "Reclamação da Loja", "Reclamação de Atendimento", "Problema de Entrega", "Solicitação de Reembolso", "Dúvida sobre Serviço", "Problema Técnico", "Outros"
+- priority: "urgente" se muito grave/urgente, "alta" se sério, "normal" se comum, "baixa" se menor
+
+Mensagem: "${message.substring(0, 500)}"
+
+Responda APENAS com o JSON, sem formatação.`;
+
+      const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash-lite",
+          messages: [{ role: "user", content: extractionPrompt }],
+          max_tokens: 200,
+          temperature: 0,
+        }),
+      });
+
+      if (aiRes.ok) {
+        const aiData = await aiRes.json();
+        const rawContent = aiData.choices?.[0]?.message?.content?.trim() || "{}";
+        const clean = rawContent.replace(/```json|```/g, "").trim();
+        aiExtracted = JSON.parse(clean);
+        log("📋 AI extraction result:", JSON.stringify(aiExtracted));
+      }
+    }
+  } catch (e: any) {
+    log("📋 AI extraction failed (using heuristics):", e.message);
+  }
+
+  const finalClientName = aiExtracted.client_name || clientName || null;
+  const finalCondominium = aiExtracted.condominium_name || condominiumName || null;
+  const finalProblemType = aiExtracted.problem_type || problemType;
+  const finalPriority = aiExtracted.priority || "normal";
+
+  // Insert — the unique constraint (company_id, phone, date) handles deduplication
+  const { error } = await sb.from("atendimentos").insert({
+    company_id: companyId,
+    phone: cleanPhone,
+    client_name: finalClientName,
+    condominium_name: finalCondominium,
+    problem_type: finalProblemType,
+    description: message.substring(0, 1000),
+    priority: finalPriority,
+    status: "aberto",
+  });
+
+  if (error) {
+    if (error.code === "23505") {
+      log("📋 Atendimento já registrado hoje para este cliente — ignorando duplicata");
+    } else {
+      log("📋 ⚠️ Erro ao registrar atendimento:", error.message);
+    }
+  } else {
+    log("📋 ✅ Atendimento registrado automaticamente! phone:", cleanPhone, "tipo:", finalProblemType, "prioridade:", finalPriority);
+  }
+}
+
 // ─── AI Agent Logic ───
 const DN = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"];
 
@@ -2004,6 +2112,13 @@ async function handleAgent(
       } else {
         log("🤖 ⚠️ Cannot send: WS inactive or missing credentials");
       }
+    }
+
+    // ── Auto-register atendimento when client reports a complaint/issue ──
+    try {
+      await autoRegisterAtendimento(sb, cid, phone, actualMsg, conv.client_name || null);
+    } catch (e: any) {
+      log("📋 autoRegisterAtendimento error (non-fatal):", e.message);
     }
 
     // ── Auto-react to client's message based on agent settings ──
