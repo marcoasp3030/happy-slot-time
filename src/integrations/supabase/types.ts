@@ -296,6 +296,62 @@ export type Database = {
           },
         ]
       }
+      atendimentos: {
+        Row: {
+          client_name: string | null
+          company_id: string
+          condominium_name: string | null
+          created_at: string
+          description: string | null
+          id: string
+          notes: string | null
+          phone: string
+          priority: string
+          problem_type: string
+          resolved_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          client_name?: string | null
+          company_id: string
+          condominium_name?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          notes?: string | null
+          phone: string
+          priority?: string
+          problem_type: string
+          resolved_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          client_name?: string | null
+          company_id?: string
+          condominium_name?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          notes?: string | null
+          phone?: string
+          priority?: string
+          problem_type?: string
+          resolved_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "atendimentos_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_logs: {
         Row: {
           action: string

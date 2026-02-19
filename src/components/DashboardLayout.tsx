@@ -6,7 +6,7 @@ import { useFormLabel } from '@/hooks/useFormLabel';
 import {
   LayoutDashboard, Users, Clock, Calendar,
   Palette, MessageSquare, CreditCard, Menu, X, LogOut,
-  ChevronRight, Bell, Shield, Search, ClipboardList, Layers, ScrollText, Bot, Activity,
+  ChevronRight, Bell, Shield, Search, ClipboardList, Layers, ScrollText, Bot, Activity, Headphones,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -16,6 +16,7 @@ import sloteraLogo from '@/assets/slotera-logo.png';
 const baseNavItems = [
   { title: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
   { title: 'Agendamentos', icon: Calendar, path: '/agendamentos' },
+  { title: 'Atendimentos', icon: Headphones, path: '/atendimentos' },
   { title: 'Serviços', icon: Clock, path: '/servicos' },
   { title: 'Profissionais', icon: Users, path: '/profissionais' },
   { title: 'Horários', icon: Clock, path: '/horarios' },
