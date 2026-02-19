@@ -304,6 +304,29 @@ export default function PublicBooking() {
 
   const handleSubmit = async () => {
     if (!clientName.trim() || !clientPhone.trim() || !company || !selectedService || !lgpdConsent) return;
+
+    // Client-side input validation (mirrors DB constraints)
+    const nameClean = clientName.trim();
+    const phoneClean = clientPhone.trim();
+    const notesClean = notes.trim();
+
+    if (nameClean.length > 150) {
+      toast.error('Nome muito longo (máximo 150 caracteres)');
+      return;
+    }
+    if (phoneClean.length < 7 || phoneClean.length > 30) {
+      toast.error('Telefone inválido (entre 7 e 30 caracteres)');
+      return;
+    }
+    if (!/^[\+\d\s\-\(\)]{7,30}$/.test(phoneClean)) {
+      toast.error('Telefone inválido. Use apenas números, espaços, +, - e parênteses');
+      return;
+    }
+    if (notesClean.length > 1000) {
+      toast.error('Observação muito longa (máximo 1000 caracteres)');
+      return;
+    }
+
     setSubmitting(true);
 
     // Log LGPD consent
