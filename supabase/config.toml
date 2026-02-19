@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.admin-confirm-user]
 verify_jwt = false
+
+[functions.process-complaints]
+verify_jwt = false
