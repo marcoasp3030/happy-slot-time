@@ -115,6 +115,7 @@ function CampaignCreator({
   // Media - multiple files
   const [mediaFiles, setMediaFiles] = useState<{ url: string; type: string; name: string }[]>([]);
   const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   // Segment selection
   const [savedLists, setSavedLists] = useState<{ id: string; name: string; count: number }[]>([]);
@@ -150,6 +151,7 @@ function CampaignCreator({
       setScheduledAt('');
       setAutomationFlowId(null);
       setMediaFiles([]);
+      setShowPreview(false);
       setSelectedListIds(new Set());
       setSelectedTags(new Set());
     }
@@ -315,7 +317,7 @@ function CampaignCreator({
 
   const handleCreate = async () => {
     if (!name.trim()) { toast({ title: 'Dê um nome à campanha', variant: 'destructive' }); return; }
-    if (!messageText.trim()) { toast({ title: 'Escreva a mensagem', variant: 'destructive' }); return; }
+    if (!messageText.trim() && mediaFiles.length === 0) { toast({ title: 'Escreva uma mensagem ou anexe pelo menos uma mídia', variant: 'destructive' }); return; }
     if (!isEditing && contacts.length === 0) { toast({ title: 'Importe pelo menos 1 contato', variant: 'destructive' }); return; }
     if (!companyId || !user) return;
 
@@ -450,6 +452,7 @@ function CampaignCreator({
     setScheduledAt('');
     setAutomationFlowId(null);
     setMediaFiles([]);
+    setShowPreview(false);
     setSelectedListIds(new Set());
     setSelectedTags(new Set());
     setSaving(false);
@@ -923,12 +926,121 @@ function CampaignCreator({
           </TabsContent>
         </Tabs>
 
+        {/* ── Preview / Confirmation ── */}
+        {showPreview && (
+          <div className="border rounded-xl p-4 bg-muted/30 space-y-3 mt-2">
+            <div className="flex items-center gap-2 mb-2">
+              <Eye className="h-4 w-4 text-primary" />
+              <Label className="text-sm font-semibold">Pré-visualização da mensagem</Label>
+            </div>
+
+            {/* WhatsApp-style preview bubble */}
+            <div className="bg-[#dcf8c6] dark:bg-emerald-900/40 rounded-xl rounded-tr-none p-3 max-w-[85%] ml-auto shadow-sm space-y-2">
+              {mediaFiles.length > 0 && (
+                <div className="space-y-1.5">
+                  {mediaFiles.map((mf, idx) => (
+                    <div key={idx} className="flex items-center gap-2 text-xs">
+                      {mf.type === 'image' ? (
+                        <img src={mf.url} alt={mf.name} className="rounded-lg max-h-32 max-w-full object-cover" />
+                      ) : (
+                        <div className="flex items-center gap-1.5 bg-background/50 rounded-lg px-2 py-1.5">
+                          {mf.type === 'audio' ? <Mic className="h-3.5 w-3.5 text-primary" /> : <File className="h-3.5 w-3.5 text-primary" />}
+                          <span className="truncate max-w-[180px]">{mf.name}</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {messageText.trim() && (
+                <p className="text-sm whitespace-pre-wrap break-words">
+                  {messageText.replace(/\{\{nome\}\}/gi, 'João Silva')}
+                </p>
+              )}
+              {footerText.trim() && (
+                <p className="text-[10px] text-muted-foreground mt-1">{footerText}</p>
+              )}
+              {messageType === 'button' && buttons.filter(b => b.text.trim()).length > 0 && (
+                <div className="flex flex-col gap-1 mt-2 border-t pt-2">
+                  {buttons.filter(b => b.text.trim()).map((b, i) => (
+                    <div key={i} className="text-center text-xs font-medium text-primary bg-background/60 rounded-md py-1.5">{b.text}</div>
+                  ))}
+                </div>
+              )}
+              {messageType === 'list' && listSections.some(s => s.items.length > 0) && (
+                <div className="text-center text-xs font-medium text-primary bg-background/60 rounded-md py-1.5 mt-2 flex items-center justify-center gap-1">
+                  <List className="h-3 w-3" /> Ver opções
+                </div>
+              )}
+            </div>
+
+            {/* Campaign summary */}
+            <div className="grid grid-cols-2 gap-2 text-xs mt-3">
+              <div className="flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                <span><strong>{isEditing ? (editCampaign!.total_contacts + contacts.length) : contacts.length}</strong> contatos</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+                <span>{messageType === 'text' ? 'Texto' : messageType === 'button' ? 'Com botões' : 'Menu lista'}</span>
+              </div>
+              {mediaFiles.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <Image className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span><strong>{mediaFiles.length}</strong> anexo(s)</span>
+                </div>
+              )}
+              {scheduledAt && (
+                <div className="flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span>Agendado: {new Date(scheduledAt).toLocaleString('pt-BR')}</span>
+                </div>
+              )}
+              {instanceId && instances.find(i => i.id === instanceId) && (
+                <div className="flex items-center gap-1.5 col-span-2">
+                  <Send className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span>Via: {instances.find(i => i.id === instanceId)?.label || instances.find(i => i.id === instanceId)?.instance_name}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-2.5 text-xs text-amber-700 dark:text-amber-400 flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>
+                {scheduledAt
+                  ? 'A campanha será agendada e enviada no horário definido. Confirma?'
+                  : isEditing
+                    ? 'As alterações serão salvas. Confirma?'
+                    : 'A campanha será criada e o disparo iniciará imediatamente. Confirma?'}
+              </span>
+            </div>
+          </div>
+        )}
+
         <DialogFooter className="mt-4">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={handleCreate} disabled={saving} className="gap-2">
-            {saving ? <Clock className="h-4 w-4 animate-spin" /> : isEditing ? <Pencil className="h-4 w-4" /> : scheduledAt ? <Clock className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-            {saving ? (isEditing ? 'Salvando...' : 'Criando...') : isEditing ? 'Salvar Alterações' : scheduledAt ? 'Agendar' : 'Criar e Enviar'}
+          <Button variant="outline" onClick={() => { if (showPreview) setShowPreview(false); else onOpenChange(false); }}>
+            {showPreview ? 'Voltar' : 'Cancelar'}
           </Button>
+          {showPreview ? (
+            <Button onClick={handleCreate} disabled={saving} className="gap-2">
+              {saving ? <Clock className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+              {saving ? (isEditing ? 'Salvando...' : 'Criando...') : 'Confirmar e ' + (isEditing ? 'Salvar' : scheduledAt ? 'Agendar' : 'Enviar')}
+            </Button>
+          ) : (
+            <Button
+              onClick={() => {
+                // Validate before showing preview
+                if (!name.trim()) { toast({ title: 'Dê um nome à campanha', variant: 'destructive' }); return; }
+                if (!messageText.trim() && mediaFiles.length === 0) { toast({ title: 'Escreva uma mensagem ou anexe pelo menos uma mídia', variant: 'destructive' }); return; }
+                if (!isEditing && contacts.length === 0) { toast({ title: 'Importe pelo menos 1 contato', variant: 'destructive' }); return; }
+                setShowPreview(true);
+              }}
+              className="gap-2"
+            >
+              <Eye className="h-4 w-4" />
+              Pré-visualizar e Confirmar
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
