@@ -199,6 +199,40 @@ export default function NodeConfigPanel({ node, onUpdate, onClose, campaigns }: 
             />
           </div>
         )}
+
+        {/* Condition */}
+        {nodeType === 'condition' && (
+          <>
+            <div>
+              <Label className="text-xs">Tipo de condição</Label>
+              <Select value={config.conditionType || 'has_tag'} onValueChange={(v) => update('conditionType', v)}>
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="has_tag">Contato tem tag</SelectItem>
+                  <SelectItem value="has_appointment">Contato tem agendamento</SelectItem>
+                  <SelectItem value="text_contains">Texto contém</SelectItem>
+                  <SelectItem value="text_equals">Texto igual a</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {(config.conditionType === 'has_tag' || config.conditionType === 'text_contains' || config.conditionType === 'text_equals' || !config.conditionType) && (
+              <div>
+                <Label className="text-xs">
+                  {config.conditionType === 'text_contains' ? 'Texto a buscar' : config.conditionType === 'text_equals' ? 'Texto esperado' : 'Nome da tag'}
+                </Label>
+                <Input
+                  value={config.conditionValue || ''}
+                  onChange={(e) => update('conditionValue', e.target.value)}
+                  placeholder={config.conditionType === 'text_contains' || config.conditionType === 'text_equals' ? 'Ex: sim' : 'Ex: vip'}
+                  className="mt-1"
+                />
+              </div>
+            )}
+            <p className="text-[10px] text-muted-foreground">
+              Saída <span className="font-bold text-green-600">Sim</span> se a condição for verdadeira, <span className="font-bold text-red-500">Não</span> caso contrário.
+            </p>
+          </>
+        )}
       </div>
     </div>
   );

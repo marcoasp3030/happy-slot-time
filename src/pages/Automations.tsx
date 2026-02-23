@@ -28,7 +28,7 @@ import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import {
   Plus, Save, ArrowLeft, Trash2, MousePointer, MessageSquare, ListOrdered, Clock,
-  Send, Tag, Calendar, ArrowRightLeft, Zap, Activity, Eye,
+  Send, Tag, Calendar, ArrowRightLeft, Zap, Activity, Eye, GitBranch,
 } from 'lucide-react';
 import { automationNodeTypes, nodeLabels, nodeIcons } from '@/components/automation/AutomationNodeTypes';
 import NodeConfigPanel from '@/components/automation/NodeConfigPanel';
@@ -46,6 +46,10 @@ const actionPalette = [
   { type: 'action_schedule', label: 'Agendar', icon: Calendar },
   { type: 'action_move_campaign', label: 'Mover p/ Campanha', icon: ArrowRightLeft },
   { type: 'action_wait', label: 'Aguardar', icon: Clock },
+];
+
+const conditionPalette = [
+  { type: 'condition', label: 'Condição', icon: GitBranch },
 ];
 
 let nodeIdCounter = 0;
@@ -302,6 +306,19 @@ export default function Automations() {
                         key={item.type}
                         onClick={() => addNode(item.type)}
                         className="flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-50 hover:text-blue-700 transition-colors text-left"
+                      >
+                        <item.icon className="h-3.5 w-3.5" />
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] font-semibold uppercase text-muted-foreground tracking-wide">Lógica</p>
+                  <div className="space-y-1">
+                    {conditionPalette.map((item) => (
+                      <button
+                        key={item.type}
+                        onClick={() => addNode(item.type)}
+                        className="flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-xs font-medium hover:bg-indigo-50 hover:text-indigo-700 transition-colors text-left"
                       >
                         <item.icon className="h-3.5 w-3.5" />
                         {item.label}
