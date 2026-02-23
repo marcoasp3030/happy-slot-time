@@ -45,6 +45,7 @@ import Atendimentos from "./pages/Atendimentos";
 import MassMessages from "./pages/MassMessages";
 import Automations from "./pages/Automations";
 import ContactTags from "./pages/ContactTags";
+import Chat from "./pages/Chat";
 
 const queryClient = new QueryClient();
 
@@ -142,6 +143,7 @@ function AnimatedRoutes() {
       <Route path="/mensagens-massa" element={<ProtectedRoute><PageTransition><MassMessages /></PageTransition></ProtectedRoute>} />
       <Route path="/automacoes" element={<ProtectedRoute><PageTransition><Automations /></PageTransition></ProtectedRoute>} />
       <Route path="/tags" element={<ProtectedRoute><PageTransition><ContactTags /></PageTransition></ProtectedRoute>} />
+      <Route path="/chat" element={<ProtectedRoute><PageTransition><Chat /></PageTransition></ProtectedRoute>} />
       
       {/* Super admin routes */}
       <Route path="/admin" element={<AdminRoute><PageTransition><AdminDashboard /></PageTransition></AdminRoute>} />

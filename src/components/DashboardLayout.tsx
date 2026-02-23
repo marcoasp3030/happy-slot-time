@@ -24,6 +24,7 @@ const baseNavItems = [
   { title: 'Mensagens em Massa', icon: Send, path: '/mensagens-massa' },
   { title: 'Automações', icon: Zap, path: '/automacoes' },
   { title: 'Tags de Contatos', icon: Tag, path: '/tags' },
+  { title: 'Chat WhatsApp', icon: MessageSquare, path: '/chat' },
 ];
 
 const settingsItems = [
