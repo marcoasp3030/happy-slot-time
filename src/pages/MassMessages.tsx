@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/table';
 import {
   Send, Upload, Plus, Trash2, Clock, CheckCircle, XCircle,
-  FileSpreadsheet, Users, MessageSquare, List, AlertCircle, Play, Ban, Eye, RefreshCw,
+  FileSpreadsheet, Users, MessageSquare, List, AlertCircle, Play, Ban, Eye, RefreshCw, Download,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -376,9 +376,31 @@ function CampaignCreator({
               </label>
             </div>
 
-            <div className="text-xs text-muted-foreground flex items-center gap-1">
-              <FileSpreadsheet className="h-3 w-3" />
-              A planilha deve conter colunas: <strong>nome</strong> e <strong>telefone</strong> (ou name/phone)
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-muted-foreground flex items-center gap-1">
+                <FileSpreadsheet className="h-3 w-3" />
+                A planilha deve conter colunas: <strong>nome</strong> e <strong>telefone</strong> (ou name/phone)
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs"
+                onClick={() => {
+                  const header = 'nome,telefone\n';
+                  const examples = 'João Silva,5511999999999\nMaria Souza,5521988888888\nCarlos Lima,5531977777777\n';
+                  const blob = new Blob([header + examples], { type: 'text/csv;charset=utf-8;' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'modelo-contatos.csv';
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+              >
+                <Download className="h-3 w-3" />
+                Baixar modelo
+              </Button>
             </div>
 
             {/* Manual add */}
