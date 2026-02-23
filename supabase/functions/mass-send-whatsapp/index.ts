@@ -260,9 +260,25 @@ async function processCampaign(supabase: any, campaign: any) {
       try {
         const messageText = campaign.message_text.replace(/\{\{nome\}\}/gi, contact.name);
 
-        // Send media first if present
-        if (campaign.media_url && campaign.media_type) {
-          await sendMedia(ws, contact.phone, campaign.media_url, campaign.media_type, messageText);
+        // Send all media files (multiple file support)
+        const mediaFiles: { url: string; type: string; name: string }[] = campaign.media_files || [];
+        
+        // Fallback: if media_files is empty but media_url exists (legacy), use single file
+        if (mediaFiles.length === 0 && campaign.media_url && campaign.media_type) {
+          mediaFiles.push({ url: campaign.media_url, type: campaign.media_type, name: 'arquivo' });
+        }
+
+        if (mediaFiles.length > 0) {
+          // Send first media with caption (message text), rest without caption
+          for (let mi = 0; mi < mediaFiles.length; mi++) {
+            const mf = mediaFiles[mi];
+            const caption = mi === 0 ? messageText : undefined;
+            await sendMedia(ws, contact.phone, mf.url, mf.type, caption, mf.name);
+            // Small delay between multiple files
+            if (mi < mediaFiles.length - 1) {
+              await new Promise(r => setTimeout(r, randomDelay(1, 3) * 1000));
+            }
+          }
         } else if (campaign.message_type === "text") {
           await sendText(ws, contact.phone, messageText);
         } else if (campaign.message_type === "button") {
@@ -415,14 +431,15 @@ async function sendMedia(
   phone: string,
   mediaUrl: string,
   mediaType: string,
-  caption?: string
+  caption?: string,
+  fileName?: string
 ) {
   // mediaType: image, audio, document
   const endpoint = mediaType === "audio" ? "/send/audio" : mediaType === "document" ? "/send/document" : "/send/image";
   const url = ws.base_url.replace(/\/$/, "") + endpoint;
   const body: any = { number: phone, url: mediaUrl };
   if (caption && mediaType !== "audio") body.caption = caption;
-  if (mediaType === "document") body.fileName = "arquivo";
+  if (mediaType === "document") body.fileName = fileName || "arquivo";
 
   const res = await fetch(url, {
     method: "POST",
