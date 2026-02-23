@@ -1070,20 +1070,27 @@ export type Database = {
       }
       mass_campaigns: {
         Row: {
+          business_hours_only: boolean
           buttons: Json | null
           company_id: string
           completed_at: string | null
           created_at: string
           created_by: string
+          daily_limit: number
+          daily_sent_count: number
+          delay_max: number
+          delay_min: number
           delay_seconds: number
           failed_count: number
           footer_text: string | null
           id: string
           instance_id: string | null
+          last_sent_date: string | null
           list_sections: Json | null
           message_text: string
           message_type: string
           name: string
+          rotate_instances: boolean
           scheduled_at: string | null
           sent_count: number
           started_at: string | null
@@ -1092,20 +1099,27 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          business_hours_only?: boolean
           buttons?: Json | null
           company_id: string
           completed_at?: string | null
           created_at?: string
           created_by: string
+          daily_limit?: number
+          daily_sent_count?: number
+          delay_max?: number
+          delay_min?: number
           delay_seconds?: number
           failed_count?: number
           footer_text?: string | null
           id?: string
           instance_id?: string | null
+          last_sent_date?: string | null
           list_sections?: Json | null
           message_text: string
           message_type?: string
           name: string
+          rotate_instances?: boolean
           scheduled_at?: string | null
           sent_count?: number
           started_at?: string | null
@@ -1114,20 +1128,27 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          business_hours_only?: boolean
           buttons?: Json | null
           company_id?: string
           completed_at?: string | null
           created_at?: string
           created_by?: string
+          daily_limit?: number
+          daily_sent_count?: number
+          delay_max?: number
+          delay_min?: number
           delay_seconds?: number
           failed_count?: number
           footer_text?: string | null
           id?: string
           instance_id?: string | null
+          last_sent_date?: string | null
           list_sections?: Json | null
           message_text?: string
           message_type?: string
           name?: string
+          rotate_instances?: boolean
           scheduled_at?: string | null
           sent_count?: number
           started_at?: string | null

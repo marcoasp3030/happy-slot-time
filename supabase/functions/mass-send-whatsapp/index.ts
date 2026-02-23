@@ -11,6 +11,28 @@ function log(...args: any[]) {
   console.log("[mass-send]", new Date().toISOString(), ...args);
 }
 
+/** Returns a random integer between min and max (inclusive) */
+function randomDelay(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+/** Check if current time is within business hours (8h-20h in campaign timezone, defaults to America/Sao_Paulo) */
+function isBusinessHours(): boolean {
+  const now = new Date();
+  // Use Brazil timezone offset (UTC-3) as default
+  const brOffset = -3;
+  const utcHours = now.getUTCHours();
+  const localHours = (utcHours + brOffset + 24) % 24;
+  return localHours >= 8 && localHours < 20;
+}
+
+/** Check if today is a weekday (Mon-Fri) */
+function isWeekday(): boolean {
+  const now = new Date();
+  const day = now.getUTCDay();
+  return day >= 1 && day <= 5;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -23,10 +45,8 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { action, campaign_id } = body;
 
-    // ── Action: process-campaign ──
-    // Called by cron or manually to process pending campaigns
+    // ── Action: process-campaigns ──
     if (action === "process-campaigns") {
-      // Find campaigns that are scheduled and ready
       const now = new Date().toISOString();
       const { data: campaigns } = await supabase
         .from("mass_campaigns")
@@ -49,7 +69,6 @@ Deno.serve(async (req) => {
 
     // ── Action: start-campaign ──
     if (action === "start-campaign" && campaign_id) {
-      // Verify caller is authorized
       const authHeader = req.headers.get("Authorization");
       if (authHeader) {
         const callerClient = createClient(
@@ -77,16 +96,13 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: "Campanha já iniciada ou finalizada" }), { status: 400, headers: jsonH });
       }
 
-      // If scheduled_at is set and in the future, just mark as scheduled
       if (campaign.scheduled_at && new Date(campaign.scheduled_at) > new Date()) {
         await supabase.from("mass_campaigns").update({ status: "scheduled" }).eq("id", campaign_id);
         return new Response(JSON.stringify({ ok: true, status: "scheduled" }), { headers: jsonH });
       }
 
-      // Process immediately
       await supabase.from("mass_campaigns").update({ status: "processing", started_at: new Date().toISOString() }).eq("id", campaign_id);
-      
-      // Process in background (don't await — return immediately)
+
       processCampaign(supabase, { ...campaign, status: "processing" }).catch(err => {
         log("❌ Background campaign processing error:", err);
       });
@@ -105,21 +121,66 @@ async function processCampaign(supabase: any, campaign: any) {
   const campaignId = campaign.id;
   log("🚀 Processing campaign:", campaignId, "name:", campaign.name);
 
-  // Mark as processing
-  await supabase.from("mass_campaigns").update({ status: "processing", started_at: campaign.started_at || new Date().toISOString() }).eq("id", campaignId);
+  // Anti-ban settings
+  const delayMin = campaign.delay_min || 8;
+  const delayMax = campaign.delay_max || 25;
+  const dailyLimit = campaign.daily_limit || 300;
+  const businessHoursOnly = campaign.business_hours_only ?? true;
+  const rotateInstances = campaign.rotate_instances ?? false;
 
-  // Get WhatsApp credentials
-  const ws = await getWsCredentials(supabase, campaign.company_id, campaign.instance_id);
-  if (!ws) {
+  await supabase.from("mass_campaigns").update({
+    status: "processing",
+    started_at: campaign.started_at || new Date().toISOString(),
+  }).eq("id", campaignId);
+
+  // Get all available instances for rotation
+  let instances: any[] = [];
+  if (rotateInstances) {
+    const { data: allInstances } = await supabase
+      .from("whatsapp_instances")
+      .select("id, instance_name, token, status")
+      .eq("company_id", campaign.company_id)
+      .eq("status", "connected");
+    instances = allInstances || [];
+  }
+
+  // Get primary WhatsApp credentials
+  const primaryWs = await getWsCredentials(supabase, campaign.company_id, campaign.instance_id);
+  if (!primaryWs && instances.length === 0) {
     log("❌ No WhatsApp credentials for company:", campaign.company_id);
     await supabase.from("mass_campaigns").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", campaignId);
     return;
   }
 
-  // Get pending contacts in batches
+  // Build rotation list
+  const wsPool: { base_url: string; instance_id: string; token: string }[] = [];
+  if (primaryWs) wsPool.push(primaryWs);
+  if (rotateInstances && instances.length > 0) {
+    const baseUrl = primaryWs?.base_url;
+    if (baseUrl) {
+      for (const inst of instances) {
+        if (inst.token && !wsPool.find(w => w.instance_id === inst.instance_name)) {
+          wsPool.push({ base_url: baseUrl, instance_id: inst.instance_name, token: inst.token });
+        }
+      }
+    }
+  }
+
+  if (wsPool.length === 0) {
+    log("❌ No valid WhatsApp instances available");
+    await supabase.from("mass_campaigns").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", campaignId);
+    return;
+  }
+
   let hasMore = true;
   let sentCount = campaign.sent_count || 0;
   let failedCount = campaign.failed_count || 0;
+
+  // Track daily sent count
+  const today = new Date().toISOString().split("T")[0];
+  let dailySent = campaign.last_sent_date === today ? (campaign.daily_sent_count || 0) : 0;
+
+  let instanceIndex = 0;
 
   while (hasMore) {
     // Check if campaign was cancelled
@@ -127,6 +188,39 @@ async function processCampaign(supabase: any, campaign: any) {
     if (fresh?.status === "cancelled") {
       log("⚠️ Campaign cancelled, stopping");
       return;
+    }
+
+    // ── Anti-ban: Business hours check ──
+    if (businessHoursOnly && (!isBusinessHours() || !isWeekday())) {
+      log("⏸️ Outside business hours, pausing campaign until next window");
+      await supabase.from("mass_campaigns").update({
+        sent_count: sentCount,
+        failed_count: failedCount,
+        daily_sent_count: dailySent,
+        last_sent_date: today,
+      }).eq("id", campaignId);
+      // Wait 15 minutes and recheck
+      await new Promise(r => setTimeout(r, 15 * 60 * 1000));
+      continue;
+    }
+
+    // ── Anti-ban: Daily limit check ──
+    if (dailySent >= dailyLimit) {
+      log(`⏸️ Daily limit reached (${dailySent}/${dailyLimit}), pausing until tomorrow`);
+      await supabase.from("mass_campaigns").update({
+        sent_count: sentCount,
+        failed_count: failedCount,
+        daily_sent_count: dailySent,
+        last_sent_date: today,
+      }).eq("id", campaignId);
+      // Wait 1 hour and recheck (date will change eventually)
+      await new Promise(r => setTimeout(r, 60 * 60 * 1000));
+      // Reset daily counter if date changed
+      const newToday = new Date().toISOString().split("T")[0];
+      if (newToday !== today) {
+        dailySent = 0;
+      }
+      continue;
     }
 
     const { data: contacts } = await supabase
@@ -143,19 +237,38 @@ async function processCampaign(supabase: any, campaign: any) {
     }
 
     for (const contact of contacts) {
+      // Recheck daily limit inside loop
+      if (dailySent >= dailyLimit) {
+        log(`⏸️ Daily limit hit mid-batch, breaking`);
+        break;
+      }
+
+      // Recheck business hours every 10 messages
+      if (businessHoursOnly && dailySent % 10 === 0 && dailySent > 0) {
+        if (!isBusinessHours() || !isWeekday()) {
+          log("⏸️ Business hours ended mid-batch, breaking");
+          break;
+        }
+      }
+
+      // ── Anti-ban: Rotate instance ──
+      const ws = wsPool[instanceIndex % wsPool.length];
+      if (rotateInstances) {
+        instanceIndex++;
+      }
+
       try {
-        // Replace {{nome}} placeholder
         const messageText = campaign.message_text.replace(/\{\{nome\}\}/gi, contact.name);
 
         if (campaign.message_type === "text") {
           await sendText(ws, contact.phone, messageText);
         } else if (campaign.message_type === "button") {
-          const buttons = campaign.buttons || [];
-          if (buttons.length > 0) {
+          const btns = campaign.buttons || [];
+          if (btns.length > 0) {
             await sendMenu(ws, contact.phone, {
               type: "button",
               text: messageText,
-              choices: buttons.map((b: any) => `${b.text}|${b.id || b.text}`),
+              choices: btns.map((b: any) => `${b.text}|${b.id || b.text}`),
               footerText: campaign.footer_text || undefined,
             });
           } else {
@@ -182,14 +295,14 @@ async function processCampaign(supabase: any, campaign: any) {
           }
         }
 
-        // Mark as sent
         await supabase.from("mass_campaign_contacts").update({
           status: "sent",
           sent_at: new Date().toISOString(),
         }).eq("id", contact.id);
 
         sentCount++;
-        log("✅ Sent to:", contact.phone, `(${sentCount}/${campaign.total_contacts})`);
+        dailySent++;
+        log(`✅ Sent to: ${contact.phone} (${sentCount}/${campaign.total_contacts}) via ${ws.instance_id}`);
       } catch (err: any) {
         failedCount++;
         await supabase.from("mass_campaign_contacts").update({
@@ -200,20 +313,27 @@ async function processCampaign(supabase: any, campaign: any) {
       }
 
       // Update progress
-      await supabase.from("mass_campaigns").update({ sent_count: sentCount, failed_count: failedCount }).eq("id", campaignId);
+      await supabase.from("mass_campaigns").update({
+        sent_count: sentCount,
+        failed_count: failedCount,
+        daily_sent_count: dailySent,
+        last_sent_date: new Date().toISOString().split("T")[0],
+      }).eq("id", campaignId);
 
-      // Delay between messages
-      const delay = (campaign.delay_seconds || 10) * 1000;
-      await new Promise(r => setTimeout(r, delay));
+      // ── Anti-ban: Random delay ──
+      const delaySec = randomDelay(delayMin, delayMax);
+      log(`⏳ Waiting ${delaySec}s before next message`);
+      await new Promise(r => setTimeout(r, delaySec * 1000));
     }
   }
 
-  // Mark as completed
   await supabase.from("mass_campaigns").update({
     status: "completed",
     completed_at: new Date().toISOString(),
     sent_count: sentCount,
     failed_count: failedCount,
+    daily_sent_count: dailySent,
+    last_sent_date: new Date().toISOString().split("T")[0],
   }).eq("id", campaignId);
 
   log("🏁 Campaign completed:", campaignId, "sent:", sentCount, "failed:", failedCount);
