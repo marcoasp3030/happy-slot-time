@@ -55,7 +55,7 @@ export default function PublicBooking() {
   useEffect(() => {
     if (!slug) return;
     const fetchData = async () => {
-      const { data: comp } = await supabase.from('companies').select('*').eq('slug', slug).single();
+      const { data: comp } = await supabase.from('companies').select('id, name, slug, logo_url, address, phone, blocked').eq('slug', slug).single();
       if (!comp) { setLoading(false); return; }
       setCompany(comp);
 
