@@ -434,12 +434,15 @@ async function sendMedia(
   caption?: string,
   fileName?: string
 ) {
-  // mediaType: image, audio, document
-  const endpoint = mediaType === "audio" ? "/send/audio" : mediaType === "document" ? "/send/document" : "/send/image";
-  const url = ws.base_url.replace(/\/$/, "") + endpoint;
-  const body: any = { number: phone, url: mediaUrl };
-  if (caption && mediaType !== "audio") body.caption = caption;
-  if (mediaType === "document") body.fileName = fileName || "arquivo";
+  // uazapi v2 uses single /send/media endpoint with "type" field
+  const url = ws.base_url.replace(/\/$/, "") + "/send/media";
+  const body: any = {
+    number: phone,
+    type: mediaType === "audio" ? "audio" : mediaType === "document" ? "document" : "image",
+    file: mediaUrl,
+  };
+  if (caption && mediaType !== "audio") body.text = caption;
+  if (mediaType === "document" && fileName) body.docName = fileName;
 
   const res = await fetch(url, {
     method: "POST",

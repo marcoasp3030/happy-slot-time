@@ -2883,14 +2883,15 @@ ${caps.can_send_pix && caps.pix_key ? ("\nPAGAMENTO - PIX:\nChave PIX: " + caps.
         if (ws?.active && ws?.base_url && ws?.token) {
           try {
             const fileType = args.file_type || "document";
-            let endpoint = "/send/document";
-            if (fileType === "image") endpoint = "/send/image";
-            else if (fileType === "audio") endpoint = "/send/audio";
-            
-            const sendUrl = ws.base_url.replace(/\/$/, "") + endpoint;
-            const sendBody: any = { number: conv.phone.replace(/\D/g, ""), url: args.file_url };
-            if (fileType === "document") sendBody.fileName = args.file_name;
-            if (fileType === "image") sendBody.caption = args.file_name;
+            // uazapi v2 uses single /send/media endpoint
+            const sendUrl = ws.base_url.replace(/\/$/, "") + "/send/media";
+            const sendBody: any = {
+              number: conv.phone.replace(/\D/g, ""),
+              type: fileType,
+              file: args.file_url,
+            };
+            if (fileType === "document") sendBody.docName = args.file_name;
+            if (fileType === "image") sendBody.text = args.file_name;
             
             log("📎 Sending file:", sendUrl, args.file_name);
             const fRes = await fetch(sendUrl, {
