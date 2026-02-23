@@ -381,26 +381,49 @@ function CampaignCreator({
                 <FileSpreadsheet className="h-3 w-3" />
                 A planilha deve conter colunas: <strong>nome</strong> e <strong>telefone</strong> (ou name/phone)
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="gap-1.5 text-xs"
-                onClick={() => {
-                  const header = 'nome,telefone\n';
-                  const examples = 'João Silva,5511999999999\nMaria Souza,5521988888888\nCarlos Lima,5531977777777\n';
-                  const blob = new Blob([header + examples], { type: 'text/csv;charset=utf-8;' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = 'modelo-contatos.csv';
-                  a.click();
-                  URL.revokeObjectURL(url);
-                }}
-              >
-                <Download className="h-3 w-3" />
-                Baixar modelo
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 text-xs"
+                  onClick={() => {
+                    const header = 'nome,telefone\n';
+                    const examples = 'João Silva,5511999999999\nMaria Souza,5521988888888\nCarlos Lima,5531977777777\n';
+                    const blob = new Blob([header + examples], { type: 'text/csv;charset=utf-8;' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'modelo-contatos.csv';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                >
+                  <Download className="h-3 w-3" />
+                  Modelo CSV
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 text-xs"
+                  onClick={async () => {
+                    const XLSX = await import('xlsx');
+                    const data = [
+                      { nome: 'João Silva', telefone: '5511999999999' },
+                      { nome: 'Maria Souza', telefone: '5521988888888' },
+                      { nome: 'Carlos Lima', telefone: '5531977777777' },
+                    ];
+                    const ws = XLSX.utils.json_to_sheet(data);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, 'Contatos');
+                    XLSX.writeFile(wb, 'modelo-contatos.xlsx');
+                  }}
+                >
+                  <Download className="h-3 w-3" />
+                  Modelo Excel
+                </Button>
+              </div>
             </div>
 
             {/* Manual add */}
