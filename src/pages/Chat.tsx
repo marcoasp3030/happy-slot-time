@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, memo } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -9,9 +9,9 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import {
-  Search, Send, Paperclip, Smile, Image as ImageIcon,
-  Phone, MoreVertical, Check, CheckCheck, Clock, X,
-  MessageSquare, ArrowLeft, Mic, FileText, Video,
+  Search, Send, Paperclip, Smile, Phone, MoreVertical,
+  Check, CheckCheck, Clock, X, MessageSquare, ArrowLeft,
+  FileText, Download, ExternalLink,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -23,6 +23,7 @@ import { toast } from 'sonner';
 import { format, isToday, isYesterday, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
+// ── Types ──────────────────────────────────────────────
 interface Conversation {
   id: string;
   phone: string;
@@ -44,9 +45,12 @@ interface Message {
   created_at: string;
   delivery_status: string | null;
   wa_message_id: string | null;
+  company_id: string;
 }
 
+// ── Helpers ────────────────────────────────────────────
 const EMOJI_LIST = ['😀','😂','❤️','👍','👋','🔥','🎉','😢','😮','🙏','✅','❌','👏','💪','🤔','😎','🥰','😡','💯','⭐'];
+const QUICK_REACTIONS = ['👍','❤️','😂','😮','😢','🙏'];
 
 function formatConvDate(dateStr: string | null) {
   if (!dateStr) return '';
@@ -67,15 +71,186 @@ function formatPhoneDisplay(phone: string) {
   return phone;
 }
 
-function DeliveryIcon({ status }: { status: string | null }) {
-  if (!status || status === 'pending') return <Clock className="h-3 w-3 text-muted-foreground/50" />;
-  if (status === 'sent') return <Check className="h-3 w-3 text-muted-foreground/60" />;
-  if (status === 'delivered') return <CheckCheck className="h-3 w-3 text-muted-foreground/60" />;
-  if (status === 'read') return <CheckCheck className="h-3 w-3 text-accent-foreground" />;
+// ── Delivery status icon ──────────────────────────────
+const DeliveryIcon = memo(function DeliveryIcon({ status }: { status: string | null }) {
+  if (!status || status === 'pending') return <Clock className="h-3 w-3 text-primary-foreground/40" />;
+  if (status === 'sent') return <Check className="h-3 w-3 text-primary-foreground/50" />;
+  if (status === 'delivered') return <CheckCheck className="h-3 w-3 text-primary-foreground/50" />;
+  if (status === 'read') return <CheckCheck className="h-3 w-3 text-info" />;
   if (status === 'error' || status === 'failed') return <X className="h-3 w-3 text-destructive" />;
+  return null;
+});
+
+// ── Interactive buttons rendering ─────────────────────
+function InteractiveButtons({ metadata, onButtonClick }: { metadata: any; onButtonClick?: (text: string) => void }) {
+  if (!metadata) return null;
+
+  // Parse metadata if string
+  let meta = metadata;
+  if (typeof meta === 'string') {
+    try { meta = JSON.parse(meta); } catch { return null; }
+  }
+
+  // Button message
+  const buttons = meta?.buttons || meta?.choices;
+  if (buttons && Array.isArray(buttons) && buttons.length > 0) {
+    return (
+      <div className="flex flex-col gap-1 mt-2 border-t border-border/20 pt-2">
+        {buttons.map((btn: any, i: number) => {
+          const label = typeof btn === 'string'
+            ? btn.split('|')[0]
+            : btn?.text || btn?.title || btn?.displayText || btn?.buttonText || String(btn);
+          return (
+            <button
+              key={i}
+              onClick={() => onButtonClick?.(label)}
+              className="w-full text-center py-2 px-3 text-sm font-medium text-accent-foreground bg-accent/30 hover:bg-accent/50 rounded-lg transition-colors border border-border/20"
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // List message sections
+  const sections = meta?.list_sections || meta?.sections;
+  if (sections && Array.isArray(sections) && sections.length > 0) {
+    return (
+      <div className="flex flex-col gap-1 mt-2 border-t border-border/20 pt-2">
+        {sections.map((section: any, si: number) => (
+          <div key={si}>
+            {section.title && (
+              <p className="text-[10px] font-semibold uppercase text-muted-foreground/70 px-1 mb-1">{section.title}</p>
+            )}
+            {section.rows?.map((row: any, ri: number) => (
+              <button
+                key={ri}
+                onClick={() => onButtonClick?.(row.title || row.description)}
+                className="w-full text-left py-1.5 px-3 text-sm hover:bg-accent/30 rounded-md transition-colors"
+              >
+                <span className="font-medium">{row.title}</span>
+                {row.description && <span className="text-xs text-muted-foreground ml-1">— {row.description}</span>}
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return null;
 }
 
+// ── Message Bubble ────────────────────────────────────
+const MessageBubble = memo(function MessageBubble({
+  message, onReact, onButtonClick,
+}: {
+  message: Message;
+  onReact: (emoji: string) => void;
+  onButtonClick?: (text: string) => void;
+}) {
+  const isOutgoing = message.direction === 'outgoing';
+  const [showReactions, setShowReactions] = useState(false);
+
+  const renderContent = () => {
+    if (message.message_type === 'image' && message.media_url) {
+      return (
+        <div>
+          <img src={message.media_url} alt="" className="max-w-full rounded-lg mb-1 cursor-pointer" loading="lazy"
+            onClick={() => window.open(message.media_url!, '_blank')} />
+          {message.content && <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{message.content}</p>}
+        </div>
+      );
+    }
+    if (message.message_type === 'video' && message.media_url) {
+      return (
+        <div>
+          <video src={message.media_url} controls className="max-w-full rounded-lg mb-1" />
+          {message.content && <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{message.content}</p>}
+        </div>
+      );
+    }
+    if (message.message_type === 'audio' && message.media_url) {
+      return <audio src={message.media_url} controls className="w-full min-w-[200px]" />;
+    }
+    if (message.message_type === 'sticker' && message.media_url) {
+      return <img src={message.media_url} alt="Sticker" className="w-32 h-32 object-contain" loading="lazy" />;
+    }
+    if (message.message_type === 'document' && message.media_url) {
+      return (
+        <a href={message.media_url} target="_blank" rel="noopener noreferrer"
+          className="flex items-center gap-3 p-3 rounded-lg bg-background/30 hover:bg-background/50 transition-colors min-w-[200px]">
+          <div className="h-10 w-10 rounded-lg bg-destructive/10 flex items-center justify-center flex-shrink-0">
+            <FileText className="h-5 w-5 text-destructive" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium truncate">{message.content || 'Documento'}</p>
+            <p className="text-[11px] text-muted-foreground">Clique para baixar</p>
+          </div>
+          <Download className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+        </a>
+      );
+    }
+    // Default text
+    return <p className="text-[13px] leading-relaxed whitespace-pre-wrap break-words">{message.content}</p>;
+  };
+
+  const bubbleWidth = (message.message_type === 'audio' || message.message_type === 'document') ? 'min-w-[250px]' : '';
+
+  return (
+    <div className={cn("flex mb-1 px-[6%] group", isOutgoing ? "justify-end" : "justify-start")}>
+      <div
+        className={cn(
+          "relative max-w-[60%] px-2.5 py-1.5 shadow-sm",
+          bubbleWidth,
+          isOutgoing
+            ? "bg-wa-outgoing text-white rounded-lg rounded-tr-none"
+            : "bg-card text-foreground rounded-lg rounded-tl-none border border-border/20"
+        )}
+      >
+        {renderContent()}
+
+        {/* Interactive buttons */}
+        <InteractiveButtons metadata={message.metadata} onButtonClick={onButtonClick} />
+
+        {/* Time + delivery status */}
+        <div className={cn(
+          "flex items-center justify-end gap-1 mt-0.5 -mb-0.5",
+          isOutgoing ? "text-white/60" : "text-muted-foreground"
+        )}>
+          <span className="text-[10px]">{formatMsgTime(message.created_at)}</span>
+          {isOutgoing && <DeliveryIcon status={message.delivery_status} />}
+        </div>
+
+        {/* Reaction popover on hover */}
+        <div className={cn(
+          "absolute -bottom-3 opacity-0 group-hover:opacity-100 transition-all z-10",
+          isOutgoing ? "left-0" : "right-0"
+        )}>
+          <Popover open={showReactions} onOpenChange={setShowReactions}>
+            <PopoverTrigger asChild>
+              <button className="bg-card border border-border/60 rounded-full p-1 shadow-md hover:shadow-lg transition-shadow">
+                <Smile className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-1.5" side="top">
+              <div className="flex gap-0.5">
+                {QUICK_REACTIONS.map(e => (
+                  <button key={e} onClick={() => { onReact(e); setShowReactions(false); }}
+                    className="h-8 w-8 flex items-center justify-center hover:bg-muted rounded text-lg hover:scale-125 transition-transform">{e}</button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+// ── Main Chat Component ───────────────────────────────
 export default function Chat() {
   const { companyId } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -90,6 +265,10 @@ export default function Chat() {
   const [showMobileChat, setShowMobileChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const selectedConvRef = useRef<Conversation | null>(null);
+
+  // Keep ref in sync
+  useEffect(() => { selectedConvRef.current = selectedConv; }, [selectedConv]);
 
   // Load conversations
   const loadConversations = useCallback(async () => {
@@ -99,7 +278,7 @@ export default function Chat() {
       .select('*')
       .eq('company_id', companyId)
       .order('last_message_at', { ascending: false })
-      .limit(100);
+      .limit(200);
     if (data) setConversations(data as Conversation[]);
     setLoadingConvs(false);
   }, [companyId]);
@@ -133,39 +312,45 @@ export default function Chat() {
     if (selectedConv) loadMessages(selectedConv.id);
   }, [selectedConv, loadMessages]);
 
-  // Scroll to bottom on new messages
+  // Scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Realtime subscriptions
+  // Realtime - using ref to avoid re-subscribing on conv change
   useEffect(() => {
     if (!companyId) return;
     const channel = supabase
-      .channel('chat-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_messages', filter: `company_id=eq.${companyId}` }, (payload) => {
+      .channel(`chat-rt-${companyId}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'whatsapp_messages',
+        filter: `company_id=eq.${companyId}`,
+      }, (payload) => {
         const msg = payload.new as Message;
         if (!msg || msg.content === '__DEBOUNCE_LOCK__' || msg.content === '__PROCESSING__' || msg.delivery_status === 'locking') return;
 
         if (payload.eventType === 'INSERT') {
+          // Only add to current chat if it matches selected conversation
           setMessages(prev => {
             if (prev.some(m => m.id === msg.id)) return prev;
-            if (msg.conversation_id === selectedConv?.id) return [...prev, msg];
+            if (msg.conversation_id === selectedConvRef.current?.id) return [...prev, msg];
             return prev;
           });
-          // Update conversation list
           loadConversations();
         } else if (payload.eventType === 'UPDATE') {
-          setMessages(prev => prev.map(m => m.id === msg.id ? msg : m));
+          setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, ...msg } : m));
         }
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_conversations', filter: `company_id=eq.${companyId}` }, () => {
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'whatsapp_conversations',
+        filter: `company_id=eq.${companyId}`,
+      }, () => {
         loadConversations();
       })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [companyId, selectedConv?.id, loadConversations]);
+  }, [companyId, loadConversations]);
 
   // Send message
   const handleSend = async () => {
@@ -208,7 +393,6 @@ export default function Chat() {
           instance_id: selectedConv.instance_id,
         },
       });
-      toast.success('Reação enviada');
     } catch {
       toast.error('Erro ao reagir');
     }
@@ -219,10 +403,9 @@ export default function Chat() {
     const file = e.target.files?.[0];
     if (!file || !selectedConv) return;
 
-    // Upload to storage first
     const ext = file.name.split('.').pop();
     const path = `${companyId}/${Date.now()}.${ext}`;
-    const { data: uploadData, error: uploadErr } = await supabase.storage
+    const { error: uploadErr } = await supabase.storage
       .from('agent-files')
       .upload(path, file, { upsert: true });
 
@@ -255,6 +438,12 @@ export default function Chat() {
       setSending(false);
     }
     e.target.value = '';
+  };
+
+  // Handle interactive button click - send as text reply
+  const handleButtonClick = (text: string) => {
+    setMessageText(text);
+    inputRef.current?.focus();
   };
 
   const selectConversation = (conv: Conversation) => {
@@ -293,29 +482,45 @@ export default function Chat() {
     return groups;
   }, []);
 
+  // Get last message preview for conversation list
+  const getLastMessagePreview = (conv: Conversation) => {
+    // We don't have last message content in conversation table, just show phone
+    return formatPhoneDisplay(conv.phone);
+  };
+
   return (
     <DashboardLayout>
-      <div className="h-[calc(100vh-8rem)] flex rounded-2xl overflow-hidden border border-border/60 bg-card shadow-lg">
-        {/* Sidebar - Conversations list */}
+      {/* Full-height container that fills the entire content area */}
+      <div className="h-[calc(100vh-4rem)] -m-4 lg:-m-8 flex overflow-hidden bg-background">
+        {/* ─── Left Panel: Conversations ─── */}
         <div className={cn(
-          "w-full md:w-[380px] flex-shrink-0 flex flex-col border-r border-border/40 bg-card",
+          "w-full md:w-[420px] lg:w-[380px] flex-shrink-0 flex flex-col border-r border-border/40 bg-card",
           showMobileChat && "hidden md:flex"
         )}>
           {/* Header */}
-          <div className="h-16 flex items-center justify-between px-4 border-b border-border/40 bg-muted/30">
-            <h2 className="text-lg font-bold text-foreground">Conversas</h2>
-            <Badge variant="secondary" className="text-xs">{conversations.length}</Badge>
+          <div className="h-[60px] flex items-center justify-between px-4 bg-muted/40 flex-shrink-0">
+            <div className="flex items-center gap-3">
+              <Avatar className="h-10 w-10">
+                <AvatarFallback className="bg-muted text-muted-foreground font-bold text-sm">
+                  <MessageSquare className="h-5 w-5" />
+                </AvatarFallback>
+              </Avatar>
+              <div>
+                <h2 className="text-base font-bold text-foreground">Conversas</h2>
+                <p className="text-[11px] text-muted-foreground">{conversations.length} conversas</p>
+              </div>
+            </div>
           </div>
 
           {/* Search */}
-          <div className="p-3">
+          <div className="px-3 py-2 bg-card">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Pesquisar conversas..."
+                placeholder="Pesquisar ou começar nova conversa"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 h-9 bg-muted/50 border-0"
+                className="pl-9 h-[35px] bg-muted/50 border-0 rounded-lg text-sm"
               />
             </div>
           </div>
@@ -323,16 +528,16 @@ export default function Chat() {
           {/* Conversation list */}
           <ScrollArea className="flex-1">
             {loadingConvs ? (
-              <div className="flex items-center justify-center py-12">
+              <div className="flex items-center justify-center py-16">
                 <div className="animate-pulse text-muted-foreground text-sm">Carregando...</div>
               </div>
             ) : filtered.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-                <MessageSquare className="h-12 w-12 text-muted-foreground/30 mb-3" />
+              <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+                <MessageSquare className="h-16 w-16 text-muted-foreground/20 mb-4" />
                 <p className="text-sm text-muted-foreground">Nenhuma conversa encontrada</p>
               </div>
             ) : (
-              <div className="divide-y divide-border/30">
+              <div>
                 {filtered.map(conv => {
                   const isSelected = selectedConv?.id === conv.id;
                   const instLabel = getInstanceLabel(conv.instance_id);
@@ -341,18 +546,18 @@ export default function Chat() {
                       key={conv.id}
                       onClick={() => selectConversation(conv)}
                       className={cn(
-                        "w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50",
-                        isSelected && "bg-primary/5 border-l-2 border-l-primary"
+                        "w-full flex items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/40 border-b border-border/10",
+                        isSelected && "bg-muted/60"
                       )}
                     >
-                      <Avatar className="h-12 w-12 flex-shrink-0">
-                        <AvatarFallback className="bg-gradient-to-br from-primary to-primary-glow text-primary-foreground font-bold">
+                      <Avatar className="h-[50px] w-[50px] flex-shrink-0">
+                        <AvatarFallback className="bg-gradient-to-br from-primary/80 to-primary-glow/80 text-primary-foreground font-bold text-lg">
                           {(conv.client_name || conv.phone).charAt(0).toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
-                          <p className="font-semibold text-sm text-foreground truncate">
+                          <p className="font-medium text-[15px] text-foreground truncate">
                             {conv.client_name || formatPhoneDisplay(conv.phone)}
                           </p>
                           <span className="text-[11px] text-muted-foreground flex-shrink-0 ml-2">
@@ -360,14 +565,14 @@ export default function Chat() {
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5 mt-0.5">
-                          <p className="text-xs text-muted-foreground truncate">
-                            {formatPhoneDisplay(conv.phone)}
+                          <p className="text-[13px] text-muted-foreground truncate flex-1">
+                            {conv.client_name ? formatPhoneDisplay(conv.phone) : ''}
                           </p>
                           {conv.handoff_requested && (
-                            <Badge variant="destructive" className="text-[9px] px-1 py-0 h-4">Transbordo</Badge>
+                            <Badge variant="destructive" className="text-[9px] px-1.5 py-0 h-4 flex-shrink-0">Transbordo</Badge>
                           )}
                           {instLabel && (
-                            <Badge variant="outline" className="text-[9px] px-1 py-0 h-4">{instLabel}</Badge>
+                            <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 flex-shrink-0">{instLabel}</Badge>
                           )}
                         </div>
                       </div>
@@ -379,73 +584,80 @@ export default function Chat() {
           </ScrollArea>
         </div>
 
-        {/* Chat area */}
+        {/* ─── Right Panel: Chat Area ─── */}
         <div className={cn(
-          "flex-1 flex flex-col bg-background",
+          "flex-1 flex flex-col min-w-0",
           !showMobileChat && "hidden md:flex"
         )}>
           {!selectedConv ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
-              <div className="h-24 w-24 rounded-full bg-muted/50 flex items-center justify-center mb-6">
-                <MessageSquare className="h-10 w-10 text-muted-foreground/40" />
+            /* Empty state - WhatsApp Web style */
+            <div className="flex-1 flex flex-col items-center justify-center bg-muted/20 border-b-[6px] border-primary/60">
+              <div className="max-w-md text-center">
+                <div className="h-[200px] w-[200px] mx-auto mb-8 rounded-full bg-muted/30 flex items-center justify-center">
+                  <MessageSquare className="h-20 w-20 text-muted-foreground/20" />
+                </div>
+                <h3 className="text-[28px] font-light text-foreground mb-3">Chat WhatsApp</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Envie e receba mensagens em tempo real. Selecione uma conversa ao lado para começar.
+                </p>
               </div>
-              <h3 className="text-xl font-bold text-foreground mb-2">Chat WhatsApp</h3>
-              <p className="text-sm text-muted-foreground max-w-md">
-                Selecione uma conversa para visualizar e enviar mensagens em tempo real.
-              </p>
             </div>
           ) : (
             <>
               {/* Chat header */}
-              <div className="h-16 flex items-center gap-3 px-4 border-b border-border/40 bg-muted/30 flex-shrink-0">
-                <button onClick={() => setShowMobileChat(false)} className="md:hidden text-muted-foreground hover:text-foreground">
+              <div className="h-[60px] flex items-center gap-3 px-4 bg-muted/40 border-b border-border/20 flex-shrink-0">
+                <button onClick={() => { setShowMobileChat(false); }} className="md:hidden text-muted-foreground hover:text-foreground mr-1">
                   <ArrowLeft className="h-5 w-5" />
                 </button>
-                <Avatar className="h-10 w-10">
-                  <AvatarFallback className="bg-gradient-to-br from-primary to-primary-glow text-primary-foreground font-bold">
+                <Avatar className="h-10 w-10 cursor-pointer">
+                  <AvatarFallback className="bg-gradient-to-br from-primary/80 to-primary-glow/80 text-primary-foreground font-bold">
                     {(selectedConv.client_name || selectedConv.phone).charAt(0).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-sm text-foreground truncate">
+                  <p className="font-medium text-[15px] text-foreground truncate">
                     {selectedConv.client_name || formatPhoneDisplay(selectedConv.phone)}
                   </p>
-                  <p className="text-xs text-muted-foreground">{formatPhoneDisplay(selectedConv.phone)}</p>
+                  <p className="text-[12px] text-muted-foreground">
+                    {selectedConv.client_name ? formatPhoneDisplay(selectedConv.phone) : 'Online'}
+                  </p>
                 </div>
                 <div className="flex items-center gap-1">
-                  <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground">
-                    <Phone className="h-4 w-4" />
-                  </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground">
-                        <MoreVertical className="h-4 w-4" />
+                      <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground">
+                        <MoreVertical className="h-5 w-5" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => { setSelectedConv(null); setShowMobileChat(false); }}>
                         Fechar conversa
                       </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => loadMessages(selectedConv.id)}>
+                        Atualizar mensagens
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
               </div>
 
-              {/* Messages area */}
-              <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 chat-messages-bg">
+              {/* Messages area - WhatsApp-style background */}
+              <div className="flex-1 overflow-y-auto py-3 chat-messages-bg">
                 {loadingMsgs ? (
-                  <div className="flex items-center justify-center py-12">
+                  <div className="flex items-center justify-center py-16">
                     <div className="animate-pulse text-muted-foreground text-sm">Carregando mensagens...</div>
                   </div>
                 ) : messages.length === 0 ? (
-                  <div className="flex items-center justify-center py-12">
-                    <p className="text-sm text-muted-foreground">Nenhuma mensagem nesta conversa</p>
+                  <div className="flex items-center justify-center py-16">
+                    <div className="bg-card/80 rounded-lg px-4 py-2 shadow-sm">
+                      <p className="text-[13px] text-muted-foreground">🔒 Mensagens protegidas com criptografia de ponta a ponta.</p>
+                    </div>
                   </div>
                 ) : (
                   groupedMessages.map((group) => (
                     <div key={group.date}>
                       <div className="flex justify-center my-3">
-                        <span className="text-[11px] bg-muted/80 text-muted-foreground px-3 py-1 rounded-lg shadow-sm">
+                        <span className="text-[11px] bg-card/90 text-muted-foreground px-3 py-1 rounded-md shadow-sm font-medium">
                           {group.date}
                         </span>
                       </div>
@@ -454,6 +666,7 @@ export default function Chat() {
                           key={msg.id}
                           message={msg}
                           onReact={(emoji) => handleReaction(msg, emoji)}
+                          onButtonClick={handleButtonClick}
                         />
                       ))}
                     </div>
@@ -462,13 +675,13 @@ export default function Chat() {
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Input area */}
-              <div className="flex items-center gap-2 px-4 py-3 border-t border-border/40 bg-muted/30 flex-shrink-0">
+              {/* Input area - WhatsApp Web style */}
+              <div className="flex items-center gap-2 px-4 py-2.5 bg-muted/40 border-t border-border/20 flex-shrink-0">
                 {/* Emoji picker */}
                 <Popover>
                   <PopoverTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground flex-shrink-0">
-                      <Smile className="h-5 w-5" />
+                    <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground hover:text-foreground flex-shrink-0 rounded-full">
+                      <Smile className="h-6 w-6" />
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-2" side="top" align="start">
@@ -485,19 +698,19 @@ export default function Chat() {
                 <label className="flex-shrink-0">
                   <input type="file" className="hidden" onChange={handleMediaUpload}
                     accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx" />
-                  <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground" asChild>
-                    <span><Paperclip className="h-5 w-5" /></span>
+                  <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground hover:text-foreground rounded-full" asChild>
+                    <span><Paperclip className="h-6 w-6" /></span>
                   </Button>
                 </label>
 
                 {/* Text input */}
                 <Input
                   ref={inputRef}
-                  placeholder="Digite uma mensagem..."
+                  placeholder="Digite uma mensagem"
                   value={messageText}
                   onChange={(e) => setMessageText(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                  className="flex-1 h-10 bg-background border-border/60 rounded-xl"
+                  className="flex-1 h-[42px] bg-card border-0 rounded-lg text-[15px] px-4 shadow-sm focus-visible:ring-0"
                   disabled={sending}
                 />
 
@@ -505,10 +718,11 @@ export default function Chat() {
                 <Button
                   onClick={handleSend}
                   disabled={!messageText.trim() || sending}
+                  variant="ghost"
                   size="icon"
-                  className="h-10 w-10 rounded-xl flex-shrink-0"
+                  className="h-10 w-10 text-muted-foreground hover:text-foreground flex-shrink-0 rounded-full"
                 >
-                  <Send className="h-4 w-4" />
+                  <Send className="h-6 w-6" />
                 </Button>
               </div>
             </>
@@ -516,88 +730,5 @@ export default function Chat() {
         </div>
       </div>
     </DashboardLayout>
-  );
-}
-
-function MessageBubble({ message, onReact }: { message: Message; onReact: (emoji: string) => void }) {
-  const isOutgoing = message.direction === 'outgoing';
-  const [showReactions, setShowReactions] = useState(false);
-
-  const renderContent = () => {
-    if (message.message_type === 'image' && message.media_url) {
-      return (
-        <div>
-          <img src={message.media_url} alt="" className="max-w-[280px] rounded-lg mb-1" loading="lazy" />
-          {message.content && <p className="text-sm whitespace-pre-wrap">{message.content}</p>}
-        </div>
-      );
-    }
-    if (message.message_type === 'video' && message.media_url) {
-      return (
-        <div>
-          <video src={message.media_url} controls className="max-w-[280px] rounded-lg mb-1" />
-          {message.content && <p className="text-sm whitespace-pre-wrap">{message.content}</p>}
-        </div>
-      );
-    }
-    if (message.message_type === 'audio' && message.media_url) {
-      return <audio src={message.media_url} controls className="max-w-[260px]" />;
-    }
-    if (message.message_type === 'document' && message.media_url) {
-      return (
-        <a href={message.media_url} target="_blank" rel="noopener noreferrer"
-          className="flex items-center gap-2 p-2 bg-background/50 rounded-lg hover:bg-background/80 transition-colors">
-          <FileText className="h-8 w-8 text-muted-foreground" />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium truncate">Documento</p>
-            <p className="text-xs text-muted-foreground">Clique para abrir</p>
-          </div>
-        </a>
-      );
-    }
-    return <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>;
-  };
-
-  return (
-    <div className={cn("flex mb-1 group", isOutgoing ? "justify-end" : "justify-start")}>
-      <div
-        className={cn(
-          "relative max-w-[75%] md:max-w-[65%] px-3 py-2 rounded-2xl shadow-sm",
-          isOutgoing
-            ? "bg-primary text-primary-foreground rounded-br-md"
-            : "bg-card text-foreground border border-border/40 rounded-bl-md"
-        )}
-        onDoubleClick={() => setShowReactions(!showReactions)}
-      >
-        {renderContent()}
-        <div className={cn(
-          "flex items-center justify-end gap-1 mt-1",
-          isOutgoing ? "text-primary-foreground/70" : "text-muted-foreground"
-        )}>
-          <span className="text-[10px]">{formatMsgTime(message.created_at)}</span>
-          {isOutgoing && <DeliveryIcon status={message.delivery_status} />}
-        </div>
-
-        {/* Reaction button on hover */}
-        <Popover open={showReactions} onOpenChange={setShowReactions}>
-          <PopoverTrigger asChild>
-            <button className={cn(
-              "absolute -bottom-3 opacity-0 group-hover:opacity-100 transition-opacity bg-card border border-border/60 rounded-full p-1 shadow-md",
-              isOutgoing ? "left-0" : "right-0"
-            )}>
-              <Smile className="h-3.5 w-3.5 text-muted-foreground" />
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-1.5" side="top">
-            <div className="flex gap-0.5">
-              {['👍','❤️','😂','😮','😢','🙏'].map(e => (
-                <button key={e} onClick={() => { onReact(e); setShowReactions(false); }}
-                  className="h-8 w-8 flex items-center justify-center hover:bg-muted rounded text-lg hover:scale-125 transition-transform">{e}</button>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
-      </div>
-    </div>
   );
 }
