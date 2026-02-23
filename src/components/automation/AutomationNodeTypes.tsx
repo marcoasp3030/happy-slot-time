@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import { Zap, MessageSquare, Clock, MousePointer, ListOrdered, Tag, Calendar, Send, ArrowRightLeft } from 'lucide-react';
+import { Zap, MessageSquare, Clock, MousePointer, ListOrdered, Tag, Calendar, Send, ArrowRightLeft, GitBranch } from 'lucide-react';
 
 const nodeColors: Record<string, { bg: string; border: string; icon: string }> = {
   trigger_button: { bg: 'bg-amber-50', border: 'border-amber-400', icon: 'text-amber-600' },
@@ -12,6 +12,7 @@ const nodeColors: Record<string, { bg: string; border: string; icon: string }> =
   action_schedule: { bg: 'bg-green-50', border: 'border-green-400', icon: 'text-green-600' },
   action_move_campaign: { bg: 'bg-cyan-50', border: 'border-cyan-400', icon: 'text-cyan-600' },
   action_wait: { bg: 'bg-gray-50', border: 'border-gray-400', icon: 'text-gray-600' },
+  condition: { bg: 'bg-indigo-50', border: 'border-indigo-400', icon: 'text-indigo-600' },
 };
 
 const nodeIcons: Record<string, any> = {
@@ -24,6 +25,7 @@ const nodeIcons: Record<string, any> = {
   action_schedule: Calendar,
   action_move_campaign: ArrowRightLeft,
   action_wait: Clock,
+  condition: GitBranch,
 };
 
 const nodeLabels: Record<string, string> = {
@@ -36,11 +38,13 @@ const nodeLabels: Record<string, string> = {
   action_schedule: 'Agendar',
   action_move_campaign: 'Mover p/ Campanha',
   action_wait: 'Aguardar',
+  condition: 'Condição',
 };
 
 function AutomationNode({ data, selected }: NodeProps) {
   const nodeType = data.nodeType as string;
   const isTrigger = nodeType?.startsWith('trigger_');
+  const isCondition = nodeType === 'condition';
   const colors = nodeColors[nodeType] || { bg: 'bg-muted', border: 'border-border', icon: 'text-muted-foreground' };
   const Icon = nodeIcons[nodeType] || Zap;
   const label = (data.label as string) || nodeLabels[nodeType] || 'Nó';
@@ -61,7 +65,9 @@ function AutomationNode({ data, selected }: NodeProps) {
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-xs font-semibold text-gray-700 truncate">{label}</p>
-          <p className="text-[10px] text-gray-400">{isTrigger ? 'Gatilho' : 'Ação'}</p>
+          <p className="text-[10px] text-gray-400">
+            {isTrigger ? 'Gatilho' : isCondition ? 'Condicional' : 'Ação'}
+          </p>
         </div>
       </div>
 
@@ -88,10 +94,41 @@ function AutomationNode({ data, selected }: NodeProps) {
           {nodeType === 'action_wait' && (data.config as any).seconds && (
             <p className="text-[11px] text-gray-500">Esperar: <span className="font-medium text-gray-700">{(data.config as any).seconds}s</span></p>
           )}
+          {nodeType === 'condition' && (data.config as any).conditionType && (
+            <p className="text-[11px] text-gray-500">
+              {(data.config as any).conditionType === 'has_tag' && `Tem tag: "${(data.config as any).conditionValue || ''}"`}
+              {(data.config as any).conditionType === 'has_appointment' && 'Tem agendamento'}
+              {(data.config as any).conditionType === 'text_contains' && `Texto contém: "${(data.config as any).conditionValue || ''}"`}
+              {(data.config as any).conditionType === 'text_equals' && `Texto igual: "${(data.config as any).conditionValue || ''}"`}
+            </p>
+          )}
         </div>
       )}
 
-      <Handle type="source" position={Position.Bottom} className="!w-3 !h-3 !bg-primary !border-2 !border-white" />
+      {isCondition ? (
+        <div className="flex justify-between px-3 pb-2">
+          <div className="relative flex flex-col items-center">
+            <span className="text-[9px] font-bold text-green-600 mb-0.5">Sim</span>
+            <Handle
+              type="source"
+              position={Position.Bottom}
+              id="true"
+              className="!w-3 !h-3 !bg-green-500 !border-2 !border-white !relative !transform-none !left-0 !bottom-0"
+            />
+          </div>
+          <div className="relative flex flex-col items-center">
+            <span className="text-[9px] font-bold text-red-500 mb-0.5">Não</span>
+            <Handle
+              type="source"
+              position={Position.Bottom}
+              id="false"
+              className="!w-3 !h-3 !bg-red-500 !border-2 !border-white !relative !transform-none !left-0 !bottom-0"
+            />
+          </div>
+        </div>
+      ) : (
+        <Handle type="source" position={Position.Bottom} className="!w-3 !h-3 !bg-primary !border-2 !border-white" />
+      )}
     </div>
   );
 }

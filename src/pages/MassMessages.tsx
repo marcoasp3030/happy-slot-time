@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/table';
 import {
   Send, Upload, Plus, Trash2, Clock, CheckCircle, XCircle,
-  FileSpreadsheet, Users, MessageSquare, List, AlertCircle, Play, Ban, Eye, RefreshCw, Download,
+  FileSpreadsheet, Users, MessageSquare, List, AlertCircle, Play, Ban, Eye, RefreshCw, Download, Zap,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -102,6 +102,8 @@ function CampaignCreator({
   const [dailyLimit, setDailyLimit] = useState(300);
   const [businessHoursOnly, setBusinessHoursOnly] = useState(true);
   const [rotateInstances, setRotateInstances] = useState(false);
+  const [automationFlowId, setAutomationFlowId] = useState<string | null>(null);
+  const [automationFlows, setAutomationFlows] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
     if (companyId && open) {
@@ -110,6 +112,11 @@ function CampaignCreator({
         .then(({ data }) => {
           setInstances(data || []);
           if (data && data.length > 0 && !instanceId) setInstanceId(data[0].id);
+        });
+      supabase.from('automation_flows').select('id, name')
+        .eq('company_id', companyId).eq('active', true)
+        .then(({ data }) => {
+          setAutomationFlows(data || []);
         });
     }
   }, [companyId, open]);
@@ -243,6 +250,13 @@ function CampaignCreator({
 
     toast({ title: `Campanha "${name}" criada com ${contacts.length} contatos!` });
 
+    // Link automation flow to campaign
+    if (automationFlowId) {
+      await supabase.from('automation_flows')
+        .update({ campaign_id: campaign.id })
+        .eq('id', automationFlowId);
+    }
+
     // If not scheduled, start immediately
     if (!scheduledAt) {
       await supabase.functions.invoke('mass-send-whatsapp', {
@@ -260,6 +274,7 @@ function CampaignCreator({
     setListSections([{ title: 'Opções', items: [] }]);
     setContacts([]);
     setScheduledAt('');
+    setAutomationFlowId(null);
     setSaving(false);
     onOpenChange(false);
     onCreated();
@@ -553,6 +568,28 @@ function CampaignCreator({
                 </div>
               )}
             </div>
+
+            {/* Automation Flow */}
+            {automationFlows.length > 0 && (
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1.5">
+                  <Zap className="h-3.5 w-3.5 text-primary" />
+                  Vincular automação <span className="text-xs text-muted-foreground">(opcional)</span>
+                </Label>
+                <Select value={automationFlowId || 'none'} onValueChange={(v) => setAutomationFlowId(v === 'none' ? null : v)}>
+                  <SelectTrigger><SelectValue placeholder="Sem automação" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sem automação</SelectItem>
+                    {automationFlows.map(f => (
+                      <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Ao vincular, as respostas dos contatos desta campanha serão processadas pelo fluxo selecionado.
+                </p>
+              </div>
+            )}
           </TabsContent>
         </Tabs>
 
