@@ -160,8 +160,7 @@ export default function StaffDashboard() {
             <Calendar className="h-4 w-4 text-primary-foreground" />
           </div>
           <div>
-            <span className="text-sm font-extrabold tracking-tight">Slotera</span>
-            <p className="text-xs text-muted-foreground">{companyName}</p>
+            <p className="text-sm font-extrabold tracking-tight">{companyName}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
