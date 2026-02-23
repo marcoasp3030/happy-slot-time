@@ -32,6 +32,7 @@ interface Conversation {
   last_message_at: string | null;
   instance_id: string | null;
   handoff_requested: boolean | null;
+  company_id?: string;
 }
 
 interface Message {
@@ -513,7 +514,10 @@ export default function Chat() {
             return;
           }
           const convIds = selectedPhoneConvIdsRef.current;
+          const activePhone = selectedConvRef.current?.phone;
           const isForActiveChat = convIds.includes(msg.conversation_id);
+
+          // Add message to active chat
           setMessages(prev => {
             if (prev.some(m => m.id === msg.id)) return prev;
             if (isForActiveChat) {
@@ -522,15 +526,31 @@ export default function Chat() {
             }
             return prev;
           });
+
+          // Update conversations list locally: move to top + update last_message_at
+          setConversations(prev => {
+            const updated = prev.map(c =>
+              c.id === msg.conversation_id
+                ? { ...c, last_message_at: msg.created_at }
+                : c
+            );
+            // If conversation doesn't exist yet, re-fetch from DB
+            if (!updated.some(c => c.id === msg.conversation_id)) {
+              loadConversations();
+              return prev;
+            }
+            return updated;
+          });
+
           // Increment unread count for non-active conversations (incoming only)
-          if (!isForActiveChat && msg.direction === 'incoming') {
-            // Find which phone this conv belongs to
+          if (msg.direction === 'incoming') {
             const conv = conversationsRef.current.find(c => c.id === msg.conversation_id);
-            if (conv) {
-              setUnreadCounts(prev => ({ ...prev, [conv.phone]: (prev[conv.phone] || 0) + 1 }));
+            const msgPhone = conv?.phone;
+            if (msgPhone && msgPhone !== activePhone) {
+              setUnreadCounts(prev => ({ ...prev, [msgPhone]: (prev[msgPhone] || 0) + 1 }));
+              addDebugLog(`  → Unread +1 para ${msgPhone} (total: ${(unreadCounts[msgPhone] || 0) + 1})`);
             }
           }
-          loadConversations();
         })
         .on('postgres_changes', {
           event: 'UPDATE', schema: 'public', table: 'whatsapp_messages',
@@ -542,10 +562,21 @@ export default function Chat() {
         .on('postgres_changes', {
           event: 'INSERT', schema: 'public', table: 'whatsapp_conversations',
         }, (payload) => {
-          const conv = payload.new as any;
+          const conv = payload.new as Conversation;
           if (conv?.company_id !== companyId) return;
           addDebugLog(`Nova conversa: ${conv?.phone}`);
-          loadConversations();
+          // Add new conversation to list locally at the top
+          setConversations(prev => {
+            if (prev.some(c => c.id === conv.id)) return prev;
+            return [conv, ...prev];
+          });
+        })
+        .on('postgres_changes', {
+          event: 'UPDATE', schema: 'public', table: 'whatsapp_conversations',
+        }, (payload) => {
+          const conv = payload.new as Conversation;
+          if (conv?.company_id !== companyId) return;
+          setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, ...conv } : c));
         })
         .subscribe((status) => {
           setRtStatus(status);
@@ -794,7 +825,7 @@ export default function Chat() {
                       </Avatar>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
-                          <p className={cn("font-medium text-[15px] truncate", unreadCounts[conv.phone] ? "text-foreground" : "text-foreground")}>
+                          <p className={cn("text-[15px] truncate", unreadCounts[conv.phone] ? "font-bold text-foreground" : "font-medium text-foreground")}>
                             {conv.client_name || formatPhoneDisplay(conv.phone)}
                           </p>
                           <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
