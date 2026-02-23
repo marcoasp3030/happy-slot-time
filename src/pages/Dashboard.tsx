@@ -3,13 +3,14 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Calendar, CheckCircle, XCircle, Clock, TrendingUp, ArrowRight, CalendarPlus } from 'lucide-react';
+import { Calendar, CheckCircle, XCircle, Clock, TrendingUp, ArrowRight, CalendarPlus, Zap, Tag, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 
 export default function Dashboard() {
   const { companyId, user } = useAuth();
   const [stats, setStats] = useState({ today: 0, week: 0, confirmed: 0, canceled: 0 });
+  const [autoStats, setAutoStats] = useState({ totalExecutions: 0, successRate: 0, taggedContacts: 0, activeFlows: 0 });
   const [upcoming, setUpcoming] = useState<any[]>([]);
 
   useEffect(() => {
@@ -35,6 +36,25 @@ export default function Dashboard() {
         canceled: weekData.filter((a) => a.status === 'canceled').length,
       });
       setUpcoming(upcomingRes.data || []);
+
+      // Fetch automation stats
+      const [logsRes, tagsRes, flowsRes] = await Promise.all([
+        supabase.from('automation_logs').select('id, status').eq('company_id', companyId),
+        supabase.from('contact_tags').select('id').eq('company_id', companyId),
+        supabase.from('automation_flows').select('id, active').eq('company_id', companyId),
+      ]);
+
+      const allLogs = logsRes.data || [];
+      const totalExec = allLogs.length;
+      const successCount = allLogs.filter((l) => l.status === 'executed').length;
+      const rate = totalExec > 0 ? Math.round((successCount / totalExec) * 100) : 0;
+
+      setAutoStats({
+        totalExecutions: totalExec,
+        successRate: rate,
+        taggedContacts: tagsRes.data?.length || 0,
+        activeFlows: (flowsRes.data || []).filter((f) => f.active).length,
+      });
     };
 
     fetchData();
@@ -109,7 +129,44 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* Upcoming */}
+        {/* Automation Stats */}
+        <Card className="glass-card-static rounded-2xl overflow-hidden border-0 shadow-sm">
+          <CardHeader className="pb-2 px-6 pt-6">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg font-bold flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                  <Zap className="h-4 w-4 text-amber-500" />
+                </div>
+                Automações
+              </CardTitle>
+              <Link to="/automacoes" className="text-xs text-primary font-semibold hover:underline flex items-center gap-1">
+                Gerenciar <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent className="px-6 pb-6">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mt-3">
+              {[
+                { label: 'Fluxos ativos', value: autoStats.activeFlows, icon: Zap, bgClass: 'bg-amber-500/10', iconClass: 'text-amber-500' },
+                { label: 'Execuções', value: autoStats.totalExecutions, icon: BarChart3, bgClass: 'bg-info/10', iconClass: 'text-info' },
+                { label: 'Taxa de sucesso', value: `${autoStats.successRate}%`, icon: CheckCircle, bgClass: 'bg-success/10', iconClass: 'text-success' },
+                { label: 'Contatos tagueados', value: autoStats.taggedContacts, icon: Tag, bgClass: 'bg-purple-500/10', iconClass: 'text-purple-500' },
+              ].map((s, i) => (
+                <div key={s.label} className="flex items-center gap-3 p-4 rounded-xl bg-muted/40">
+                  <div className={`h-10 w-10 rounded-xl ${s.bgClass} flex items-center justify-center flex-shrink-0`}>
+                    <s.icon className={`h-5 w-5 ${s.iconClass}`} />
+                  </div>
+                  <div>
+                    <p className="text-xl font-extrabold tracking-tight">{s.value}</p>
+                    <p className="text-xs text-muted-foreground font-medium">{s.label}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+
         <Card className="glass-card-static rounded-2xl overflow-hidden border-0 shadow-sm">
           <CardHeader className="pb-2 px-6 pt-6">
             <div className="flex items-center justify-between">
