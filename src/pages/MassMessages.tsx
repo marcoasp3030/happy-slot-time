@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
-  DialogHeader, DialogTitle, DialogTrigger,
+  DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -21,7 +21,7 @@ import {
 import {
   Send, Upload, Plus, Trash2, Clock, CheckCircle, XCircle,
   FileSpreadsheet, Users, MessageSquare, List, AlertCircle, Play, Ban, Eye, RefreshCw, Download, Zap,
-  Pencil, Copy,
+  Pencil, Copy, Tag, Search, FolderOpen, MoreHorizontal, X,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -883,6 +883,404 @@ function CampaignDetailsDialog({
   );
 }
 
+// ─── Contact List Manager Component ───
+interface MassContact {
+  id: string;
+  name: string;
+  phone: string;
+  tags: string[];
+  notes: string | null;
+  list_id: string | null;
+  created_at: string;
+}
+
+interface ContactList {
+  id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  contact_count?: number;
+}
+
+function ContactsManager({ companyId }: { companyId: string }) {
+  const { toast } = useToast();
+  const [contacts, setContacts] = useState<MassContact[]>([]);
+  const [lists, setLists] = useState<ContactList[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [tagFilter, setTagFilter] = useState('');
+  const [listFilter, setListFilter] = useState<string>('all');
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
+  const [newListOpen, setNewListOpen] = useState(false);
+  const [newListName, setNewListName] = useState('');
+  const [newListDesc, setNewListDesc] = useState('');
+  const [addContactOpen, setAddContactOpen] = useState(false);
+  const [addName, setAddName] = useState('');
+  const [addPhone, setAddPhone] = useState('');
+  const [addTags, setAddTags] = useState('');
+  const [addNotes, setAddNotes] = useState('');
+  const [addListId, setAddListId] = useState<string>('none');
+  const [editContact, setEditContact] = useState<MassContact | null>(null);
+  const [tagDialogOpen, setTagDialogOpen] = useState(false);
+  const [newTag, setNewTag] = useState('');
+
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    const [contactsRes, listsRes] = await Promise.all([
+      supabase.from('mass_contacts').select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(500),
+      supabase.from('mass_contact_lists').select('*').eq('company_id', companyId).order('name'),
+    ]);
+    const c = (contactsRes.data || []) as MassContact[];
+    setContacts(c);
+    const listsWithCount = (listsRes.data || []).map(l => ({
+      ...l,
+      contact_count: c.filter(ct => ct.list_id === l.id).length,
+    }));
+    setLists(listsWithCount as ContactList[]);
+    const tags = new Set<string>();
+    c.forEach(ct => ct.tags?.forEach(t => tags.add(t)));
+    setAllTags(Array.from(tags).sort());
+    setLoading(false);
+  }, [companyId]);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  const filteredContacts = contacts.filter(c => {
+    const matchSearch = !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search);
+    const matchTag = !tagFilter || c.tags?.includes(tagFilter);
+    const matchList = listFilter === 'all' || (listFilter === 'none' ? !c.list_id : c.list_id === listFilter);
+    return matchSearch && matchTag && matchList;
+  });
+
+  const handleCreateList = async () => {
+    if (!newListName.trim()) return;
+    await supabase.from('mass_contact_lists').insert({ company_id: companyId, name: newListName.trim(), description: newListDesc.trim() || null } as any);
+    toast({ title: `Lista "${newListName}" criada!` });
+    setNewListName(''); setNewListDesc(''); setNewListOpen(false);
+    fetchAll();
+  };
+
+  const handleDeleteList = async (id: string) => {
+    await supabase.from('mass_contact_lists').delete().eq('id', id);
+    toast({ title: 'Lista excluída' });
+    if (listFilter === id) setListFilter('all');
+    fetchAll();
+  };
+
+  const handleSaveContact = async () => {
+    if (!addName.trim() || !addPhone.trim()) { toast({ title: 'Nome e telefone são obrigatórios', variant: 'destructive' }); return; }
+    const tags = addTags.split(',').map(t => t.trim()).filter(Boolean);
+    const listId = addListId === 'none' ? null : addListId;
+    if (editContact) {
+      await supabase.from('mass_contacts').update({ name: addName.trim(), phone: normalizePhone(addPhone), tags, notes: addNotes.trim() || null, list_id: listId } as any).eq('id', editContact.id);
+      toast({ title: 'Contato atualizado!' });
+    } else {
+      await supabase.from('mass_contacts').insert({ company_id: companyId, name: addName.trim(), phone: normalizePhone(addPhone), tags, notes: addNotes.trim() || null, list_id: listId } as any);
+      toast({ title: 'Contato adicionado!' });
+    }
+    setAddName(''); setAddPhone(''); setAddTags(''); setAddNotes(''); setAddListId('none');
+    setEditContact(null); setAddContactOpen(false);
+    fetchAll();
+  };
+
+  const handleEditContact = (c: MassContact) => {
+    setEditContact(c); setAddName(c.name); setAddPhone(c.phone); setAddTags(c.tags?.join(', ') || '');
+    setAddNotes(c.notes || ''); setAddListId(c.list_id || 'none'); setAddContactOpen(true);
+  };
+
+  const handleDeleteContact = async (id: string) => {
+    await supabase.from('mass_contacts').delete().eq('id', id);
+    toast({ title: 'Contato excluído' }); fetchAll();
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedContacts.size === 0) return;
+    const ids = Array.from(selectedContacts);
+    await supabase.from('mass_contacts').delete().in('id', ids);
+    toast({ title: `${ids.length} contatos excluídos` });
+    setSelectedContacts(new Set()); fetchAll();
+  };
+
+  const handleBulkAddTag = async () => {
+    if (selectedContacts.size === 0 || !newTag.trim()) return;
+    for (const id of selectedContacts) {
+      const contact = contacts.find(c => c.id === id);
+      if (contact) {
+        const updatedTags = [...new Set([...(contact.tags || []), newTag.trim()])];
+        await supabase.from('mass_contacts').update({ tags: updatedTags } as any).eq('id', id);
+      }
+    }
+    toast({ title: `Tag "${newTag}" adicionada a ${selectedContacts.size} contatos` });
+    setNewTag(''); setTagDialogOpen(false); setSelectedContacts(new Set()); fetchAll();
+  };
+
+  const handleBulkMoveToList = async (listId: string | null) => {
+    if (selectedContacts.size === 0) return;
+    const ids = Array.from(selectedContacts);
+    for (const id of ids) {
+      await supabase.from('mass_contacts').update({ list_id: listId } as any).eq('id', id);
+    }
+    toast({ title: `${ids.length} contatos movidos` });
+    setSelectedContacts(new Set()); fetchAll();
+  };
+
+  const handleImportFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    let rows: { name: string; phone: string; tags?: string }[] = [];
+
+    if (ext === 'csv') {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      if (lines.length < 2) return;
+      const header = lines[0].toLowerCase().split(/[,;\t]/);
+      const nameIdx = header.findIndex(h => ['nome', 'name'].includes(h.trim()));
+      const phoneIdx = header.findIndex(h => ['telefone', 'phone', 'celular', 'whatsapp'].includes(h.trim()));
+      const tagsIdx = header.findIndex(h => ['tags', 'tag', 'segmento'].includes(h.trim()));
+      if (nameIdx === -1 || phoneIdx === -1) { toast({ title: 'Colunas nome/telefone não encontradas', variant: 'destructive' }); return; }
+      rows = lines.slice(1).map(line => {
+        const cols = line.split(/[,;\t]/);
+        return { name: (cols[nameIdx] || '').trim().replace(/^["']|["']$/g, ''), phone: normalizePhone(cols[phoneIdx] || ''), tags: tagsIdx !== -1 ? (cols[tagsIdx] || '').trim() : '' };
+      }).filter(r => r.name && r.phone);
+    } else if (ext === 'xlsx' || ext === 'xls') {
+      const XLSX = await import('xlsx');
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const jsonData = XLSX.utils.sheet_to_json<any>(ws);
+      rows = jsonData.map((row: any) => ({
+        name: String(row.nome || row.name || row.Nome || row.Name || '').trim(),
+        phone: normalizePhone(String(row.telefone || row.phone || row.Telefone || row.Phone || row.celular || row.Celular || '')),
+        tags: String(row.tags || row.tag || row.Tags || row.segmento || '').trim(),
+      })).filter((r: any) => r.name && r.phone);
+    }
+
+    if (rows.length === 0) { toast({ title: 'Nenhum contato válido encontrado', variant: 'destructive' }); return; }
+
+    const batchSize = 100;
+    const lId = listFilter !== 'all' && listFilter !== 'none' ? listFilter : null;
+    for (let i = 0; i < rows.length; i += batchSize) {
+      const batch = rows.slice(i, i + batchSize).map(r => ({
+        company_id: companyId, name: r.name, phone: r.phone,
+        tags: r.tags ? r.tags.split(/[,;]/).map(t => t.trim()).filter(Boolean) : [],
+        list_id: lId,
+      }));
+      await supabase.from('mass_contacts').insert(batch as any);
+    }
+    toast({ title: `${rows.length} contatos importados!` });
+    e.target.value = ''; fetchAll();
+  }, [companyId, listFilter, toast, fetchAll]);
+
+  const handleExportCSV = () => {
+    const header = 'nome,telefone,tags,notas\n';
+    const csv = filteredContacts.map(c => `"${c.name}","${c.phone}","${c.tags?.join('; ') || ''}","${c.notes || ''}"`).join('\n');
+    const blob = new Blob([header + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'contatos-massa.csv'; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedContacts(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  };
+
+  const toggleAll = () => {
+    if (selectedContacts.size === filteredContacts.length) setSelectedContacts(new Set());
+    else setSelectedContacts(new Set(filteredContacts.map(c => c.id)));
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col lg:flex-row gap-4">
+        {/* Lists panel */}
+        <div className="lg:w-64 flex-shrink-0 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold flex items-center gap-1.5"><FolderOpen className="h-4 w-4 text-primary" /> Listas</h3>
+            <Button size="sm" variant="ghost" onClick={() => setNewListOpen(true)} className="h-7 w-7 p-0"><Plus className="h-3.5 w-3.5" /></Button>
+          </div>
+          <div className="space-y-1">
+            <Button size="sm" variant={listFilter === 'all' ? 'default' : 'ghost'} onClick={() => setListFilter('all')} className="w-full justify-between text-xs h-8">
+              Todos os contatos <Badge variant="secondary" className="text-[10px] h-4">{contacts.length}</Badge>
+            </Button>
+            <Button size="sm" variant={listFilter === 'none' ? 'default' : 'ghost'} onClick={() => setListFilter('none')} className="w-full justify-between text-xs h-8">
+              Sem lista <Badge variant="secondary" className="text-[10px] h-4">{contacts.filter(c => !c.list_id).length}</Badge>
+            </Button>
+            {lists.map(list => (
+              <div key={list.id} className="flex items-center gap-1">
+                <Button size="sm" variant={listFilter === list.id ? 'default' : 'ghost'} onClick={() => setListFilter(list.id)} className="flex-1 justify-between text-xs h-8 overflow-hidden">
+                  <span className="truncate">{list.name}</span>
+                  <Badge variant="secondary" className="text-[10px] h-4">{list.contact_count || 0}</Badge>
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 flex-shrink-0"><MoreHorizontal className="h-3 w-3" /></Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => handleDeleteList(list.id)} className="text-destructive text-xs gap-2"><Trash2 className="h-3 w-3" /> Excluir lista</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            ))}
+          </div>
+
+          <Dialog open={newListOpen} onOpenChange={setNewListOpen}>
+            <DialogContent className="sm:max-w-[400px]">
+              <DialogHeader><DialogTitle>Nova Lista</DialogTitle><DialogDescription>Crie uma lista para organizar seus contatos.</DialogDescription></DialogHeader>
+              <div className="space-y-3">
+                <div className="space-y-1"><Label className="text-xs">Nome</Label><Input placeholder="Ex: Clientes VIP" value={newListName} onChange={e => setNewListName(e.target.value)} /></div>
+                <div className="space-y-1"><Label className="text-xs">Descrição (opcional)</Label><Input placeholder="Ex: Clientes premium" value={newListDesc} onChange={e => setNewListDesc(e.target.value)} /></div>
+              </div>
+              <DialogFooter><Button variant="outline" onClick={() => setNewListOpen(false)}>Cancelar</Button><Button onClick={handleCreateList}>Criar Lista</Button></DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        {/* Contacts panel */}
+        <div className="flex-1 space-y-3">
+          {/* Toolbar */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input placeholder="Buscar por nome ou telefone..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 h-9 text-sm" />
+            </div>
+            {allTags.length > 0 && (
+              <Select value={tagFilter || 'all'} onValueChange={v => setTagFilter(v === 'all' ? '' : v)}>
+                <SelectTrigger className="w-[160px] h-9 text-xs"><Tag className="h-3 w-3 mr-1" /><SelectValue placeholder="Filtrar tag" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as tags</SelectItem>
+                  {allTags.map(tag => <SelectItem key={tag} value={tag}>{tag}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
+            <Button size="sm" variant="outline" onClick={() => { setEditContact(null); setAddName(''); setAddPhone(''); setAddTags(''); setAddNotes(''); setAddListId(listFilter !== 'all' && listFilter !== 'none' ? listFilter : 'none'); setAddContactOpen(true); }} className="gap-1.5 text-xs h-9">
+              <Plus className="h-3 w-3" /> Contato
+            </Button>
+            <label>
+              <div className="inline-flex items-center gap-1.5 px-3 h-9 border rounded-md cursor-pointer hover:bg-muted/50 transition-colors text-xs font-medium">
+                <Upload className="h-3 w-3" /> Importar
+              </div>
+              <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleImportFile} />
+            </label>
+            <Button size="sm" variant="outline" onClick={handleExportCSV} className="gap-1.5 text-xs h-9"><Download className="h-3 w-3" /> Exportar</Button>
+          </div>
+
+          {/* Bulk actions */}
+          {selectedContacts.size > 0 && (
+            <div className="flex items-center gap-2 p-2 rounded-lg bg-primary/5 border border-primary/20">
+              <span className="text-xs font-medium">{selectedContacts.size} selecionado(s)</span>
+              <Button size="sm" variant="outline" onClick={() => setTagDialogOpen(true)} className="gap-1 text-xs h-7"><Tag className="h-3 w-3" /> Adicionar tag</Button>
+              {lists.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild><Button size="sm" variant="outline" className="gap-1 text-xs h-7"><FolderOpen className="h-3 w-3" /> Mover para lista</Button></DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuItem onClick={() => handleBulkMoveToList(null)} className="text-xs">Sem lista</DropdownMenuItem>
+                    {lists.map(l => <DropdownMenuItem key={l.id} onClick={() => handleBulkMoveToList(l.id)} className="text-xs">{l.name}</DropdownMenuItem>)}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              <Button size="sm" variant="destructive" onClick={handleBulkDelete} className="gap-1 text-xs h-7 ml-auto"><Trash2 className="h-3 w-3" /> Excluir</Button>
+            </div>
+          )}
+
+          {/* Tag dialog */}
+          <Dialog open={tagDialogOpen} onOpenChange={setTagDialogOpen}>
+            <DialogContent className="sm:max-w-[350px]">
+              <DialogHeader><DialogTitle>Adicionar Tag</DialogTitle><DialogDescription>Adicione uma tag aos {selectedContacts.size} contatos selecionados.</DialogDescription></DialogHeader>
+              <Input placeholder="Nome da tag" value={newTag} onChange={e => setNewTag(e.target.value)} />
+              {allTags.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {allTags.map(t => <Badge key={t} variant="outline" className="cursor-pointer text-[10px] hover:bg-primary/10" onClick={() => setNewTag(t)}>{t}</Badge>)}
+                </div>
+              )}
+              <DialogFooter><Button variant="outline" onClick={() => setTagDialogOpen(false)}>Cancelar</Button><Button onClick={handleBulkAddTag} disabled={!newTag.trim()}>Aplicar Tag</Button></DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Add/Edit contact dialog */}
+          <Dialog open={addContactOpen} onOpenChange={v => { setAddContactOpen(v); if (!v) setEditContact(null); }}>
+            <DialogContent className="sm:max-w-[450px]">
+              <DialogHeader><DialogTitle>{editContact ? 'Editar Contato' : 'Novo Contato'}</DialogTitle></DialogHeader>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1"><Label className="text-xs">Nome *</Label><Input placeholder="João Silva" value={addName} onChange={e => setAddName(e.target.value)} /></div>
+                  <div className="space-y-1"><Label className="text-xs">Telefone *</Label><Input placeholder="5511999999999" value={addPhone} onChange={e => setAddPhone(e.target.value)} /></div>
+                </div>
+                <div className="space-y-1"><Label className="text-xs">Tags <span className="text-muted-foreground">(separadas por vírgula)</span></Label><Input placeholder="cliente, vip, promoção" value={addTags} onChange={e => setAddTags(e.target.value)} /></div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Lista</Label>
+                  <Select value={addListId} onValueChange={setAddListId}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="none">Sem lista</SelectItem>{lists.map(l => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1"><Label className="text-xs">Notas (opcional)</Label><Textarea placeholder="Observações..." value={addNotes} onChange={e => setAddNotes(e.target.value)} rows={2} /></div>
+              </div>
+              <DialogFooter><Button variant="outline" onClick={() => { setAddContactOpen(false); setEditContact(null); }}>Cancelar</Button><Button onClick={handleSaveContact}>{editContact ? 'Salvar' : 'Adicionar'}</Button></DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Contacts table */}
+          {loading ? (
+            <div className="text-center py-12 text-muted-foreground text-sm">Carregando...</div>
+          ) : filteredContacts.length === 0 ? (
+            <div className="text-center py-12">
+              <Users className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-muted-foreground">Nenhum contato encontrado</p>
+              <p className="text-xs text-muted-foreground/70 mt-1">Adicione contatos ou importe uma planilha</p>
+            </div>
+          ) : (
+            <div className="border rounded-xl overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-10"><input type="checkbox" checked={selectedContacts.size === filteredContacts.length && filteredContacts.length > 0} onChange={toggleAll} className="h-3.5 w-3.5 rounded accent-primary" /></TableHead>
+                    <TableHead className="text-xs">Nome</TableHead>
+                    <TableHead className="text-xs">Telefone</TableHead>
+                    <TableHead className="text-xs">Tags</TableHead>
+                    <TableHead className="text-xs">Lista</TableHead>
+                    <TableHead className="w-16"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredContacts.map(c => {
+                    const list = lists.find(l => l.id === c.list_id);
+                    return (
+                      <TableRow key={c.id}>
+                        <TableCell><input type="checkbox" checked={selectedContacts.has(c.id)} onChange={() => toggleSelect(c.id)} className="h-3.5 w-3.5 rounded accent-primary" /></TableCell>
+                        <TableCell className="text-sm font-medium">{c.name}</TableCell>
+                        <TableCell className="text-sm font-mono text-muted-foreground">{c.phone}</TableCell>
+                        <TableCell><div className="flex flex-wrap gap-1">{c.tags?.map(t => <Badge key={t} variant="secondary" className="text-[10px] h-5">{t}</Badge>)}</div></TableCell>
+                        <TableCell>{list ? <Badge variant="outline" className="text-[10px]">{list.name}</Badge> : <span className="text-xs text-muted-foreground">—</span>}</TableCell>
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild><Button size="sm" variant="ghost" className="h-7 w-7 p-0"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleEditContact(c)} className="text-xs gap-2"><Pencil className="h-3 w-3" /> Editar</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleDeleteContact(c.id)} className="text-xs gap-2 text-destructive"><Trash2 className="h-3 w-3" /> Excluir</DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          <div className="text-xs text-muted-foreground flex items-center gap-3">
+            <span>{filteredContacts.length} contato(s)</span>
+            {allTags.length > 0 && <span>{allTags.length} tag(s)</span>}
+            {lists.length > 0 && <span>{lists.length} lista(s)</span>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ───
 export default function MassMessages() {
   const { companyId } = useAuth();
@@ -894,6 +1292,7 @@ export default function MassMessages() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [editCampaign, setEditCampaign] = useState<Campaign | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [mainTab, setMainTab] = useState<string>('campaigns');
 
   const fetchCampaigns = useCallback(async () => {
     if (!companyId) return;
@@ -907,11 +1306,8 @@ export default function MassMessages() {
     setLoading(false);
   }, [companyId]);
 
-  useEffect(() => {
-    fetchCampaigns();
-  }, [fetchCampaigns]);
+  useEffect(() => { fetchCampaigns(); }, [fetchCampaigns]);
 
-  // Polling for processing campaigns
   useEffect(() => {
     const hasProcessing = campaigns.some(c => c.status === 'processing' || c.status === 'scheduled');
     if (!hasProcessing) return;
@@ -921,91 +1317,42 @@ export default function MassMessages() {
 
   const cancelCampaign = async (id: string) => {
     await supabase.from('mass_campaigns').update({ status: 'cancelled' } as any).eq('id', id);
-    toast({ title: 'Campanha cancelada' });
-    fetchCampaigns();
+    toast({ title: 'Campanha cancelada' }); fetchCampaigns();
   };
 
   const startCampaign = async (id: string) => {
-    await supabase.functions.invoke('mass-send-whatsapp', {
-      body: { action: 'start-campaign', campaign_id: id },
-    });
-    toast({ title: 'Disparo iniciado!' });
-    fetchCampaigns();
+    await supabase.functions.invoke('mass-send-whatsapp', { body: { action: 'start-campaign', campaign_id: id } });
+    toast({ title: 'Disparo iniciado!' }); fetchCampaigns();
   };
 
   const resendCampaign = async (campaign: Campaign) => {
-    // Create a copy of the campaign with reset counters
-    const { data: newCampaign, error } = await supabase
-      .from('mass_campaigns')
-      .insert({
-        company_id: companyId,
-        instance_id: campaign.instance_id,
-        name: `${campaign.name} (reenvio)`,
-        message_text: campaign.message_text,
-        message_type: campaign.message_type,
-        buttons: campaign.buttons,
-        list_sections: campaign.list_sections,
-        footer_text: campaign.footer_text,
-        delay_seconds: campaign.delay_seconds,
-        total_contacts: 0,
-        status: 'draft',
-        created_by: (await supabase.auth.getUser()).data.user?.id,
-      } as any)
-      .select()
-      .single();
-
-    if (error || !newCampaign) {
-      toast({ title: 'Erro ao duplicar campanha', variant: 'destructive' });
-      return;
-    }
-
-    // Copy contacts from old campaign (only failed + pending)
-    const { data: contactsToCopy } = await supabase
-      .from('mass_campaign_contacts')
-      .select('name, phone')
-      .eq('campaign_id', campaign.id)
-      .in('status', ['failed', 'pending']);
-
+    const { data: newCampaign, error } = await supabase.from('mass_campaigns').insert({
+      company_id: companyId, instance_id: campaign.instance_id, name: `${campaign.name} (reenvio)`,
+      message_text: campaign.message_text, message_type: campaign.message_type, buttons: campaign.buttons,
+      list_sections: campaign.list_sections, footer_text: campaign.footer_text, delay_seconds: campaign.delay_seconds,
+      total_contacts: 0, status: 'draft', created_by: (await supabase.auth.getUser()).data.user?.id,
+    } as any).select().single();
+    if (error || !newCampaign) { toast({ title: 'Erro ao duplicar', variant: 'destructive' }); return; }
+    const { data: contactsToCopy } = await supabase.from('mass_campaign_contacts').select('name, phone').eq('campaign_id', campaign.id).in('status', ['failed', 'pending']);
     if (contactsToCopy && contactsToCopy.length > 0) {
       const batchSize = 100;
       for (let i = 0; i < contactsToCopy.length; i += batchSize) {
-        const batch = contactsToCopy.slice(i, i + batchSize).map(c => ({
-          campaign_id: newCampaign.id,
-          name: c.name,
-          phone: c.phone,
-        }));
+        const batch = contactsToCopy.slice(i, i + batchSize).map(c => ({ campaign_id: newCampaign.id, name: c.name, phone: c.phone }));
         await supabase.from('mass_campaign_contacts').insert(batch);
       }
-      await supabase.from('mass_campaigns')
-        .update({ total_contacts: contactsToCopy.length } as any)
-        .eq('id', newCampaign.id);
+      await supabase.from('mass_campaigns').update({ total_contacts: contactsToCopy.length } as any).eq('id', newCampaign.id);
     }
-
-    toast({ title: `Campanha duplicada com ${contactsToCopy?.length || 0} contatos (falhos/pendentes)!` });
-    fetchCampaigns();
+    toast({ title: `Campanha duplicada com ${contactsToCopy?.length || 0} contatos!` }); fetchCampaigns();
   };
 
-  const handleEditCampaign = (campaign: Campaign) => {
-    setEditCampaign(campaign);
-    setCreateOpen(true);
-  };
+  const handleEditCampaign = (campaign: Campaign) => { setEditCampaign(campaign); setCreateOpen(true); };
+  const handleCloseCreator = (v: boolean) => { setCreateOpen(v); if (!v) setEditCampaign(null); };
 
-  const handleCloseCreator = (v: boolean) => {
-    setCreateOpen(v);
-    if (!v) setEditCampaign(null);
-  };
-
-  const filteredCampaigns = statusFilter === 'all'
-    ? campaigns
-    : campaigns.filter(c => c.status === statusFilter);
-
+  const filteredCampaigns = statusFilter === 'all' ? campaigns : campaigns.filter(c => c.status === statusFilter);
   const statusCounts = {
-    all: campaigns.length,
-    draft: campaigns.filter(c => c.status === 'draft').length,
-    processing: campaigns.filter(c => c.status === 'processing').length,
-    completed: campaigns.filter(c => c.status === 'completed').length,
-    cancelled: campaigns.filter(c => c.status === 'cancelled').length,
-    scheduled: campaigns.filter(c => c.status === 'scheduled').length,
+    all: campaigns.length, draft: campaigns.filter(c => c.status === 'draft').length,
+    processing: campaigns.filter(c => c.status === 'processing').length, completed: campaigns.filter(c => c.status === 'completed').length,
+    cancelled: campaigns.filter(c => c.status === 'cancelled').length, scheduled: campaigns.filter(c => c.status === 'scheduled').length,
   };
 
   return (
@@ -1014,165 +1361,112 @@ export default function MassMessages() {
         <div className="flex items-start justify-between">
           <div className="section-header">
             <h1 className="section-title">Mensagens em Massa</h1>
-            <p className="section-subtitle">Crie campanhas de disparo com mensagens interativas</p>
+            <p className="section-subtitle">Campanhas de disparo e gestão de contatos</p>
           </div>
-          <Button onClick={() => { setEditCampaign(null); setCreateOpen(true); }} className="gap-2">
-            <Plus className="h-4 w-4" />
-            Nova Campanha
-          </Button>
+          {mainTab === 'campaigns' && (
+            <Button onClick={() => { setEditCampaign(null); setCreateOpen(true); }} className="gap-2">
+              <Plus className="h-4 w-4" /> Nova Campanha
+            </Button>
+          )}
         </div>
 
         <CampaignCreator open={createOpen} onOpenChange={handleCloseCreator} onCreated={fetchCampaigns} editCampaign={editCampaign} />
         <CampaignDetailsDialog campaignId={detailsCampaignId} open={detailsOpen} onOpenChange={setDetailsOpen} />
 
-        {/* Status filter tabs */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {[
-            { key: 'all', label: 'Todas' },
-            { key: 'draft', label: 'Rascunhos' },
-            { key: 'scheduled', label: 'Agendadas' },
-            { key: 'processing', label: 'Enviando' },
-            { key: 'completed', label: 'Concluídas' },
-            { key: 'cancelled', label: 'Canceladas' },
-          ].map(tab => (
-            <Button
-              key={tab.key}
-              size="sm"
-              variant={statusFilter === tab.key ? 'default' : 'outline'}
-              onClick={() => setStatusFilter(tab.key)}
-              className="text-xs gap-1.5"
-            >
-              {tab.label}
-              {statusCounts[tab.key as keyof typeof statusCounts] > 0 && (
-                <Badge variant="secondary" className="text-[10px] h-4 min-w-[16px] px-1">
-                  {statusCounts[tab.key as keyof typeof statusCounts]}
-                </Badge>
-              )}
-            </Button>
-          ))}
-        </div>
+        <Tabs value={mainTab} onValueChange={setMainTab}>
+          <TabsList className="grid w-full max-w-[400px] grid-cols-2">
+            <TabsTrigger value="campaigns" className="gap-1.5"><Send className="h-3.5 w-3.5" /> Campanhas</TabsTrigger>
+            <TabsTrigger value="contacts" className="gap-1.5"><Users className="h-3.5 w-3.5" /> Contatos</TabsTrigger>
+          </TabsList>
 
-        {loading ? (
-          <div className="text-center py-12 text-muted-foreground">Carregando...</div>
-        ) : filteredCampaigns.length === 0 ? (
-          <div className="text-center py-12">
-            <Send className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
-            <p className="text-muted-foreground">
-              {statusFilter === 'all' ? 'Nenhuma campanha criada' : 'Nenhuma campanha neste filtro'}
-            </p>
-            <p className="text-xs text-muted-foreground/70 mt-1">
-              {statusFilter === 'all' ? 'Clique em "Nova Campanha" para começar' : 'Tente outro filtro ou crie uma nova campanha'}
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filteredCampaigns.map(campaign => {
-              const config = statusConfig[campaign.status] || statusConfig.draft;
-              const Icon = config.icon;
-              const progress = campaign.total_contacts > 0
-                ? Math.round(((campaign.sent_count + campaign.failed_count) / campaign.total_contacts) * 100)
-                : 0;
+          <TabsContent value="campaigns" className="mt-4 space-y-4">
+            <div className="flex items-center gap-2 flex-wrap">
+              {[
+                { key: 'all', label: 'Todas' }, { key: 'draft', label: 'Rascunhos' },
+                { key: 'scheduled', label: 'Agendadas' }, { key: 'processing', label: 'Enviando' },
+                { key: 'completed', label: 'Concluídas' }, { key: 'cancelled', label: 'Canceladas' },
+              ].map(tab => (
+                <Button key={tab.key} size="sm" variant={statusFilter === tab.key ? 'default' : 'outline'} onClick={() => setStatusFilter(tab.key)} className="text-xs gap-1.5">
+                  {tab.label}
+                  {statusCounts[tab.key as keyof typeof statusCounts] > 0 && (
+                    <Badge variant="secondary" className="text-[10px] h-4 min-w-[16px] px-1">{statusCounts[tab.key as keyof typeof statusCounts]}</Badge>
+                  )}
+                </Button>
+              ))}
+            </div>
 
-              return (
-                <Card key={campaign.id} className="glass-card rounded-2xl">
-                  <CardContent className="p-5">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex items-start gap-4 min-w-0 flex-1">
-                        <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                          <Icon className="h-5 w-5 text-primary" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-semibold text-sm">{campaign.name}</p>
-                          <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{campaign.message_text}</p>
-
-                          <div className="flex items-center gap-3 mt-2 flex-wrap">
-                            <Badge variant={config.color as any} className="text-[10px] gap-1">
-                              {config.label}
-                            </Badge>
-                            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                              <Users className="h-2.5 w-2.5" /> {campaign.total_contacts} contatos
-                            </span>
-                            {campaign.message_type !== 'text' && (
-                              <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                                <List className="h-2.5 w-2.5" /> {campaign.message_type === 'button' ? 'Botões' : 'Menu lista'}
-                              </span>
-                            )}
-                            {campaign.scheduled_at && campaign.status === 'scheduled' && (
-                              <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                                <Clock className="h-2.5 w-2.5" /> {formatDate(campaign.scheduled_at)}
-                              </span>
-                            )}
-                          </div>
-
-                          {(campaign.status === 'processing' || campaign.status === 'completed') && (
-                            <div className="mt-3 space-y-1">
-                              <Progress value={progress} className="h-2" />
-                              <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                                <span className="flex items-center gap-1">
-                                  <CheckCircle className="h-2.5 w-2.5 text-primary" /> {campaign.sent_count} enviados
-                                </span>
-                                {campaign.failed_count > 0 && (
-                                  <span className="flex items-center gap-1">
-                                    <XCircle className="h-2.5 w-2.5 text-destructive" /> {campaign.failed_count} falhas
-                                  </span>
-                                )}
-                                <span>{progress}%</span>
-                              </div>
+            {loading ? (
+              <div className="text-center py-12 text-muted-foreground">Carregando...</div>
+            ) : filteredCampaigns.length === 0 ? (
+              <div className="text-center py-12">
+                <Send className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+                <p className="text-muted-foreground">{statusFilter === 'all' ? 'Nenhuma campanha criada' : 'Nenhuma campanha neste filtro'}</p>
+                <p className="text-xs text-muted-foreground/70 mt-1">{statusFilter === 'all' ? 'Clique em "Nova Campanha" para começar' : 'Tente outro filtro'}</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredCampaigns.map(campaign => {
+                  const config = statusConfig[campaign.status] || statusConfig.draft;
+                  const Icon = config.icon;
+                  const progress = campaign.total_contacts > 0 ? Math.round(((campaign.sent_count + campaign.failed_count) / campaign.total_contacts) * 100) : 0;
+                  return (
+                    <Card key={campaign.id} className="glass-card rounded-2xl">
+                      <CardContent className="p-5">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-4 min-w-0 flex-1">
+                            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <Icon className="h-5 w-5 text-primary" />
                             </div>
-                          )}
+                            <div className="min-w-0 flex-1">
+                              <p className="font-semibold text-sm">{campaign.name}</p>
+                              <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{campaign.message_text}</p>
+                              <div className="flex items-center gap-3 mt-2 flex-wrap">
+                                <Badge variant={config.color as any} className="text-[10px] gap-1">{config.label}</Badge>
+                                <span className="text-[10px] text-muted-foreground flex items-center gap-1"><Users className="h-2.5 w-2.5" /> {campaign.total_contacts} contatos</span>
+                                {campaign.message_type !== 'text' && <span className="text-[10px] text-muted-foreground flex items-center gap-1"><List className="h-2.5 w-2.5" /> {campaign.message_type === 'button' ? 'Botões' : 'Menu lista'}</span>}
+                                {campaign.scheduled_at && campaign.status === 'scheduled' && <span className="text-[10px] text-muted-foreground flex items-center gap-1"><Clock className="h-2.5 w-2.5" /> {formatDate(campaign.scheduled_at)}</span>}
+                              </div>
+                              {(campaign.status === 'processing' || campaign.status === 'completed') && (
+                                <div className="mt-3 space-y-1">
+                                  <Progress value={progress} className="h-2" />
+                                  <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                                    <span className="flex items-center gap-1"><CheckCircle className="h-2.5 w-2.5 text-primary" /> {campaign.sent_count} enviados</span>
+                                    {campaign.failed_count > 0 && <span className="flex items-center gap-1"><XCircle className="h-2.5 w-2.5 text-destructive" /> {campaign.failed_count} falhas</span>}
+                                    <span>{progress}%</span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <Button size="sm" variant="outline" onClick={() => { setDetailsCampaignId(campaign.id); setDetailsOpen(true); }} className="gap-1 text-xs"><Eye className="h-3 w-3" /> Detalhes</Button>
+                            {campaign.status !== 'processing' && (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild><Button size="sm" variant="outline" className="gap-1 text-xs"><Pencil className="h-3 w-3" /> Ações</Button></DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  {(campaign.status === 'draft' || campaign.status === 'scheduled') && <DropdownMenuItem onClick={() => handleEditCampaign(campaign)} className="gap-2 text-xs"><Pencil className="h-3 w-3" /> Editar</DropdownMenuItem>}
+                                  {(campaign.status === 'completed' || campaign.status === 'cancelled') && <DropdownMenuItem onClick={() => handleEditCampaign(campaign)} className="gap-2 text-xs"><Pencil className="h-3 w-3" /> Editar e recriar</DropdownMenuItem>}
+                                  <DropdownMenuItem onClick={() => resendCampaign(campaign)} className="gap-2 text-xs"><Copy className="h-3 w-3" /> Reenviar</DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            )}
+                            {campaign.status === 'draft' && <Button size="sm" onClick={() => startCampaign(campaign.id)} className="gap-1 text-xs"><Play className="h-3 w-3" /> Iniciar</Button>}
+                            {(campaign.status === 'processing' || campaign.status === 'scheduled') && <Button size="sm" variant="destructive" onClick={() => cancelCampaign(campaign.id)} className="gap-1 text-xs"><Ban className="h-3 w-3" /> Cancelar</Button>}
+                            <span className="text-xs text-muted-foreground whitespace-nowrap">{formatDate(campaign.created_at)}</span>
+                          </div>
                         </div>
-                      </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </TabsContent>
 
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <Button size="sm" variant="outline" onClick={() => { setDetailsCampaignId(campaign.id); setDetailsOpen(true); }} className="gap-1 text-xs">
-                          <Eye className="h-3 w-3" /> Detalhes
-                        </Button>
-
-                        {/* Edit button - only for draft/scheduled/completed/cancelled */}
-                        {campaign.status !== 'processing' && (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button size="sm" variant="outline" className="gap-1 text-xs">
-                                <Pencil className="h-3 w-3" /> Ações
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              {(campaign.status === 'draft' || campaign.status === 'scheduled') && (
-                                <DropdownMenuItem onClick={() => handleEditCampaign(campaign)} className="gap-2 text-xs">
-                                  <Pencil className="h-3 w-3" /> Editar campanha
-                                </DropdownMenuItem>
-                              )}
-                              {(campaign.status === 'completed' || campaign.status === 'cancelled') && (
-                                <DropdownMenuItem onClick={() => handleEditCampaign(campaign)} className="gap-2 text-xs">
-                                  <Pencil className="h-3 w-3" /> Editar e recriar
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem onClick={() => resendCampaign(campaign)} className="gap-2 text-xs">
-                                <Copy className="h-3 w-3" /> Reenviar (falhos/pendentes)
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
-
-                        {campaign.status === 'draft' && (
-                          <Button size="sm" onClick={() => startCampaign(campaign.id)} className="gap-1 text-xs">
-                            <Play className="h-3 w-3" /> Iniciar
-                          </Button>
-                        )}
-                        {(campaign.status === 'processing' || campaign.status === 'scheduled') && (
-                          <Button size="sm" variant="destructive" onClick={() => cancelCampaign(campaign.id)} className="gap-1 text-xs">
-                            <Ban className="h-3 w-3" /> Cancelar
-                          </Button>
-                        )}
-                        <span className="text-xs text-muted-foreground whitespace-nowrap">{formatDate(campaign.created_at)}</span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        )}
+          <TabsContent value="contacts" className="mt-4">
+            {companyId && <ContactsManager companyId={companyId} />}
+          </TabsContent>
+        </Tabs>
       </div>
     </DashboardLayout>
   );
