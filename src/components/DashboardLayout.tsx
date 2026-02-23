@@ -6,7 +6,7 @@ import { useFormLabel } from '@/hooks/useFormLabel';
 import {
   LayoutDashboard, Users, Clock, Calendar,
   Palette, MessageSquare, CreditCard, Menu, X, LogOut,
-  ChevronRight, Bell, Shield, Search, ClipboardList, Layers, ScrollText, Bot, Activity, Headphones, Send, Zap,
+  ChevronRight, Bell, Shield, Search, ClipboardList, Layers, ScrollText, Bot, Activity, Headphones, Send, Zap, Tag,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -23,6 +23,7 @@ const baseNavItems = [
   { title: 'Fichas de Clientes', icon: ClipboardList, path: '/fichas' },
   { title: 'Mensagens em Massa', icon: Send, path: '/mensagens-massa' },
   { title: 'Automações', icon: Zap, path: '/automacoes' },
+  { title: 'Tags de Contatos', icon: Tag, path: '/tags' },
 ];
 
 const settingsItems = [
