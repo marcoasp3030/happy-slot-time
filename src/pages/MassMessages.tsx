@@ -1831,6 +1831,12 @@ export default function MassMessages() {
     cancelled: campaigns.filter(c => c.status === 'cancelled').length, scheduled: campaigns.filter(c => c.status === 'scheduled').length,
   };
 
+  // Stats summary
+  const totalSent = campaigns.reduce((sum, c) => sum + c.sent_count, 0);
+  const totalFailed = campaigns.reduce((sum, c) => sum + c.failed_count, 0);
+  const totalContacts = campaigns.reduce((sum, c) => sum + c.total_contacts, 0);
+  const activeCampaigns = campaigns.filter(c => c.status === 'processing').length;
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -1855,7 +1861,56 @@ export default function MassMessages() {
             <TabsTrigger value="contacts" className="gap-1.5"><Users className="h-3.5 w-3.5" /> Contatos</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="campaigns" className="mt-4 space-y-4">
+          <TabsContent value="campaigns" className="mt-4 space-y-5">
+            {/* Stats cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Card className="glass-card-static">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="stat-icon-box bg-primary/10">
+                    <Send className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{campaigns.length}</p>
+                    <p className="text-xs text-muted-foreground">Campanhas</p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="glass-card-static">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="stat-icon-box bg-success/10">
+                    <CheckCircle className="h-5 w-5 text-success" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{totalSent.toLocaleString('pt-BR')}</p>
+                    <p className="text-xs text-muted-foreground">Enviadas</p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="glass-card-static">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="stat-icon-box bg-destructive/10">
+                    <XCircle className="h-5 w-5 text-destructive" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{totalFailed.toLocaleString('pt-BR')}</p>
+                    <p className="text-xs text-muted-foreground">Falhas</p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="glass-card-static">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="stat-icon-box bg-info/10">
+                    <Users className="h-5 w-5 text-info" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{totalContacts.toLocaleString('pt-BR')}</p>
+                    <p className="text-xs text-muted-foreground">Contatos total</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Filter chips */}
             <div className="flex items-center gap-2 flex-wrap">
               {[
                 { key: 'all', label: 'Todas' }, { key: 'draft', label: 'Rascunhos' },
@@ -1874,62 +1929,98 @@ export default function MassMessages() {
             {loading ? (
               <div className="text-center py-12 text-muted-foreground">Carregando...</div>
             ) : filteredCampaigns.length === 0 ? (
-              <div className="text-center py-12">
-                <Send className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
-                <p className="text-muted-foreground">{statusFilter === 'all' ? 'Nenhuma campanha criada' : 'Nenhuma campanha neste filtro'}</p>
-                <p className="text-xs text-muted-foreground/70 mt-1">{statusFilter === 'all' ? 'Clique em "Nova Campanha" para começar' : 'Tente outro filtro'}</p>
-              </div>
+              <Card className="glass-card-static border-dashed">
+                <CardContent className="py-16 text-center">
+                  <Send className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+                  <p className="text-muted-foreground font-medium">{statusFilter === 'all' ? 'Nenhuma campanha criada' : 'Nenhuma campanha neste filtro'}</p>
+                  <p className="text-xs text-muted-foreground/70 mt-1">{statusFilter === 'all' ? 'Clique em "Nova Campanha" para começar' : 'Tente outro filtro'}</p>
+                </CardContent>
+              </Card>
             ) : (
-              <div className="space-y-3">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {filteredCampaigns.map(campaign => {
                   const config = statusConfig[campaign.status] || statusConfig.draft;
                   const Icon = config.icon;
                   const progress = campaign.total_contacts > 0 ? Math.round(((campaign.sent_count + campaign.failed_count) / campaign.total_contacts) * 100) : 0;
+                  const successRate = campaign.sent_count > 0 && (campaign.sent_count + campaign.failed_count) > 0
+                    ? Math.round((campaign.sent_count / (campaign.sent_count + campaign.failed_count)) * 100) : null;
+
                   return (
-                    <Card key={campaign.id} className="glass-card rounded-2xl">
-                      <CardContent className="p-5">
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex items-start gap-4 min-w-0 flex-1">
-                            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                              <Icon className="h-5 w-5 text-primary" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="font-semibold text-sm">{campaign.name}</p>
-                              <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{campaign.message_text}</p>
-                              <div className="flex items-center gap-3 mt-2 flex-wrap">
-                                <Badge variant={config.color as any} className="text-[10px] gap-1">{config.label}</Badge>
-                                <span className="text-[10px] text-muted-foreground flex items-center gap-1"><Users className="h-2.5 w-2.5" /> {campaign.total_contacts} contatos</span>
-                                {campaign.message_type !== 'text' && <span className="text-[10px] text-muted-foreground flex items-center gap-1"><List className="h-2.5 w-2.5" /> {campaign.message_type === 'button' ? 'Botões' : 'Menu lista'}</span>}
-                                {campaign.scheduled_at && campaign.status === 'scheduled' && <span className="text-[10px] text-muted-foreground flex items-center gap-1"><Clock className="h-2.5 w-2.5" /> {formatDate(campaign.scheduled_at)}</span>}
-                              </div>
-                              {(campaign.status === 'processing' || campaign.status === 'completed') && (
-                                <div className="mt-3 space-y-1">
-                                  <Progress value={progress} className="h-2" />
-                                  <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                                    <span className="flex items-center gap-1"><CheckCircle className="h-2.5 w-2.5 text-primary" /> {campaign.sent_count} enviados</span>
-                                    {campaign.failed_count > 0 && <span className="flex items-center gap-1"><XCircle className="h-2.5 w-2.5 text-destructive" /> {campaign.failed_count} falhas</span>}
-                                    <span>{progress}%</span>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
+                    <Card key={campaign.id} className="glass-card rounded-2xl flex flex-col">
+                      <CardContent className="p-5 flex flex-col flex-1">
+                        {/* Header: status + date */}
+                        <div className="flex items-center justify-between mb-3">
+                          <Badge variant={config.color as any} className="text-[10px] gap-1">
+                            <Icon className="h-3 w-3" /> {config.label}
+                          </Badge>
+                          <span className="text-[10px] text-muted-foreground">{formatDate(campaign.created_at)}</span>
+                        </div>
+
+                        {/* Title & message preview */}
+                        <h3 className="font-semibold text-sm mb-1 truncate">{campaign.name}</h3>
+                        {campaign.message_text && (
+                          <p className="text-xs text-muted-foreground line-clamp-2 mb-3 leading-relaxed">{campaign.message_text}</p>
+                        )}
+
+                        {/* Stats row */}
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground mt-auto pt-3 border-t border-border/50">
+                          <span className="flex items-center gap-1"><Users className="h-3 w-3" /> {campaign.total_contacts}</span>
+                          <span className="flex items-center gap-1 text-success"><CheckCircle className="h-3 w-3" /> {campaign.sent_count}</span>
+                          {campaign.failed_count > 0 && (
+                            <span className="flex items-center gap-1 text-destructive"><XCircle className="h-3 w-3" /> {campaign.failed_count}</span>
+                          )}
+                          {campaign.message_type !== 'text' && (
+                            <span className="flex items-center gap-1"><List className="h-3 w-3" /> {campaign.message_type === 'button' ? 'Botões' : 'Lista'}</span>
+                          )}
+                          {successRate !== null && (
+                            <span className="ml-auto font-medium text-foreground">{successRate}%</span>
+                          )}
+                        </div>
+
+                        {/* Progress bar for active/completed */}
+                        {(campaign.status === 'processing' || campaign.status === 'completed') && (
+                          <div className="mt-3">
+                            <Progress value={progress} className="h-1.5" />
                           </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            <Button size="sm" variant="outline" onClick={() => { setDetailsCampaignId(campaign.id); setDetailsOpen(true); }} className="gap-1 text-xs"><Eye className="h-3 w-3" /> Detalhes</Button>
-                            {campaign.status !== 'processing' && (
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild><Button size="sm" variant="outline" className="gap-1 text-xs"><Pencil className="h-3 w-3" /> Ações</Button></DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  {(campaign.status === 'draft' || campaign.status === 'scheduled') && <DropdownMenuItem onClick={() => handleEditCampaign(campaign)} className="gap-2 text-xs"><Pencil className="h-3 w-3" /> Editar</DropdownMenuItem>}
-                                  {(campaign.status === 'completed' || campaign.status === 'cancelled') && <DropdownMenuItem onClick={() => handleEditCampaign(campaign)} className="gap-2 text-xs"><Pencil className="h-3 w-3" /> Editar e recriar</DropdownMenuItem>}
-                                  <DropdownMenuItem onClick={() => resendCampaign(campaign)} className="gap-2 text-xs"><Copy className="h-3 w-3" /> Reenviar</DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            )}
-                            {campaign.status === 'draft' && <Button size="sm" onClick={() => startCampaign(campaign.id)} className="gap-1 text-xs"><Play className="h-3 w-3" /> Iniciar</Button>}
-                            {(campaign.status === 'processing' || campaign.status === 'scheduled') && <Button size="sm" variant="destructive" onClick={() => cancelCampaign(campaign.id)} className="gap-1 text-xs"><Ban className="h-3 w-3" /> Cancelar</Button>}
-                            <span className="text-xs text-muted-foreground whitespace-nowrap">{formatDate(campaign.created_at)}</span>
+                        )}
+
+                        {/* Scheduled info */}
+                        {campaign.scheduled_at && campaign.status === 'scheduled' && (
+                          <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
+                            <Clock className="h-3 w-3" />
+                            <span>Agendada para {formatDate(campaign.scheduled_at)}</span>
                           </div>
+                        )}
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-2 mt-4">
+                          <Button size="sm" variant="outline" onClick={() => { setDetailsCampaignId(campaign.id); setDetailsOpen(true); }} className="gap-1.5 text-xs flex-1">
+                            <Eye className="h-3 w-3" /> Detalhes
+                          </Button>
+                          {campaign.status === 'draft' && (
+                            <Button size="sm" onClick={() => startCampaign(campaign.id)} className="gap-1.5 text-xs flex-1">
+                              <Play className="h-3 w-3" /> Iniciar
+                            </Button>
+                          )}
+                          {(campaign.status === 'processing' || campaign.status === 'scheduled') && (
+                            <Button size="sm" variant="destructive" onClick={() => cancelCampaign(campaign.id)} className="gap-1.5 text-xs flex-1">
+                              <Ban className="h-3 w-3" /> Cancelar
+                            </Button>
+                          )}
+                          {campaign.status !== 'processing' && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {(campaign.status === 'draft' || campaign.status === 'scheduled') && <DropdownMenuItem onClick={() => handleEditCampaign(campaign)} className="gap-2 text-xs"><Pencil className="h-3 w-3" /> Editar</DropdownMenuItem>}
+                                {(campaign.status === 'completed' || campaign.status === 'cancelled') && <DropdownMenuItem onClick={() => handleEditCampaign(campaign)} className="gap-2 text-xs"><Pencil className="h-3 w-3" /> Editar e recriar</DropdownMenuItem>}
+                                <DropdownMenuItem onClick={() => resendCampaign(campaign)} className="gap-2 text-xs"><Copy className="h-3 w-3" /> Duplicar</DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
                         </div>
                       </CardContent>
                     </Card>
