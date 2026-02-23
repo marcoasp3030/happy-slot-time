@@ -44,6 +44,7 @@ import TokenUsage from "./pages/TokenUsage";
 import Atendimentos from "./pages/Atendimentos";
 import MassMessages from "./pages/MassMessages";
 import Automations from "./pages/Automations";
+import ContactTags from "./pages/ContactTags";
 
 const queryClient = new QueryClient();
 
@@ -140,6 +141,7 @@ function AnimatedRoutes() {
       <Route path="/consumo-tokens" element={<ProtectedRoute><PageTransition><TokenUsage /></PageTransition></ProtectedRoute>} />
       <Route path="/mensagens-massa" element={<ProtectedRoute><PageTransition><MassMessages /></PageTransition></ProtectedRoute>} />
       <Route path="/automacoes" element={<ProtectedRoute><PageTransition><Automations /></PageTransition></ProtectedRoute>} />
+      <Route path="/tags" element={<ProtectedRoute><PageTransition><ContactTags /></PageTransition></ProtectedRoute>} />
       
       {/* Super admin routes */}
       <Route path="/admin" element={<AdminRoute><PageTransition><AdminDashboard /></PageTransition></AdminRoute>} />
