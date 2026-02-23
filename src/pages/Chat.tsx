@@ -358,62 +358,85 @@ export default function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Realtime - subscribe to ALL changes then filter client-side for reliability
+  // Realtime - subscribe WITHOUT server-side filter (avoids TIMED_OUT), filter client-side
   useEffect(() => {
     if (!companyId) return;
 
-    addDebugLog(`Conectando realtime... companyId: ${companyId}`);
+    let cancelled = false;
+    let retryTimeout: ReturnType<typeof setTimeout>;
+    let channelRef: ReturnType<typeof supabase.channel> | null = null;
 
-    const channel = supabase
-      .channel(`chat-messages-${companyId}`)
-      .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'whatsapp_messages',
-        filter: `company_id=eq.${companyId}`,
-      }, (payload) => {
-        const msg = payload.new as Message;
-        addDebugLog(`INSERT msg: ${msg?.id?.slice(0,8)} dir=${msg?.direction} tipo=${msg?.message_type} status=${msg?.delivery_status} conv=${msg?.conversation_id?.slice(0,8)} content="${msg?.content?.substring(0, 40)}"`);
-        if (!msg || msg.content === '__DEBOUNCE_LOCK__' || msg.content === '__PROCESSING__' || msg.delivery_status === 'locking' || msg.delivery_status === 'processing') {
-          addDebugLog(`  → Ignorado (sistema interno)`);
-          return;
-        }
+    const connect = () => {
+      if (cancelled) return;
+      addDebugLog(`Conectando realtime... companyId: ${companyId}`);
 
-        // Add to current chat if matches any conversation of selected phone
-        const convIds = selectedPhoneConvIdsRef.current;
-        setMessages(prev => {
-          if (prev.some(m => m.id === msg.id)) return prev;
-          if (convIds.includes(msg.conversation_id)) {
-            addDebugLog(`  → Adicionada ao chat ativo ✅`);
-            return [...prev, msg];
+      const channel = supabase
+        .channel(`chat-rt-${companyId}-${Date.now()}`)
+        .on('postgres_changes', {
+          event: 'INSERT', schema: 'public', table: 'whatsapp_messages',
+        }, (payload) => {
+          const msg = payload.new as Message;
+          if (!msg || msg.company_id !== companyId) return;
+          addDebugLog(`INSERT msg: ${msg?.id?.slice(0,8)} dir=${msg?.direction} status=${msg?.delivery_status} content="${msg?.content?.substring(0, 30)}"`);
+          if (msg.content === '__DEBOUNCE_LOCK__' || msg.content === '__PROCESSING__' || msg.delivery_status === 'locking' || msg.delivery_status === 'processing') {
+            return;
           }
-          addDebugLog(`  → Conv diferente, ignorada no chat (atualiza lista)`);
-          return prev;
+          const convIds = selectedPhoneConvIdsRef.current;
+          setMessages(prev => {
+            if (prev.some(m => m.id === msg.id)) return prev;
+            if (convIds.includes(msg.conversation_id)) {
+              addDebugLog(`  → Adicionada ao chat ativo ✅`);
+              return [...prev, msg];
+            }
+            return prev;
+          });
+          loadConversations();
+        })
+        .on('postgres_changes', {
+          event: 'UPDATE', schema: 'public', table: 'whatsapp_messages',
+        }, (payload) => {
+          const msg = payload.new as Message;
+          if (!msg || msg.company_id !== companyId) return;
+          setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, ...msg } : m));
+        })
+        .on('postgres_changes', {
+          event: 'INSERT', schema: 'public', table: 'whatsapp_conversations',
+        }, (payload) => {
+          const conv = payload.new as any;
+          if (conv?.company_id !== companyId) return;
+          addDebugLog(`Nova conversa: ${conv?.phone}`);
+          loadConversations();
+        })
+        .subscribe((status) => {
+          setRtStatus(status);
+          addDebugLog(`Subscription: ${status}`);
+          if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR') {
+            addDebugLog('Reconectando em 3s...');
+            supabase.removeChannel(channel);
+            retryTimeout = setTimeout(connect, 3000);
+          }
         });
-        // Always refresh conversation list (new message = updated timestamp)
-        loadConversations();
-      })
-      .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'whatsapp_messages',
-        filter: `company_id=eq.${companyId}`,
-      }, (payload) => {
-        const msg = payload.new as Message;
-        if (!msg) return;
-        addDebugLog(`UPDATE msg: ${msg.id?.slice(0,8)} status=${msg.delivery_status}`);
-        setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, ...msg } : m));
-      })
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'whatsapp_conversations',
-        filter: `company_id=eq.${companyId}`,
-      }, (payload) => {
-        addDebugLog(`Conv ${payload.eventType}: ${(payload.new as any)?.id?.slice(0,8) || '?'}`);
-        loadConversations();
-      })
-      .subscribe((status) => {
-        setRtStatus(status);
-        addDebugLog(`Subscription: ${status}`);
-      });
 
-    return () => { supabase.removeChannel(channel); };
-  }, [companyId, loadConversations, addDebugLog]);
+      channelRef = channel;
+    };
+
+    connect();
+
+    // Fallback polling every 10s in case realtime fails
+    const pollInterval = setInterval(() => {
+      loadConversations();
+      if (selectedConvRef.current) {
+        loadMessages(selectedConvRef.current.phone);
+      }
+    }, 10000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(retryTimeout);
+      clearInterval(pollInterval);
+      if (channelRef) supabase.removeChannel(channelRef);
+    };
+  }, [companyId, loadConversations, addDebugLog, loadMessages]);
 
   // Send message
   const handleSend = async () => {
