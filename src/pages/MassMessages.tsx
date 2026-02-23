@@ -22,6 +22,7 @@ import {
   Send, Upload, Plus, Trash2, Clock, CheckCircle, XCircle,
   FileSpreadsheet, Users, MessageSquare, List, AlertCircle, Play, Ban, Eye, RefreshCw, Download, Zap,
   Pencil, Copy, Tag, Search, FolderOpen, MoreHorizontal, X,
+  Image, Mic, File, Loader2,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -111,6 +112,17 @@ function CampaignCreator({
   const [automationFlowId, setAutomationFlowId] = useState<string | null>(null);
   const [automationFlows, setAutomationFlows] = useState<{ id: string; name: string }[]>([]);
 
+  // Media
+  const [mediaUrl, setMediaUrl] = useState('');
+  const [mediaType, setMediaType] = useState<string | null>(null);
+
+  // Segment selection
+  const [savedLists, setSavedLists] = useState<{ id: string; name: string; count: number }[]>([]);
+  const [savedTags, setSavedTags] = useState<string[]>([]);
+  const [selectedListIds, setSelectedListIds] = useState<Set<string>>(new Set());
+  const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
+  const [loadingSegments, setLoadingSegments] = useState(false);
+
   // Populate form when editing
   useEffect(() => {
     if (editCampaign && open) {
@@ -137,9 +149,14 @@ function CampaignCreator({
       setContacts([]);
       setScheduledAt('');
       setAutomationFlowId(null);
+      setMediaUrl('');
+      setMediaType(null);
+      setSelectedListIds(new Set());
+      setSelectedTags(new Set());
     }
   }, [open, editCampaign]);
 
+  // Fetch instances, automation flows, and saved segments
   useEffect(() => {
     if (companyId && open) {
       supabase.from('whatsapp_instances').select('id, label, instance_name, phone_number, status')
@@ -152,6 +169,25 @@ function CampaignCreator({
         .eq('company_id', companyId).eq('active', true)
         .then(({ data }) => {
           setAutomationFlows(data || []);
+        });
+      // Fetch saved contact lists and tags for segment selection
+      supabase.from('mass_contact_lists').select('id, name').eq('company_id', companyId).order('name')
+        .then(({ data }) => {
+          if (data) {
+            // Get counts
+            supabase.from('mass_contacts').select('list_id').eq('company_id', companyId)
+              .then(({ data: allContacts }) => {
+                const counts: Record<string, number> = {};
+                (allContacts || []).forEach((c: any) => { if (c.list_id) counts[c.list_id] = (counts[c.list_id] || 0) + 1; });
+                setSavedLists(data.map(l => ({ id: l.id, name: l.name, count: counts[l.id] || 0 })));
+              });
+          }
+        });
+      supabase.from('mass_contacts').select('tags').eq('company_id', companyId)
+        .then(({ data }) => {
+          const tags = new Set<string>();
+          (data || []).forEach((c: any) => c.tags?.forEach((t: string) => tags.add(t)));
+          setSavedTags(Array.from(tags).sort());
         });
     }
   }, [companyId, open]);
@@ -187,6 +223,50 @@ function CampaignCreator({
 
     e.target.value = '';
   }, [toast]);
+
+  // Load contacts from saved segments
+  const loadFromSegments = async () => {
+    if (selectedListIds.size === 0 && selectedTags.size === 0) {
+      toast({ title: 'Selecione ao menos uma lista ou tag', variant: 'destructive' });
+      return;
+    }
+    setLoadingSegments(true);
+    let query = supabase.from('mass_contacts').select('name, phone').eq('company_id', companyId!);
+
+    if (selectedListIds.size > 0 && selectedTags.size > 0) {
+      // Both filters: list OR tag match
+      const { data } = await query;
+      const filtered = (data || []).filter((c: any) => {
+        const matchList = c.list_id && selectedListIds.has(c.list_id);
+        const matchTag = c.tags?.some((t: string) => selectedTags.has(t));
+        return matchList || matchTag;
+      });
+      // Need to re-query with list_id filter since we can't do OR with contains
+      const { data: byList } = await supabase.from('mass_contacts').select('name, phone, list_id, tags')
+        .eq('company_id', companyId!).in('list_id', Array.from(selectedListIds));
+      const { data: allContacts } = await supabase.from('mass_contacts').select('name, phone, tags')
+        .eq('company_id', companyId!);
+      const byTag = (allContacts || []).filter((c: any) => c.tags?.some((t: string) => selectedTags.has(t)));
+      const combined = new Map<string, ContactRow>();
+      [...(byList || []), ...byTag].forEach((c: any) => combined.set(c.phone, { name: c.name, phone: c.phone }));
+      const rows = Array.from(combined.values());
+      setContacts(prev => [...prev, ...rows]);
+      toast({ title: `${rows.length} contatos carregados dos segmentos` });
+    } else if (selectedListIds.size > 0) {
+      const { data } = await supabase.from('mass_contacts').select('name, phone')
+        .eq('company_id', companyId!).in('list_id', Array.from(selectedListIds));
+      const rows = (data || []).map((c: any) => ({ name: c.name, phone: c.phone }));
+      setContacts(prev => [...prev, ...rows]);
+      toast({ title: `${rows.length} contatos carregados das listas` });
+    } else {
+      const { data } = await supabase.from('mass_contacts').select('name, phone, tags').eq('company_id', companyId!);
+      const filtered = (data || []).filter((c: any) => c.tags?.some((t: string) => selectedTags.has(t)));
+      const rows = filtered.map((c: any) => ({ name: c.name, phone: c.phone }));
+      setContacts(prev => [...prev, ...rows]);
+      toast({ title: `${rows.length} contatos carregados por tags` });
+    }
+    setLoadingSegments(false);
+  };
 
   const addManualContact = () => {
     if (!manualName.trim() || !manualPhone.trim()) return;
@@ -259,6 +339,8 @@ function CampaignCreator({
           daily_limit: dailyLimit,
           business_hours_only: businessHoursOnly,
           rotate_instances: rotateInstances,
+          media_url: mediaUrl.trim() || null,
+          media_type: mediaType,
         } as any)
         .eq('id', editCampaign!.id);
 
@@ -315,6 +397,8 @@ function CampaignCreator({
           scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
           status: scheduledAt ? 'scheduled' : 'draft',
           created_by: user.id,
+          media_url: mediaUrl.trim() || null,
+          media_type: mediaType,
         } as any)
         .select()
         .single();
@@ -364,6 +448,10 @@ function CampaignCreator({
     setContacts([]);
     setScheduledAt('');
     setAutomationFlowId(null);
+    setMediaUrl('');
+    setMediaType(null);
+    setSelectedListIds(new Set());
+    setSelectedTags(new Set());
     setSaving(false);
     onOpenChange(false);
     onCreated();
@@ -469,10 +557,120 @@ function CampaignCreator({
                 ))}
               </div>
             )}
+
+            {/* ── Media Attachment ── */}
+            <div className="space-y-3 border rounded-xl p-4 bg-muted/30">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold flex items-center gap-1.5">
+                  <Image className="h-4 w-4 text-primary" /> Anexo de mídia <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
+                </Label>
+                {mediaType && (
+                  <Button size="sm" variant="ghost" onClick={() => { setMediaType(null); setMediaUrl(''); }} className="gap-1 text-xs h-7">
+                    <X className="h-3 w-3" /> Remover
+                  </Button>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {(['image', 'audio', 'document'] as const).map(type => (
+                  <Button
+                    key={type}
+                    size="sm"
+                    variant={mediaType === type ? 'default' : 'outline'}
+                    onClick={() => setMediaType(mediaType === type ? null : type)}
+                    className="gap-1.5 text-xs"
+                  >
+                    {type === 'image' && <Image className="h-3 w-3" />}
+                    {type === 'audio' && <Mic className="h-3 w-3" />}
+                    {type === 'document' && <File className="h-3 w-3" />}
+                    {type === 'image' ? 'Imagem' : type === 'audio' ? 'Áudio' : 'Arquivo'}
+                  </Button>
+                ))}
+              </div>
+              {mediaType && (
+                <div className="space-y-1">
+                  <Label className="text-xs">URL do {mediaType === 'image' ? 'imagem' : mediaType === 'audio' ? 'áudio' : 'arquivo'}</Label>
+                  <Input
+                    placeholder={mediaType === 'image' ? 'https://exemplo.com/imagem.jpg' : mediaType === 'audio' ? 'https://exemplo.com/audio.mp3' : 'https://exemplo.com/documento.pdf'}
+                    value={mediaUrl}
+                    onChange={e => setMediaUrl(e.target.value)}
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    {mediaType === 'image' ? 'Formatos: JPG, PNG, WEBP' : mediaType === 'audio' ? 'Formatos: MP3, OGG, WAV' : 'Formatos: PDF, DOC, XLS, etc.'}
+                    {mediaType !== 'audio' && ' • A mensagem de texto será enviada como legenda'}
+                  </p>
+                </div>
+              )}
+            </div>
           </TabsContent>
 
           {/* ── Contatos ── */}
           <TabsContent value="contacts" className="space-y-4 mt-4">
+            {/* Segment picker */}
+            {(savedLists.length > 0 || savedTags.length > 0) && (
+              <div className="border rounded-xl p-4 bg-primary/5 space-y-3">
+                <Label className="text-sm font-semibold flex items-center gap-1.5">
+                  <Users className="h-4 w-4 text-primary" /> Carregar contatos salvos
+                </Label>
+                {savedLists.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Listas</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {savedLists.map(list => (
+                        <Badge
+                          key={list.id}
+                          variant={selectedListIds.has(list.id) ? 'default' : 'outline'}
+                          className="cursor-pointer text-xs hover:bg-primary/20 transition-colors"
+                          onClick={() => {
+                            setSelectedListIds(prev => {
+                              const next = new Set(prev);
+                              if (next.has(list.id)) next.delete(list.id); else next.add(list.id);
+                              return next;
+                            });
+                          }}
+                        >
+                          <FolderOpen className="h-3 w-3 mr-1" />
+                          {list.name} ({list.count})
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {savedTags.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Tags</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {savedTags.map(tag => (
+                        <Badge
+                          key={tag}
+                          variant={selectedTags.has(tag) ? 'default' : 'outline'}
+                          className="cursor-pointer text-xs hover:bg-primary/20 transition-colors"
+                          onClick={() => {
+                            setSelectedTags(prev => {
+                              const next = new Set(prev);
+                              if (next.has(tag)) next.delete(tag); else next.add(tag);
+                              return next;
+                            });
+                          }}
+                        >
+                          <Tag className="h-3 w-3 mr-1" />
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <Button
+                  size="sm"
+                  onClick={loadFromSegments}
+                  disabled={loadingSegments || (selectedListIds.size === 0 && selectedTags.size === 0)}
+                  className="gap-1.5 text-xs"
+                >
+                  {loadingSegments ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                  Carregar contatos selecionados
+                </Button>
+              </div>
+            )}
+
             <div className="flex flex-col sm:flex-row gap-3">
               <label className="flex-1">
                 <div className="flex items-center gap-2 px-4 py-3 border-2 border-dashed rounded-xl cursor-pointer hover:bg-muted/50 transition-colors text-center justify-center">
