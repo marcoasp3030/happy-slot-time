@@ -48,6 +48,13 @@ interface Message {
   company_id: string;
 }
 
+interface ReplyTo {
+  id: string;
+  content: string | null;
+  direction: string;
+  message_type: string;
+}
+
 // ── Helpers ────────────────────────────────────────────
 const EMOJI_LIST = ['😀','😂','❤️','👍','👋','🔥','🎉','😢','😮','🙏','✅','❌','👏','💪','🤔','😎','🥰','😡','💯','⭐'];
 const QUICK_REACTIONS = ['👍','❤️','😂','😮','😢','🙏'];
@@ -145,14 +152,28 @@ function InteractiveButtons({ metadata, onButtonClick }: { metadata: any; onButt
 
 // ── Message Bubble ────────────────────────────────────
 const MessageBubble = memo(function MessageBubble({
-  message, onReact, onButtonClick,
+  message, onReact, onButtonClick, onReply, allMessages,
 }: {
   message: Message;
   onReact: (emoji: string) => void;
   onButtonClick?: (text: string) => void;
+  onReply?: (msg: Message) => void;
+  allMessages?: Message[];
 }) {
   const isOutgoing = message.direction === 'outgoing';
   const [showReactions, setShowReactions] = useState(false);
+
+  // Check if this message is a reply (has quoted message in metadata)
+  const quotedMsg = (() => {
+    if (!message.metadata) return null;
+    let meta = message.metadata;
+    if (typeof meta === 'string') { try { meta = JSON.parse(meta); } catch { return null; } }
+    const quotedId = meta?.quoted_message_id || meta?.contextInfo?.stanzaId;
+    if (quotedId && allMessages) {
+      return allMessages.find(m => m.wa_message_id === quotedId || m.id === quotedId);
+    }
+    return null;
+  })();
 
   const renderContent = () => {
     if (message.message_type === 'image' && message.media_url) {
@@ -210,6 +231,23 @@ const MessageBubble = memo(function MessageBubble({
             : "bg-card text-foreground rounded-lg rounded-tl-none border border-border/20"
         )}
       >
+        {/* Quoted message */}
+        {quotedMsg && (
+          <div className={cn(
+            "rounded-md px-2.5 py-1.5 mb-1.5 border-l-[3px] cursor-pointer",
+            isOutgoing
+              ? "bg-white/10 border-white/50"
+              : "bg-muted/60 border-primary/60"
+          )}>
+            <p className={cn("text-[10px] font-semibold", isOutgoing ? "text-white/70" : "text-primary")}>
+              {quotedMsg.direction === 'incoming' ? 'Cliente' : 'Você'}
+            </p>
+            <p className={cn("text-[11px] truncate", isOutgoing ? "text-white/60" : "text-muted-foreground")}>
+              {quotedMsg.message_type !== 'text' ? `📎 ${quotedMsg.message_type}` : (quotedMsg.content?.substring(0, 80) || '')}
+            </p>
+          </div>
+        )}
+
         {renderContent()}
 
         {/* Interactive buttons */}
@@ -224,11 +262,21 @@ const MessageBubble = memo(function MessageBubble({
           {isOutgoing && <DeliveryIcon status={message.delivery_status} />}
         </div>
 
-        {/* Reaction popover on hover */}
+        {/* Reaction + Reply popover on hover */}
         <div className={cn(
-          "absolute -bottom-3 opacity-0 group-hover:opacity-100 transition-all z-10",
+          "absolute -bottom-3 opacity-0 group-hover:opacity-100 transition-all z-10 flex gap-1",
           isOutgoing ? "left-0" : "right-0"
         )}>
+          {/* Reply button */}
+          {onReply && (
+            <button
+              onClick={() => onReply(message)}
+              className="bg-card border border-border/60 rounded-full p-1 shadow-md hover:shadow-lg transition-shadow"
+              title="Responder"
+            >
+              <ArrowLeft className="h-3.5 w-3.5 text-muted-foreground rotate-[225deg]" />
+            </button>
+          )}
           <Popover open={showReactions} onOpenChange={setShowReactions}>
             <PopoverTrigger asChild>
               <button className="bg-card border border-border/60 rounded-full p-1 shadow-md hover:shadow-lg transition-shadow">
@@ -270,8 +318,11 @@ export default function Chat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const selectedConvRef = useRef<Conversation | null>(null);
-  // Track all conversation IDs for the selected phone (unified view)
   const selectedPhoneConvIdsRef = useRef<string[]>([]);
+  const [replyTo, setReplyTo] = useState<ReplyTo | null>(null);
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [hasOlderMsgs, setHasOlderMsgs] = useState(true);
+  const [loadingOlder, setLoadingOlder] = useState(false);
 
   const addDebugLog = useCallback((msg: string) => {
     const ts = new Date().toLocaleTimeString('pt-BR');
@@ -325,32 +376,55 @@ export default function Chat() {
   useEffect(() => { conversationsRef.current = conversations; }, [conversations]);
 
   // Load messages for selected conversation (unified: load from ALL conversations with same phone)
-  const loadMessages = useCallback(async (phone: string) => {
+  const loadMessages = useCallback(async (phone: string, olderThan?: string) => {
     if (!companyId) return;
-    setLoadingMsgs(true);
-    // Find all conversation IDs for this phone using ref (no dependency on conversations state)
+    if (!olderThan) setLoadingMsgs(true);
+    else setLoadingOlder(true);
+
     const convIds = conversationsRef.current.filter(c => c.phone === phone).map(c => c.id);
     selectedPhoneConvIdsRef.current = convIds;
     
     if (convIds.length === 0) {
       setMessages([]);
       setLoadingMsgs(false);
+      setLoadingOlder(false);
       return;
     }
 
-    const { data } = await supabase
+    let query = supabase
       .from('whatsapp_messages')
       .select('*')
       .in('conversation_id', convIds)
       .not('delivery_status', 'eq', 'locking')
       .not('delivery_status', 'eq', 'processing')
       .not('content', 'eq', '__DEBOUNCE_LOCK__')
-      .not('content', 'eq', '__PROCESSING__')
-      .order('created_at', { ascending: true })
-      .limit(500);
-    if (data) setMessages(data as Message[]);
-    setLoadingMsgs(false);
-    addDebugLog(`Carregou ${data?.length || 0} msgs de ${convIds.length} conversas (tel: ${phone})`);
+      .not('content', 'eq', '__PROCESSING__');
+
+    if (olderThan) {
+      query = query.lt('created_at', olderThan).order('created_at', { ascending: false }).limit(50);
+    } else {
+      query = query.order('created_at', { ascending: true }).limit(100);
+    }
+
+    const { data } = await query;
+
+    if (olderThan) {
+      if (data && data.length > 0) {
+        const sorted = data.reverse();
+        setMessages(prev => [...sorted as Message[], ...prev]);
+        setHasOlderMsgs(data.length >= 50);
+      } else {
+        setHasOlderMsgs(false);
+      }
+      setLoadingOlder(false);
+    } else {
+      if (data) {
+        setMessages(data as Message[]);
+        setHasOlderMsgs(data.length >= 100);
+      }
+      setLoadingMsgs(false);
+    }
+    addDebugLog(`Carregou ${data?.length || 0} msgs de ${convIds.length} conversas (tel: ${phone})${olderThan ? ' [older]' : ''}`);
   }, [companyId, addDebugLog]);
 
   // Only reload messages when user explicitly switches conversation
@@ -392,7 +466,28 @@ export default function Chat() {
   }, [messages]);
 
   // Reset first load flag when switching conversations
-  useEffect(() => { isFirstLoad.current = true; prevMsgCount.current = 0; }, [selectedConv?.phone]);
+  useEffect(() => { isFirstLoad.current = true; prevMsgCount.current = 0; setHasOlderMsgs(true); setReplyTo(null); }, [selectedConv?.phone]);
+
+  // Scroll to top → load older messages
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      if (container.scrollTop < 60 && hasOlderMsgs && !loadingOlder && messages.length > 0 && selectedConvRef.current) {
+        const oldestMsg = messages[0];
+        if (oldestMsg) {
+          const prevHeight = container.scrollHeight;
+          loadMessages(selectedConvRef.current.phone, oldestMsg.created_at).then(() => {
+            requestAnimationFrame(() => {
+              container.scrollTop = container.scrollHeight - prevHeight;
+            });
+          });
+        }
+      }
+    };
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [hasOlderMsgs, loadingOlder, messages, loadMessages]);
 
   // Realtime - single stable connection, no polling that causes page movement
   useEffect(() => {
@@ -418,14 +513,23 @@ export default function Chat() {
             return;
           }
           const convIds = selectedPhoneConvIdsRef.current;
+          const isForActiveChat = convIds.includes(msg.conversation_id);
           setMessages(prev => {
             if (prev.some(m => m.id === msg.id)) return prev;
-            if (convIds.includes(msg.conversation_id)) {
+            if (isForActiveChat) {
               addDebugLog(`  → Adicionada ao chat ativo ✅`);
               return [...prev, msg];
             }
             return prev;
           });
+          // Increment unread count for non-active conversations (incoming only)
+          if (!isForActiveChat && msg.direction === 'incoming') {
+            // Find which phone this conv belongs to
+            const conv = conversationsRef.current.find(c => c.id === msg.conversation_id);
+            if (conv) {
+              setUnreadCounts(prev => ({ ...prev, [conv.phone]: (prev[conv.phone] || 0) + 1 }));
+            }
+          }
           loadConversations();
         })
         .on('postgres_changes', {
@@ -475,19 +579,27 @@ export default function Chat() {
   const handleSend = async () => {
     if (!messageText.trim() || !selectedConv || sending) return;
     const text = messageText.trim();
+    const currentReply = replyTo;
     setMessageText('');
+    setReplyTo(null);
     setSending(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('chat-send', {
-        body: {
-          action: 'send-text',
-          phone: selectedConv.phone,
-          message: text,
-          conversation_id: selectedConv.id,
-          instance_id: selectedConv.instance_id,
-        },
-      });
+      const body: any = {
+        action: 'send-text',
+        phone: selectedConv.phone,
+        message: text,
+        conversation_id: selectedConv.id,
+        instance_id: selectedConv.instance_id,
+      };
+      // Include quoted message if replying
+      if (currentReply) {
+        const originalMsg = messages.find(m => m.id === currentReply.id);
+        if (originalMsg?.wa_message_id) {
+          body.quoted_message_id = originalMsg.wa_message_id;
+        }
+      }
+      const { data, error } = await supabase.functions.invoke('chat-send', { body });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
     } catch (err: any) {
@@ -568,6 +680,12 @@ export default function Chat() {
   const selectConversation = (conv: Conversation) => {
     setSelectedConv(conv);
     setShowMobileChat(true);
+    // Clear unread count for this conversation
+    setUnreadCounts(prev => {
+      const next = { ...prev };
+      delete next[conv.phone];
+      return next;
+    });
   };
 
   // Filter conversations (use unified list)
@@ -676,12 +794,19 @@ export default function Chat() {
                       </Avatar>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
-                          <p className="font-medium text-[15px] text-foreground truncate">
+                          <p className={cn("font-medium text-[15px] truncate", unreadCounts[conv.phone] ? "text-foreground" : "text-foreground")}>
                             {conv.client_name || formatPhoneDisplay(conv.phone)}
                           </p>
-                          <span className="text-[11px] text-muted-foreground flex-shrink-0 ml-2">
-                            {formatConvDate(conv.last_message_at)}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                            {unreadCounts[conv.phone] && (
+                              <span className="min-w-[20px] h-5 flex items-center justify-center rounded-full bg-primary text-primary-foreground text-[11px] font-bold px-1.5">
+                                {unreadCounts[conv.phone]}
+                              </span>
+                            )}
+                            <span className={cn("text-[11px] flex-shrink-0", unreadCounts[conv.phone] ? "text-primary font-semibold" : "text-muted-foreground")}>
+                              {formatConvDate(conv.last_message_at)}
+                            </span>
+                          </div>
                         </div>
                         <div className="flex items-center gap-1.5 mt-0.5">
                           <p className="text-[13px] text-muted-foreground truncate flex-1">
@@ -762,6 +887,22 @@ export default function Chat() {
 
               {/* Messages area - WhatsApp-style background */}
               <div ref={messagesContainerRef} className="flex-1 overflow-y-auto py-3 chat-messages-bg">
+                {/* Load older messages indicator */}
+                {loadingOlder && (
+                  <div className="flex justify-center py-3">
+                    <div className="animate-pulse text-muted-foreground text-xs bg-card/80 px-3 py-1 rounded-full shadow-sm">Carregando anteriores...</div>
+                  </div>
+                )}
+                {!loadingOlder && hasOlderMsgs && messages.length > 0 && (
+                  <div className="flex justify-center py-2">
+                    <button
+                      onClick={() => selectedConv && messages[0] && loadMessages(selectedConv.phone, messages[0].created_at)}
+                      className="text-xs text-primary hover:underline"
+                    >
+                      ↑ Carregar mensagens anteriores
+                    </button>
+                  </div>
+                )}
                 {loadingMsgs ? (
                   <div className="flex items-center justify-center py-16">
                     <div className="animate-pulse text-muted-foreground text-sm">Carregando mensagens...</div>
@@ -786,6 +927,8 @@ export default function Chat() {
                           message={msg}
                           onReact={(emoji) => handleReaction(msg, emoji)}
                           onButtonClick={handleButtonClick}
+                          onReply={(m) => setReplyTo({ id: m.id, content: m.content, direction: m.direction, message_type: m.message_type })}
+                          allMessages={messages}
                         />
                       ))}
                     </div>
@@ -793,6 +936,23 @@ export default function Chat() {
                 )}
                 <div ref={messagesEndRef} />
               </div>
+
+              {/* Reply preview bar */}
+              {replyTo && (
+                <div className="flex items-center gap-2 px-4 py-2 bg-muted/60 border-t border-border/20 flex-shrink-0">
+                  <div className="flex-1 min-w-0 border-l-[3px] border-primary pl-2.5">
+                    <p className="text-[11px] font-semibold text-primary">
+                      {replyTo.direction === 'incoming' ? 'Cliente' : 'Você'}
+                    </p>
+                    <p className="text-[12px] text-muted-foreground truncate">
+                      {replyTo.message_type !== 'text' ? `📎 ${replyTo.message_type}` : (replyTo.content?.substring(0, 100) || '')}
+                    </p>
+                  </div>
+                  <button onClick={() => setReplyTo(null)} className="text-muted-foreground hover:text-foreground p-1">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
 
               {/* Input area - WhatsApp Web style */}
               <div className="flex items-center gap-2 px-4 py-2.5 bg-muted/40 border-t border-border/20 flex-shrink-0">
