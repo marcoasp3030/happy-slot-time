@@ -320,12 +320,16 @@ export default function Chat() {
 
   useEffect(() => { loadConversations(); }, [loadConversations]);
 
+  // Ref to always have fresh conversations without causing loadMessages to re-create
+  const conversationsRef = useRef<Conversation[]>([]);
+  useEffect(() => { conversationsRef.current = conversations; }, [conversations]);
+
   // Load messages for selected conversation (unified: load from ALL conversations with same phone)
   const loadMessages = useCallback(async (phone: string) => {
     if (!companyId) return;
     setLoadingMsgs(true);
-    // Find all conversation IDs for this phone
-    const convIds = conversations.filter(c => c.phone === phone).map(c => c.id);
+    // Find all conversation IDs for this phone using ref (no dependency on conversations state)
+    const convIds = conversationsRef.current.filter(c => c.phone === phone).map(c => c.id);
     selectedPhoneConvIdsRef.current = convIds;
     
     if (convIds.length === 0) {
@@ -347,11 +351,20 @@ export default function Chat() {
     if (data) setMessages(data as Message[]);
     setLoadingMsgs(false);
     addDebugLog(`Carregou ${data?.length || 0} msgs de ${convIds.length} conversas (tel: ${phone})`);
-  }, [companyId, conversations, addDebugLog]);
+  }, [companyId, addDebugLog]);
 
+  // Only reload messages when user explicitly switches conversation
   useEffect(() => {
     if (selectedConv) loadMessages(selectedConv.phone);
-  }, [selectedConv?.phone, loadMessages]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedConv?.phone]);
+
+  // Keep convIds ref updated when conversations change (e.g. new conv for same phone)
+  useEffect(() => {
+    if (selectedConv) {
+      selectedPhoneConvIdsRef.current = conversations.filter(c => c.phone === selectedConv.phone).map(c => c.id);
+    }
+  }, [conversations, selectedConv?.phone]);
   // Ref for the scrollable messages container
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const isFirstLoad = useRef(true);
