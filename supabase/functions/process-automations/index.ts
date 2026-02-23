@@ -20,7 +20,7 @@ Deno.serve(async (req) => {
     );
 
     const body = await req.json();
-    const { event_type, company_id, phone, contact_name, value, instance_id } = body;
+    const { event_type, company_id, phone, contact_name, value, instance_id, campaign_id, flow_id } = body;
 
     // event_type: "button_click" | "text_reply" | "menu_select" | "timeout"
     // value: the button text, keyword matched, menu option selected, etc.
@@ -32,26 +32,171 @@ Deno.serve(async (req) => {
       });
     }
 
-    log("📥 Event:", event_type, "company:", company_id, "phone:", phone, "value:", value);
+    log("📥 Event:", event_type, "company:", company_id, "phone:", phone, "value:", value, "flow_id:", flow_id, "campaign_id:", campaign_id);
 
     // Find active automation flows for this company
-    const { data: flows } = await supabase
+    let flowsQuery = supabase
       .from("automation_flows")
       .select("*")
       .eq("company_id", company_id)
       .eq("active", true);
 
+    // If a specific flow_id is provided (from mass campaign), filter to that flow only
+    if (flow_id) {
+      flowsQuery = flowsQuery.eq("id", flow_id);
+    } else if (campaign_id) {
+      flowsQuery = flowsQuery.eq("campaign_id", campaign_id);
+    }
+
+    const { data: flows } = await flowsQuery;
+
     if (!flows || flows.length === 0) {
+      log("⚠️ No active flows found for company:", company_id, "flow_id:", flow_id, "campaign_id:", campaign_id);
       return new Response(JSON.stringify({ ok: true, matched: 0 }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    
+    log("📋 Found", flows.length, "active flows to process");
 
     let totalExecuted = 0;
 
     for (const flow of flows) {
       const nodes: any[] = flow.nodes || [];
       const edges: any[] = flow.edges || [];
+
+      // If called directly from mass campaign with flow_id, execute all action nodes
+      // that are entry points (not connected from other action nodes) without requiring trigger match
+      const isDirectCampaignExecution = !!flow_id && !!campaign_id;
+      
+      if (isDirectCampaignExecution) {
+        log("🚀 Direct campaign execution for flow:", flow.name);
+        
+        // Find all action/condition nodes that are entry points (source of edges from no other action node)
+        // Or simply find nodes that have no incoming edges (root nodes) and are action types
+        const targetNodeIds = new Set(edges.map((e: any) => e.target));
+        const sourceNodeIds = new Set(edges.map((e: any) => e.source));
+        
+        // Get all action nodes
+        const actionNodes = nodes.filter((n: any) => {
+          const nt = n.data?.nodeType || "";
+          return nt.startsWith("action_") || nt === "condition";
+        });
+        
+        // Find root action nodes: either they have no incoming edge, or their only incoming edges are from trigger nodes
+        const triggerNodeIds = new Set(
+          nodes.filter((n: any) => (n.data?.nodeType || "").startsWith("trigger_")).map((n: any) => n.id)
+        );
+        
+        // Start points: action nodes whose incoming edges all come from triggers (or have no incoming edges)
+        const startNodes = actionNodes.filter((n: any) => {
+          const incomingEdges = edges.filter((e: any) => e.target === n.id);
+          if (incomingEdges.length === 0) return true; // No incoming = root action
+          return incomingEdges.every((e: any) => triggerNodeIds.has(e.source));
+        });
+        
+        if (startNodes.length === 0) {
+          // Fallback: just get first action nodes connected from any trigger
+          const triggerConnectedIds = edges
+            .filter((e: any) => triggerNodeIds.has(e.source))
+            .map((e: any) => e.target);
+          
+          for (const targetId of triggerConnectedIds) {
+            const targetNode = nodes.find((n: any) => n.id === targetId);
+            if (targetNode) startNodes.push(targetNode);
+          }
+        }
+        
+        log("📌 Found", startNodes.length, "entry action nodes");
+        
+        // Execute from each start node, walking the graph
+        const visited = new Set<string>();
+        const queue = [...startNodes.map((n: any) => n.id)];
+        
+        while (queue.length > 0) {
+          const currentId = queue.shift()!;
+          if (visited.has(currentId)) continue;
+          visited.add(currentId);
+          
+          const currentNode = nodes.find((n: any) => n.id === currentId);
+          if (!currentNode) continue;
+          
+          const actionType = currentNode.data?.nodeType;
+          if (!actionType || actionType.startsWith("trigger_")) {
+            // Skip trigger nodes, just follow edges
+            const outgoing = edges.filter((e: any) => e.source === currentId);
+            for (const edge of outgoing) {
+              if (!visited.has(edge.target)) queue.push(edge.target);
+            }
+            continue;
+          }
+          
+          const actionConfig = currentNode.data?.config || {};
+          
+          try {
+            // Handle condition nodes
+            if (actionType === "condition") {
+              const condResult = await evaluateCondition(supabase, actionConfig, company_id, phone, value);
+              log("🔀 Condition result:", condResult, "for node:", currentId);
+              
+              // Follow true or false handle
+              const outgoing = edges.filter((e: any) => e.source === currentId);
+              for (const edge of outgoing) {
+                const handleId = edge.sourceHandle;
+                if ((condResult && handleId === "true") || (!condResult && handleId === "false") || !handleId) {
+                  if (!visited.has(edge.target)) queue.push(edge.target);
+                }
+              }
+            } else {
+              await executeAction(supabase, {
+                actionType,
+                config: actionConfig,
+                companyId: company_id,
+                phone,
+                contactName: contact_name,
+                instanceId: instance_id,
+              });
+              
+              // Follow edges
+              const outgoing = edges.filter((e: any) => e.source === currentId);
+              for (const edge of outgoing) {
+                if (!visited.has(edge.target)) queue.push(edge.target);
+              }
+            }
+            
+            await supabase.from("automation_logs").insert({
+              flow_id: flow.id,
+              company_id,
+              contact_phone: phone,
+              contact_name: contact_name || null,
+              trigger_type: "campaign_send",
+              trigger_value: campaign_id,
+              node_id: currentId,
+              action_type: actionType,
+              status: "executed",
+            });
+            
+            totalExecuted++;
+            log("⚡ Executed action:", actionType, "for", phone);
+          } catch (err: any) {
+            log("❌ Action failed:", actionType, err.message);
+            await supabase.from("automation_logs").insert({
+              flow_id: flow.id,
+              company_id,
+              contact_phone: phone,
+              contact_name: contact_name || null,
+              trigger_type: "campaign_send",
+              trigger_value: campaign_id,
+              node_id: currentId,
+              action_type: actionType,
+              status: "error",
+              error_message: err.message?.substring(0, 500),
+            });
+          }
+        }
+        
+        continue; // Skip normal trigger matching for this flow
+      }
 
       // Map trigger type to node type
       const triggerNodeType = {
@@ -112,30 +257,47 @@ Deno.serve(async (req) => {
             const actionConfig = targetNode.data?.config || {};
 
             try {
-              await executeAction(supabase, {
-                actionType,
-                config: actionConfig,
-                companyId: company_id,
-                phone,
-                contactName: contact_name,
-                instanceId: instance_id,
-              });
+              if (actionType === "condition") {
+                const condResult = await evaluateCondition(supabase, actionConfig, company_id, phone, value);
+                log("🔀 Condition result:", condResult, "for node:", targetNode.id);
+                
+                const condOutgoing = edges.filter((e: any) => e.source === targetNode.id);
+                for (const condEdge of condOutgoing) {
+                  const handleId = condEdge.sourceHandle;
+                  if ((condResult && handleId === "true") || (!condResult && handleId === "false") || !handleId) {
+                    if (!visited.has(condEdge.target)) queue.push(condEdge.target);
+                  }
+                }
+                visited.add(targetNode.id);
+              } else {
+                await executeAction(supabase, {
+                  actionType,
+                  config: actionConfig,
+                  companyId: company_id,
+                  phone,
+                  contactName: contact_name,
+                  instanceId: instance_id,
+                });
 
-              // Log success
-              await supabase.from("automation_logs").insert({
-                flow_id: flow.id,
-                company_id,
-                contact_phone: phone,
-                contact_name: contact_name || null,
-                trigger_type: event_type,
-                trigger_value: value || null,
-                node_id: targetNode.id,
-                action_type: actionType,
-                status: "executed",
-              });
+                // Log success
+                await supabase.from("automation_logs").insert({
+                  flow_id: flow.id,
+                  company_id,
+                  contact_phone: phone,
+                  contact_name: contact_name || null,
+                  trigger_type: event_type,
+                  trigger_value: value || null,
+                  node_id: targetNode.id,
+                  action_type: actionType,
+                  status: "executed",
+                });
 
-              totalExecuted++;
-              log("⚡ Executed action:", actionType, "for", phone);
+                totalExecuted++;
+                log("⚡ Executed action:", actionType, "for", phone);
+                
+                // Add target to queue so we continue walking
+                queue.push(targetNode.id);
+              }
             } catch (err: any) {
               log("❌ Action failed:", actionType, err.message);
               await supabase.from("automation_logs").insert({
@@ -151,9 +313,6 @@ Deno.serve(async (req) => {
                 error_message: err.message?.substring(0, 500),
               });
             }
-
-            // Add target to queue so we continue walking
-            queue.push(targetNode.id);
           }
         }
       }
@@ -171,6 +330,48 @@ Deno.serve(async (req) => {
     });
   }
 });
+
+// ─── Evaluate condition nodes ───
+
+async function evaluateCondition(
+  supabase: any,
+  config: any,
+  companyId: string,
+  phone: string,
+  value?: string
+): Promise<boolean> {
+  const condType = config.conditionType || "text_contains";
+  const condValue = (config.conditionValue || "").trim();
+  
+  if (condType === "has_tag") {
+    const { data } = await supabase
+      .from("contact_tags")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("phone", phone)
+      .eq("tag", condValue)
+      .maybeSingle();
+    return !!data;
+  } else if (condType === "has_appointment") {
+    const today = new Date().toISOString().split("T")[0];
+    const { data } = await supabase
+      .from("appointments")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("client_phone", phone)
+      .gte("appointment_date", today)
+      .in("status", ["pending", "confirmed"])
+      .limit(1);
+    return !!(data && data.length > 0);
+  } else if (condType === "text_contains") {
+    if (!condValue) return true;
+    return (value || "").toLowerCase().includes(condValue.toLowerCase());
+  } else if (condType === "text_equals") {
+    return (value || "").toLowerCase().trim() === condValue.toLowerCase();
+  }
+  
+  return false;
+}
 
 // ─── Execute actions ───
 

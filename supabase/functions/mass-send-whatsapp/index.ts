@@ -303,6 +303,40 @@ async function processCampaign(supabase: any, campaign: any) {
         sentCount++;
         dailySent++;
         log(`✅ Sent to: ${contact.phone} (${sentCount}/${campaign.total_contacts}) via ${ws.instance_id}`);
+
+        // ── Trigger linked automation flow (fire-and-forget) ──
+        try {
+          // Check if this campaign has a linked automation flow
+          const { data: linkedFlow } = await supabase
+            .from("automation_flows")
+            .select("id")
+            .eq("campaign_id", campaignId)
+            .eq("active", true)
+            .maybeSingle();
+
+          if (linkedFlow) {
+            const autoUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/process-automations`;
+            fetch(autoUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+              },
+              body: JSON.stringify({
+                event_type: "text_reply",
+                company_id: campaign.company_id,
+                phone: contact.phone,
+                contact_name: contact.name,
+                value: campaign.message_text.replace(/\{\{nome\}\}/gi, contact.name),
+                instance_id: campaign.instance_id || null,
+                campaign_id: campaignId,
+                flow_id: linkedFlow.id,
+              }),
+            }).catch((e: any) => log("⚠️ Automation trigger error (ignored):", e.message));
+          }
+        } catch (autoErr: any) {
+          log("⚠️ Automation lookup error (ignored):", autoErr.message);
+        }
       } catch (err: any) {
         failedCount++;
         await supabase.from("mass_campaign_contacts").update({
