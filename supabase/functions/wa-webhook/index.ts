@@ -696,6 +696,41 @@ Deno.serve(async (req) => {
     const btnResponse = extractButtonResponse(body);
     const effectiveMsg = msg || (audioInfo.isAudio ? "[áudio]" : mediaInfo.isMedia ? `[${mediaInfo.mediaType === "image" ? "imagem" : "documento"}]` : "");
 
+    // ── Automation triggers (fire-and-forget) ──
+    try {
+      const autoUrl = `${supabaseUrl}/functions/v1/process-automations`;
+      let eventType: string | null = null;
+      let eventValue: string | null = null;
+
+      if (btnResponse) {
+        // Check if it's a list or button response
+        const rawMsg = body.message;
+        const isListResponse = rawMsg?.listResponseId || rawMsg?.listResponseRowId;
+        eventType = isListResponse ? "menu_select" : "button_click";
+        eventValue = btnResponse.buttonText || btnResponse.buttonId;
+      } else if (effectiveMsg && !audioInfo.isAudio && !mediaInfo.isMedia) {
+        eventType = "text_reply";
+        eventValue = effectiveMsg;
+      }
+
+      if (eventType && companyId) {
+        fetch(autoUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+          body: JSON.stringify({
+            event_type: eventType,
+            company_id: companyId,
+            phone,
+            contact_name: body.pushName || body.senderName || null,
+            value: eventValue,
+            instance_id: resolvedInstanceId || null,
+          }),
+        }).catch((e) => log("⚠️ Automation trigger error (ignored):", e.message));
+      }
+    } catch (autoErr) {
+      log("⚠️ Automation trigger setup error (ignored):", autoErr);
+    }
+
     // ── Message Debounce / Aggregation (only for text, non-button messages) ──
     const isTextMsg = !audioInfo.isAudio && !mediaInfo.isMedia && !btnResponse;
     if (isTextMsg && effectiveMsg) {
