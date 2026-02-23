@@ -96,6 +96,13 @@ function CampaignCreator({
   const [manualName, setManualName] = useState('');
   const [manualPhone, setManualPhone] = useState('');
 
+  // Anti-ban settings
+  const [delayMin, setDelayMin] = useState(8);
+  const [delayMax, setDelayMax] = useState(25);
+  const [dailyLimit, setDailyLimit] = useState(300);
+  const [businessHoursOnly, setBusinessHoursOnly] = useState(true);
+  const [rotateInstances, setRotateInstances] = useState(false);
+
   useEffect(() => {
     if (companyId && open) {
       supabase.from('whatsapp_instances').select('id, label, instance_name, phone_number, status')
@@ -204,6 +211,11 @@ function CampaignCreator({
         list_sections: messageType === 'list' ? listSections : [],
         footer_text: footerText.trim() || null,
         delay_seconds: delaySeconds,
+        delay_min: delayMin,
+        delay_max: delayMax,
+        daily_limit: dailyLimit,
+        business_hours_only: businessHoursOnly,
+        rotate_instances: rotateInstances,
         total_contacts: contacts.length,
         scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
         status: scheduledAt ? 'scheduled' : 'draft',
@@ -439,14 +451,62 @@ function CampaignCreator({
             )}
 
             <div className="space-y-2">
-              <Label>Intervalo entre mensagens (segundos)</Label>
-              <Input type="number" min={5} max={120} value={delaySeconds} onChange={e => setDelaySeconds(Number(e.target.value))} />
-              <p className="text-xs text-muted-foreground">Recomendado: 10-30s para evitar bloqueios</p>
-            </div>
-
-            <div className="space-y-2">
               <Label>Agendamento <span className="text-xs text-muted-foreground">(deixe vazio para enviar agora)</span></Label>
               <Input type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} />
+            </div>
+
+            {/* ── Anti-ban Settings ── */}
+            <div className="border rounded-xl p-4 bg-amber-500/5 space-y-4">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-amber-500" />
+                <Label className="text-sm font-semibold text-amber-700 dark:text-amber-400">Proteção Anti-Bloqueio</Label>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Delay mínimo (seg)</Label>
+                  <Input type="number" min={3} max={120} value={delayMin} onChange={e => setDelayMin(Number(e.target.value))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Delay máximo (seg)</Label>
+                  <Input type="number" min={5} max={300} value={delayMax} onChange={e => setDelayMax(Number(e.target.value))} />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">Intervalo aleatório entre cada mensagem para simular comportamento humano</p>
+
+              <div className="space-y-1">
+                <Label className="text-xs">Limite diário por número</Label>
+                <Input type="number" min={50} max={1000} value={dailyLimit} onChange={e => setDailyLimit(Number(e.target.value))} />
+                <p className="text-xs text-muted-foreground">Ao atingir o limite, a campanha pausa e continua no dia seguinte</p>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-xs font-medium">Apenas em horário comercial</Label>
+                  <p className="text-xs text-muted-foreground">Envia somente entre 8h-20h, seg-sex</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={businessHoursOnly}
+                  onChange={e => setBusinessHoursOnly(e.target.checked)}
+                  className="h-4 w-4 rounded border-muted-foreground accent-primary"
+                />
+              </div>
+
+              {instances.length > 1 && (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-xs font-medium">Rotação de instâncias</Label>
+                    <p className="text-xs text-muted-foreground">Alterna entre {instances.length} números para diluir volume</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={rotateInstances}
+                    onChange={e => setRotateInstances(e.target.checked)}
+                    className="h-4 w-4 rounded border-muted-foreground accent-primary"
+                  />
+                </div>
+              )}
             </div>
           </TabsContent>
         </Tabs>
