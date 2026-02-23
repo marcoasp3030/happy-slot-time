@@ -254,6 +254,7 @@ const MessageBubble = memo(function MessageBubble({
 export default function Chat() {
   const { companyId } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [unifiedConversations, setUnifiedConversations] = useState<Conversation[]>([]);
   const [selectedConv, setSelectedConv] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [messageText, setMessageText] = useState('');
@@ -263,12 +264,39 @@ export default function Chat() {
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [instances, setInstances] = useState<any[]>([]);
   const [showMobileChat, setShowMobileChat] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const [rtStatus, setRtStatus] = useState<string>('DISCONNECTED');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const selectedConvRef = useRef<Conversation | null>(null);
+  // Track all conversation IDs for the selected phone (unified view)
+  const selectedPhoneConvIdsRef = useRef<string[]>([]);
+
+  const addDebugLog = useCallback((msg: string) => {
+    const ts = new Date().toLocaleTimeString('pt-BR');
+    setDebugLogs(prev => [`[${ts}] ${msg}`, ...prev].slice(0, 100));
+  }, []);
 
   // Keep ref in sync
   useEffect(() => { selectedConvRef.current = selectedConv; }, [selectedConv]);
+
+  // Unify conversations by phone number (merge all instance conversations for same phone)
+  useEffect(() => {
+    const phoneMap = new Map<string, Conversation>();
+    for (const conv of conversations) {
+      const existing = phoneMap.get(conv.phone);
+      if (!existing || (conv.last_message_at && (!existing.last_message_at || conv.last_message_at > existing.last_message_at))) {
+        phoneMap.set(conv.phone, { ...conv, client_name: conv.client_name || existing?.client_name || null });
+      }
+    }
+    const unified = Array.from(phoneMap.values()).sort((a, b) => {
+      const ta = a.last_message_at || '';
+      const tb = b.last_message_at || '';
+      return tb.localeCompare(ta);
+    });
+    setUnifiedConversations(unified);
+  }, [conversations]);
 
   // Load conversations
   const loadConversations = useCallback(async () => {
@@ -292,25 +320,38 @@ export default function Chat() {
 
   useEffect(() => { loadConversations(); }, [loadConversations]);
 
-  // Load messages for selected conversation
-  const loadMessages = useCallback(async (convId: string) => {
+  // Load messages for selected conversation (unified: load from ALL conversations with same phone)
+  const loadMessages = useCallback(async (phone: string) => {
+    if (!companyId) return;
     setLoadingMsgs(true);
+    // Find all conversation IDs for this phone
+    const convIds = conversations.filter(c => c.phone === phone).map(c => c.id);
+    selectedPhoneConvIdsRef.current = convIds;
+    
+    if (convIds.length === 0) {
+      setMessages([]);
+      setLoadingMsgs(false);
+      return;
+    }
+
     const { data } = await supabase
       .from('whatsapp_messages')
       .select('*')
-      .eq('conversation_id', convId)
+      .in('conversation_id', convIds)
       .not('delivery_status', 'eq', 'locking')
+      .not('delivery_status', 'eq', 'processing')
       .not('content', 'eq', '__DEBOUNCE_LOCK__')
       .not('content', 'eq', '__PROCESSING__')
       .order('created_at', { ascending: true })
       .limit(500);
     if (data) setMessages(data as Message[]);
     setLoadingMsgs(false);
-  }, []);
+    addDebugLog(`Carregou ${data?.length || 0} msgs de ${convIds.length} conversas (tel: ${phone})`);
+  }, [companyId, conversations, addDebugLog]);
 
   useEffect(() => {
-    if (selectedConv) loadMessages(selectedConv.id);
-  }, [selectedConv, loadMessages]);
+    if (selectedConv) loadMessages(selectedConv.phone);
+  }, [selectedConv?.phone, loadMessages]);
 
   // Scroll to bottom
   useEffect(() => {
@@ -321,7 +362,7 @@ export default function Chat() {
   useEffect(() => {
     if (!companyId) return;
 
-    console.log('[Chat RT] Subscribing to realtime, companyId:', companyId);
+    addDebugLog(`Conectando realtime... companyId: ${companyId}`);
 
     const channel = supabase
       .channel(`chat-messages-${companyId}`)
@@ -330,13 +371,21 @@ export default function Chat() {
         filter: `company_id=eq.${companyId}`,
       }, (payload) => {
         const msg = payload.new as Message;
-        console.log('[Chat RT] INSERT whatsapp_messages:', msg?.id, msg?.direction, msg?.content?.substring(0, 50));
-        if (!msg || msg.content === '__DEBOUNCE_LOCK__' || msg.content === '__PROCESSING__' || msg.delivery_status === 'locking' || msg.delivery_status === 'processing') return;
+        addDebugLog(`INSERT msg: ${msg?.id?.slice(0,8)} dir=${msg?.direction} tipo=${msg?.message_type} status=${msg?.delivery_status} conv=${msg?.conversation_id?.slice(0,8)} content="${msg?.content?.substring(0, 40)}"`);
+        if (!msg || msg.content === '__DEBOUNCE_LOCK__' || msg.content === '__PROCESSING__' || msg.delivery_status === 'locking' || msg.delivery_status === 'processing') {
+          addDebugLog(`  → Ignorado (sistema interno)`);
+          return;
+        }
 
-        // Add to current chat if matches selected conversation
+        // Add to current chat if matches any conversation of selected phone
+        const convIds = selectedPhoneConvIdsRef.current;
         setMessages(prev => {
           if (prev.some(m => m.id === msg.id)) return prev;
-          if (msg.conversation_id === selectedConvRef.current?.id) return [...prev, msg];
+          if (convIds.includes(msg.conversation_id)) {
+            addDebugLog(`  → Adicionada ao chat ativo ✅`);
+            return [...prev, msg];
+          }
+          addDebugLog(`  → Conv diferente, ignorada no chat (atualiza lista)`);
           return prev;
         });
         // Always refresh conversation list (new message = updated timestamp)
@@ -348,22 +397,23 @@ export default function Chat() {
       }, (payload) => {
         const msg = payload.new as Message;
         if (!msg) return;
-        console.log('[Chat RT] UPDATE whatsapp_messages:', msg.id, 'status:', msg.delivery_status);
+        addDebugLog(`UPDATE msg: ${msg.id?.slice(0,8)} status=${msg.delivery_status}`);
         setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, ...msg } : m));
       })
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'whatsapp_conversations',
         filter: `company_id=eq.${companyId}`,
       }, (payload) => {
-        console.log('[Chat RT] whatsapp_conversations changed:', payload.eventType);
+        addDebugLog(`Conv ${payload.eventType}: ${(payload.new as any)?.id?.slice(0,8) || '?'}`);
         loadConversations();
       })
       .subscribe((status) => {
-        console.log('[Chat RT] Subscription status:', status);
+        setRtStatus(status);
+        addDebugLog(`Subscription: ${status}`);
       });
 
     return () => { supabase.removeChannel(channel); };
-  }, [companyId, loadConversations]);
+  }, [companyId, loadConversations, addDebugLog]);
 
   // Send message
   const handleSend = async () => {
@@ -464,8 +514,8 @@ export default function Chat() {
     setShowMobileChat(true);
   };
 
-  // Filter conversations
-  const filtered = conversations.filter(c => {
+  // Filter conversations (use unified list)
+  const filtered = unifiedConversations.filter(c => {
     const q = searchQuery.toLowerCase();
     if (!q) return true;
     return (c.client_name?.toLowerCase().includes(q)) || c.phone.includes(q);
@@ -504,7 +554,7 @@ export default function Chat() {
   return (
     <DashboardLayout>
       {/* Full-height container that fills the entire content area */}
-      <div className="h-[calc(100vh-4rem)] -m-4 lg:-m-8 flex overflow-hidden bg-background">
+      <div className="h-[calc(100vh-4rem)] -m-4 lg:-m-8 flex overflow-hidden bg-background relative pb-8">
         {/* ─── Left Panel: Conversations ─── */}
         <div className={cn(
           "w-full md:w-[420px] lg:w-[380px] flex-shrink-0 flex flex-col border-r border-border/40 bg-card",
@@ -520,7 +570,7 @@ export default function Chat() {
               </Avatar>
               <div>
                 <h2 className="text-base font-bold text-foreground">Conversas</h2>
-                <p className="text-[11px] text-muted-foreground">{conversations.length} conversas</p>
+                <p className="text-[11px] text-muted-foreground">{unifiedConversations.length} conversas</p>
               </div>
             </div>
           </div>
@@ -646,7 +696,7 @@ export default function Chat() {
                       <DropdownMenuItem onClick={() => { setSelectedConv(null); setShowMobileChat(false); }}>
                         Fechar conversa
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => loadMessages(selectedConv.id)}>
+                      <DropdownMenuItem onClick={() => loadMessages(selectedConv.phone)}>
                         Atualizar mensagens
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -739,6 +789,35 @@ export default function Chat() {
                 </Button>
               </div>
             </>
+          )}
+        </div>
+
+        {/* ─── Debug Panel ─── */}
+        <div className={cn(
+          "absolute bottom-0 left-0 right-0 bg-card border-t border-border z-50 transition-all",
+          showDebug ? "h-[200px]" : "h-8"
+        )}>
+          <button
+            onClick={() => setShowDebug(!showDebug)}
+            className={cn(
+              "w-full h-8 flex items-center justify-between px-4 text-xs font-mono",
+              rtStatus === 'SUBSCRIBED' ? "text-green-500" : "text-destructive"
+            )}
+          >
+            <span>🔌 RT: {rtStatus} | Conversas: {unifiedConversations.length} (raw: {conversations.length}) | Msgs: {messages.length}</span>
+            <span>{showDebug ? '▼ Fechar Debug' : '▲ Abrir Debug'}</span>
+          </button>
+          {showDebug && (
+            <ScrollArea className="h-[168px] px-4 py-1">
+              <div className="space-y-0.5 font-mono text-[11px] text-muted-foreground">
+                {debugLogs.map((log, i) => (
+                  <div key={i} className={cn(
+                    log.includes('✅') ? 'text-green-500' : log.includes('Ignorado') ? 'text-yellow-500' : ''
+                  )}>{log}</div>
+                ))}
+                {debugLogs.length === 0 && <div className="text-muted-foreground/50">Aguardando eventos...</div>}
+              </div>
+            </ScrollArea>
           )}
         </div>
       </div>

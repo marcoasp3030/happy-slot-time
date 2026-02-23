@@ -1372,12 +1372,8 @@ async function handleAgent(
   }
 
   log("🤖 Agent settings:", ag ? `enabled=${ag.enabled}` : "NOT FOUND", "error:", agErr?.message);
-  if (!ag?.enabled) {
-    log("🤖 Agent is DISABLED, skipping");
-    return { ok: true, skipped: "agent_disabled" };
-  }
 
-  // Get/create conversation — if agentOptions.existingConvId provided, use it directly
+  // Get/create conversation FIRST (needed even when agent is disabled to save incoming messages)
   let conv: any = null;
   if (agentOptions.existingConvId) {
     log("🤖 Using pre-existing conv from delay buffer:", agentOptions.existingConvId);
@@ -1633,6 +1629,16 @@ async function handleAgent(
   }
 
   await sb.from("whatsapp_conversations").update({ last_message_at: new Date().toISOString() }).eq("id", conv.id);
+
+  // ── Agent disabled check: message is saved, but skip AI response ──
+  if (!ag?.enabled) {
+    log("🤖 Agent is DISABLED — incoming message saved, skipping AI response");
+    // Release processing lock if acquired
+    if (agentOptions._lockMsgId) {
+      try { await sb.from("whatsapp_messages").delete().eq("id", agentOptions._lockMsgId); } catch {}
+    }
+    return { ok: true, skipped: "agent_disabled", conversation_id: conv.id };
+  }
 
   // Load context
   log("🤖 Loading context... instanceId:", agentOptions.instanceId || "company-default");
