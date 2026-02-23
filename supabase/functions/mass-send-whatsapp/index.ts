@@ -260,7 +260,10 @@ async function processCampaign(supabase: any, campaign: any) {
       try {
         const messageText = campaign.message_text.replace(/\{\{nome\}\}/gi, contact.name);
 
-        if (campaign.message_type === "text") {
+        // Send media first if present
+        if (campaign.media_url && campaign.media_type) {
+          await sendMedia(ws, contact.phone, campaign.media_url, campaign.media_type, messageText);
+        } else if (campaign.message_type === "text") {
           await sendText(ws, contact.phone, messageText);
         } else if (campaign.message_type === "button") {
           const btns = campaign.buttons || [];
@@ -404,6 +407,31 @@ async function sendText(ws: { base_url: string; token: string }, phone: string, 
   if (!res.ok) {
     const errText = await res.text();
     throw new Error(`Send error ${res.status}: ${errText.substring(0, 200)}`);
+  }
+}
+
+async function sendMedia(
+  ws: { base_url: string; token: string },
+  phone: string,
+  mediaUrl: string,
+  mediaType: string,
+  caption?: string
+) {
+  // mediaType: image, audio, document
+  const endpoint = mediaType === "audio" ? "/send/audio" : mediaType === "document" ? "/send/document" : "/send/image";
+  const url = ws.base_url.replace(/\/$/, "") + endpoint;
+  const body: any = { number: phone, url: mediaUrl };
+  if (caption && mediaType !== "audio") body.caption = caption;
+  if (mediaType === "document") body.fileName = "arquivo";
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", token: ws.token },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Media error ${res.status}: ${errText.substring(0, 200)}`);
   }
 }
 
