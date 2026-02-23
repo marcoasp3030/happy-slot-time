@@ -21,7 +21,11 @@ import {
 import {
   Send, Upload, Plus, Trash2, Clock, CheckCircle, XCircle,
   FileSpreadsheet, Users, MessageSquare, List, AlertCircle, Play, Ban, Eye, RefreshCw, Download, Zap,
+  Pencil, Copy,
 } from 'lucide-react';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
 
 // ─── Types ───
@@ -73,10 +77,12 @@ function CampaignCreator({
   open,
   onOpenChange,
   onCreated,
+  editCampaign,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onCreated: () => void;
+  editCampaign?: Campaign | null;
 }) {
   const { user, companyId } = useAuth();
   const { toast } = useToast();
@@ -104,6 +110,35 @@ function CampaignCreator({
   const [rotateInstances, setRotateInstances] = useState(false);
   const [automationFlowId, setAutomationFlowId] = useState<string | null>(null);
   const [automationFlows, setAutomationFlows] = useState<{ id: string; name: string }[]>([]);
+
+  // Populate form when editing
+  useEffect(() => {
+    if (editCampaign && open) {
+      setName(editCampaign.name);
+      setMessageText(editCampaign.message_text);
+      setMessageType(editCampaign.message_type || 'text');
+      setFooterText(editCampaign.footer_text || '');
+      setButtons(Array.isArray(editCampaign.buttons) ? editCampaign.buttons : []);
+      setListSections(Array.isArray(editCampaign.list_sections) && editCampaign.list_sections.length > 0
+        ? editCampaign.list_sections : [{ title: 'Opções', items: [] }]);
+      if (editCampaign.instance_id) setInstanceId(editCampaign.instance_id);
+    }
+  }, [editCampaign, open]);
+
+  // Reset form when closing without edit
+  useEffect(() => {
+    if (!open && !editCampaign) {
+      setName('');
+      setMessageText('');
+      setMessageType('text');
+      setFooterText('');
+      setButtons([]);
+      setListSections([{ title: 'Opções', items: [] }]);
+      setContacts([]);
+      setScheduledAt('');
+      setAutomationFlowId(null);
+    }
+  }, [open, editCampaign]);
 
   useEffect(() => {
     if (companyId && open) {
@@ -197,72 +232,126 @@ function CampaignCreator({
     ));
   };
 
+  const isEditing = !!editCampaign;
+
   const handleCreate = async () => {
     if (!name.trim()) { toast({ title: 'Dê um nome à campanha', variant: 'destructive' }); return; }
     if (!messageText.trim()) { toast({ title: 'Escreva a mensagem', variant: 'destructive' }); return; }
-    if (contacts.length === 0) { toast({ title: 'Importe pelo menos 1 contato', variant: 'destructive' }); return; }
+    if (!isEditing && contacts.length === 0) { toast({ title: 'Importe pelo menos 1 contato', variant: 'destructive' }); return; }
     if (!companyId || !user) return;
 
     setSaving(true);
 
-    // Create campaign
-    const { data: campaign, error } = await supabase
-      .from('mass_campaigns')
-      .insert({
-        company_id: companyId,
-        instance_id: instanceId,
-        name: name.trim(),
-        message_text: messageText,
-        message_type: messageType,
-        buttons: messageType === 'button' ? buttons.filter(b => b.text.trim()) : [],
-        list_sections: messageType === 'list' ? listSections : [],
-        footer_text: footerText.trim() || null,
-        delay_seconds: delaySeconds,
-        delay_min: delayMin,
-        delay_max: delayMax,
-        daily_limit: dailyLimit,
-        business_hours_only: businessHoursOnly,
-        rotate_instances: rotateInstances,
-        total_contacts: contacts.length,
-        scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
-        status: scheduledAt ? 'scheduled' : 'draft',
-        created_by: user.id,
-      } as any)
-      .select()
-      .single();
+    if (isEditing) {
+      // Update existing campaign
+      const { error } = await supabase
+        .from('mass_campaigns')
+        .update({
+          name: name.trim(),
+          message_text: messageText,
+          message_type: messageType,
+          buttons: messageType === 'button' ? buttons.filter(b => b.text.trim()) : [],
+          list_sections: messageType === 'list' ? listSections : [],
+          footer_text: footerText.trim() || null,
+          instance_id: instanceId,
+          delay_min: delayMin,
+          delay_max: delayMax,
+          daily_limit: dailyLimit,
+          business_hours_only: businessHoursOnly,
+          rotate_instances: rotateInstances,
+        } as any)
+        .eq('id', editCampaign!.id);
 
-    if (error || !campaign) {
-      toast({ title: 'Erro ao criar campanha', variant: 'destructive' });
-      setSaving(false);
-      return;
-    }
+      if (error) {
+        toast({ title: 'Erro ao atualizar campanha', variant: 'destructive' });
+        setSaving(false);
+        return;
+      }
 
-    // Insert contacts in batches
-    const batchSize = 100;
-    for (let i = 0; i < contacts.length; i += batchSize) {
-      const batch = contacts.slice(i, i + batchSize).map(c => ({
-        campaign_id: campaign.id,
-        name: c.name,
-        phone: c.phone,
-      }));
-      await supabase.from('mass_campaign_contacts').insert(batch);
-    }
+      // Add new contacts if any were imported
+      if (contacts.length > 0) {
+        const batchSize = 100;
+        for (let i = 0; i < contacts.length; i += batchSize) {
+          const batch = contacts.slice(i, i + batchSize).map(c => ({
+            campaign_id: editCampaign!.id,
+            name: c.name,
+            phone: c.phone,
+          }));
+          await supabase.from('mass_campaign_contacts').insert(batch);
+        }
+        // Update total
+        await supabase.from('mass_campaigns')
+          .update({ total_contacts: editCampaign!.total_contacts + contacts.length } as any)
+          .eq('id', editCampaign!.id);
+      }
 
-    toast({ title: `Campanha "${name}" criada com ${contacts.length} contatos!` });
+      if (automationFlowId) {
+        await supabase.from('automation_flows')
+          .update({ campaign_id: editCampaign!.id })
+          .eq('id', automationFlowId);
+      }
 
-    // Link automation flow to campaign
-    if (automationFlowId) {
-      await supabase.from('automation_flows')
-        .update({ campaign_id: campaign.id })
-        .eq('id', automationFlowId);
-    }
+      toast({ title: `Campanha "${name}" atualizada!` });
+    } else {
+      // Create campaign
+      const { data: campaign, error } = await supabase
+        .from('mass_campaigns')
+        .insert({
+          company_id: companyId,
+          instance_id: instanceId,
+          name: name.trim(),
+          message_text: messageText,
+          message_type: messageType,
+          buttons: messageType === 'button' ? buttons.filter(b => b.text.trim()) : [],
+          list_sections: messageType === 'list' ? listSections : [],
+          footer_text: footerText.trim() || null,
+          delay_seconds: delaySeconds,
+          delay_min: delayMin,
+          delay_max: delayMax,
+          daily_limit: dailyLimit,
+          business_hours_only: businessHoursOnly,
+          rotate_instances: rotateInstances,
+          total_contacts: contacts.length,
+          scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
+          status: scheduledAt ? 'scheduled' : 'draft',
+          created_by: user.id,
+        } as any)
+        .select()
+        .single();
 
-    // If not scheduled, start immediately
-    if (!scheduledAt) {
-      await supabase.functions.invoke('mass-send-whatsapp', {
-        body: { action: 'start-campaign', campaign_id: campaign.id },
-      });
-      toast({ title: 'Disparo iniciado!' });
+      if (error || !campaign) {
+        toast({ title: 'Erro ao criar campanha', variant: 'destructive' });
+        setSaving(false);
+        return;
+      }
+
+      // Insert contacts in batches
+      const batchSize = 100;
+      for (let i = 0; i < contacts.length; i += batchSize) {
+        const batch = contacts.slice(i, i + batchSize).map(c => ({
+          campaign_id: campaign.id,
+          name: c.name,
+          phone: c.phone,
+        }));
+        await supabase.from('mass_campaign_contacts').insert(batch);
+      }
+
+      toast({ title: `Campanha "${name}" criada com ${contacts.length} contatos!` });
+
+      // Link automation flow to campaign
+      if (automationFlowId) {
+        await supabase.from('automation_flows')
+          .update({ campaign_id: campaign.id })
+          .eq('id', automationFlowId);
+      }
+
+      // If not scheduled, start immediately
+      if (!scheduledAt) {
+        await supabase.functions.invoke('mass-send-whatsapp', {
+          body: { action: 'start-campaign', campaign_id: campaign.id },
+        });
+        toast({ title: 'Disparo iniciado!' });
+      }
     }
 
     // Reset form
@@ -285,9 +374,12 @@ function CampaignCreator({
       <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Send className="h-5 w-5 text-primary" /> Nova Campanha
+            {isEditing ? <Pencil className="h-5 w-5 text-primary" /> : <Send className="h-5 w-5 text-primary" />}
+            {isEditing ? 'Editar Campanha' : 'Nova Campanha'}
           </DialogTitle>
-          <DialogDescription>Configure a mensagem, importe contatos e agende o disparo.</DialogDescription>
+          <DialogDescription>
+            {isEditing ? 'Edite a mensagem e configurações da campanha.' : 'Configure a mensagem, importe contatos e agende o disparo.'}
+          </DialogDescription>
         </DialogHeader>
 
         <Tabs defaultValue="message" className="mt-2">
@@ -602,8 +694,8 @@ function CampaignCreator({
         <DialogFooter className="mt-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
           <Button onClick={handleCreate} disabled={saving} className="gap-2">
-            {saving ? <Clock className="h-4 w-4 animate-spin" /> : scheduledAt ? <Clock className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-            {saving ? 'Criando...' : scheduledAt ? 'Agendar' : 'Criar e Enviar'}
+            {saving ? <Clock className="h-4 w-4 animate-spin" /> : isEditing ? <Pencil className="h-4 w-4" /> : scheduledAt ? <Clock className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+            {saving ? (isEditing ? 'Salvando...' : 'Criando...') : isEditing ? 'Salvar Alterações' : scheduledAt ? 'Agendar' : 'Criar e Enviar'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -800,6 +892,8 @@ export default function MassMessages() {
   const [createOpen, setCreateOpen] = useState(false);
   const [detailsCampaignId, setDetailsCampaignId] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [editCampaign, setEditCampaign] = useState<Campaign | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>('all');
 
   const fetchCampaigns = useCallback(async () => {
     if (!companyId) return;
@@ -839,6 +933,81 @@ export default function MassMessages() {
     fetchCampaigns();
   };
 
+  const resendCampaign = async (campaign: Campaign) => {
+    // Create a copy of the campaign with reset counters
+    const { data: newCampaign, error } = await supabase
+      .from('mass_campaigns')
+      .insert({
+        company_id: companyId,
+        instance_id: campaign.instance_id,
+        name: `${campaign.name} (reenvio)`,
+        message_text: campaign.message_text,
+        message_type: campaign.message_type,
+        buttons: campaign.buttons,
+        list_sections: campaign.list_sections,
+        footer_text: campaign.footer_text,
+        delay_seconds: campaign.delay_seconds,
+        total_contacts: 0,
+        status: 'draft',
+        created_by: (await supabase.auth.getUser()).data.user?.id,
+      } as any)
+      .select()
+      .single();
+
+    if (error || !newCampaign) {
+      toast({ title: 'Erro ao duplicar campanha', variant: 'destructive' });
+      return;
+    }
+
+    // Copy contacts from old campaign (only failed + pending)
+    const { data: contactsToCopy } = await supabase
+      .from('mass_campaign_contacts')
+      .select('name, phone')
+      .eq('campaign_id', campaign.id)
+      .in('status', ['failed', 'pending']);
+
+    if (contactsToCopy && contactsToCopy.length > 0) {
+      const batchSize = 100;
+      for (let i = 0; i < contactsToCopy.length; i += batchSize) {
+        const batch = contactsToCopy.slice(i, i + batchSize).map(c => ({
+          campaign_id: newCampaign.id,
+          name: c.name,
+          phone: c.phone,
+        }));
+        await supabase.from('mass_campaign_contacts').insert(batch);
+      }
+      await supabase.from('mass_campaigns')
+        .update({ total_contacts: contactsToCopy.length } as any)
+        .eq('id', newCampaign.id);
+    }
+
+    toast({ title: `Campanha duplicada com ${contactsToCopy?.length || 0} contatos (falhos/pendentes)!` });
+    fetchCampaigns();
+  };
+
+  const handleEditCampaign = (campaign: Campaign) => {
+    setEditCampaign(campaign);
+    setCreateOpen(true);
+  };
+
+  const handleCloseCreator = (v: boolean) => {
+    setCreateOpen(v);
+    if (!v) setEditCampaign(null);
+  };
+
+  const filteredCampaigns = statusFilter === 'all'
+    ? campaigns
+    : campaigns.filter(c => c.status === statusFilter);
+
+  const statusCounts = {
+    all: campaigns.length,
+    draft: campaigns.filter(c => c.status === 'draft').length,
+    processing: campaigns.filter(c => c.status === 'processing').length,
+    completed: campaigns.filter(c => c.status === 'completed').length,
+    cancelled: campaigns.filter(c => c.status === 'cancelled').length,
+    scheduled: campaigns.filter(c => c.status === 'scheduled').length,
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -847,26 +1016,57 @@ export default function MassMessages() {
             <h1 className="section-title">Mensagens em Massa</h1>
             <p className="section-subtitle">Crie campanhas de disparo com mensagens interativas</p>
           </div>
-          <Button onClick={() => setCreateOpen(true)} className="gap-2">
+          <Button onClick={() => { setEditCampaign(null); setCreateOpen(true); }} className="gap-2">
             <Plus className="h-4 w-4" />
             Nova Campanha
           </Button>
         </div>
 
-        <CampaignCreator open={createOpen} onOpenChange={setCreateOpen} onCreated={fetchCampaigns} />
+        <CampaignCreator open={createOpen} onOpenChange={handleCloseCreator} onCreated={fetchCampaigns} editCampaign={editCampaign} />
         <CampaignDetailsDialog campaignId={detailsCampaignId} open={detailsOpen} onOpenChange={setDetailsOpen} />
+
+        {/* Status filter tabs */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {[
+            { key: 'all', label: 'Todas' },
+            { key: 'draft', label: 'Rascunhos' },
+            { key: 'scheduled', label: 'Agendadas' },
+            { key: 'processing', label: 'Enviando' },
+            { key: 'completed', label: 'Concluídas' },
+            { key: 'cancelled', label: 'Canceladas' },
+          ].map(tab => (
+            <Button
+              key={tab.key}
+              size="sm"
+              variant={statusFilter === tab.key ? 'default' : 'outline'}
+              onClick={() => setStatusFilter(tab.key)}
+              className="text-xs gap-1.5"
+            >
+              {tab.label}
+              {statusCounts[tab.key as keyof typeof statusCounts] > 0 && (
+                <Badge variant="secondary" className="text-[10px] h-4 min-w-[16px] px-1">
+                  {statusCounts[tab.key as keyof typeof statusCounts]}
+                </Badge>
+              )}
+            </Button>
+          ))}
+        </div>
 
         {loading ? (
           <div className="text-center py-12 text-muted-foreground">Carregando...</div>
-        ) : campaigns.length === 0 ? (
+        ) : filteredCampaigns.length === 0 ? (
           <div className="text-center py-12">
             <Send className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
-            <p className="text-muted-foreground">Nenhuma campanha criada</p>
-            <p className="text-xs text-muted-foreground/70 mt-1">Clique em "Nova Campanha" para começar</p>
+            <p className="text-muted-foreground">
+              {statusFilter === 'all' ? 'Nenhuma campanha criada' : 'Nenhuma campanha neste filtro'}
+            </p>
+            <p className="text-xs text-muted-foreground/70 mt-1">
+              {statusFilter === 'all' ? 'Clique em "Nova Campanha" para começar' : 'Tente outro filtro ou crie uma nova campanha'}
+            </p>
           </div>
         ) : (
           <div className="space-y-3">
-            {campaigns.map(campaign => {
+            {filteredCampaigns.map(campaign => {
               const config = statusConfig[campaign.status] || statusConfig.draft;
               const Icon = config.icon;
               const progress = campaign.total_contacts > 0
@@ -927,6 +1127,33 @@ export default function MassMessages() {
                         <Button size="sm" variant="outline" onClick={() => { setDetailsCampaignId(campaign.id); setDetailsOpen(true); }} className="gap-1 text-xs">
                           <Eye className="h-3 w-3" /> Detalhes
                         </Button>
+
+                        {/* Edit button - only for draft/scheduled/completed/cancelled */}
+                        {campaign.status !== 'processing' && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button size="sm" variant="outline" className="gap-1 text-xs">
+                                <Pencil className="h-3 w-3" /> Ações
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              {(campaign.status === 'draft' || campaign.status === 'scheduled') && (
+                                <DropdownMenuItem onClick={() => handleEditCampaign(campaign)} className="gap-2 text-xs">
+                                  <Pencil className="h-3 w-3" /> Editar campanha
+                                </DropdownMenuItem>
+                              )}
+                              {(campaign.status === 'completed' || campaign.status === 'cancelled') && (
+                                <DropdownMenuItem onClick={() => handleEditCampaign(campaign)} className="gap-2 text-xs">
+                                  <Pencil className="h-3 w-3" /> Editar e recriar
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem onClick={() => resendCampaign(campaign)} className="gap-2 text-xs">
+                                <Copy className="h-3 w-3" /> Reenviar (falhos/pendentes)
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+
                         {campaign.status === 'draft' && (
                           <Button size="sm" onClick={() => startCampaign(campaign.id)} className="gap-1 text-xs">
                             <Play className="h-3 w-3" /> Iniciar
