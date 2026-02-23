@@ -6,7 +6,7 @@ import { useFormLabel } from '@/hooks/useFormLabel';
 import {
   LayoutDashboard, Users, Clock, Calendar,
   Palette, MessageSquare, CreditCard, Menu, X, LogOut,
-  ChevronRight, Bell, Shield, Search, ClipboardList, Layers, ScrollText, Bot, Activity, Headphones, Send,
+  ChevronRight, Bell, Shield, Search, ClipboardList, Layers, ScrollText, Bot, Activity, Headphones, Send, Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -22,6 +22,7 @@ const baseNavItems = [
   { title: 'Horários', icon: Clock, path: '/horarios' },
   { title: 'Fichas de Clientes', icon: ClipboardList, path: '/fichas' },
   { title: 'Mensagens em Massa', icon: Send, path: '/mensagens-massa' },
+  { title: 'Automações', icon: Zap, path: '/automacoes' },
 ];
 
 const settingsItems = [

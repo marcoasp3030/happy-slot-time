@@ -405,6 +405,123 @@ export type Database = {
           },
         ]
       }
+      automation_flows: {
+        Row: {
+          active: boolean
+          campaign_id: string | null
+          company_id: string
+          created_at: string
+          description: string | null
+          edges: Json
+          id: string
+          name: string
+          nodes: Json
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          campaign_id?: string | null
+          company_id: string
+          created_at?: string
+          description?: string | null
+          edges?: Json
+          id?: string
+          name: string
+          nodes?: Json
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          campaign_id?: string | null
+          company_id?: string
+          created_at?: string
+          description?: string | null
+          edges?: Json
+          id?: string
+          name?: string
+          nodes?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_flows_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "mass_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_flows_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      automation_logs: {
+        Row: {
+          action_result: Json | null
+          action_type: string
+          company_id: string
+          contact_name: string | null
+          contact_phone: string
+          created_at: string
+          error_message: string | null
+          flow_id: string
+          id: string
+          node_id: string
+          status: string
+          trigger_type: string
+          trigger_value: string | null
+        }
+        Insert: {
+          action_result?: Json | null
+          action_type: string
+          company_id: string
+          contact_name?: string | null
+          contact_phone: string
+          created_at?: string
+          error_message?: string | null
+          flow_id: string
+          id?: string
+          node_id: string
+          status?: string
+          trigger_type: string
+          trigger_value?: string | null
+        }
+        Update: {
+          action_result?: Json | null
+          action_type?: string
+          company_id?: string
+          contact_name?: string | null
+          contact_phone?: string
+          created_at?: string
+          error_message?: string | null
+          flow_id?: string
+          id?: string
+          node_id?: string
+          status?: string
+          trigger_type?: string
+          trigger_value?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_logs_flow_id_fkey"
+            columns: ["flow_id"]
+            isOneToOne: false
+            referencedRelation: "automation_flows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       business_hours: {
         Row: {
           close_time: string
@@ -673,6 +790,51 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contact_tags: {
+        Row: {
+          company_id: string
+          created_at: string
+          flow_id: string | null
+          id: string
+          name: string | null
+          phone: string
+          tag: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          flow_id?: string | null
+          id?: string
+          name?: string | null
+          phone: string
+          tag: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          flow_id?: string | null
+          id?: string
+          name?: string | null
+          phone?: string
+          tag?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_tags_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_tags_flow_id_fkey"
+            columns: ["flow_id"]
+            isOneToOne: false
+            referencedRelation: "automation_flows"
             referencedColumns: ["id"]
           },
         ]
