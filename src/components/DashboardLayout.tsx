@@ -11,7 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import sloteraLogo from '@/assets/slotera-logo.png';
+
 
 const baseNavItems = [
   { title: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
@@ -93,13 +93,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        {/* Logo */}
+        {/* Header */}
         <div className="flex items-center justify-between px-5 h-16 flex-shrink-0">
           <Link to="/dashboard" className="flex items-center gap-2.5">
-            <img src={sloteraLogo} alt="Slotera" className="h-8 w-auto" />
-            <span className="text-base font-extrabold text-sidebar-accent-foreground tracking-tight">
-              Slotera
-            </span>
+            <div className="h-8 w-8 rounded-lg gradient-primary flex items-center justify-center">
+              <Calendar className="h-4 w-4 text-primary-foreground" />
+            </div>
           </Link>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors">
             <X className="h-5 w-5" />
