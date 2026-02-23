@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import DashboardLayout from '@/components/DashboardLayout';
@@ -6,12 +6,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Calendar, CheckCircle, XCircle, Clock, TrendingUp, ArrowRight, CalendarPlus, Zap, Tag, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 export default function Dashboard() {
   const { companyId, user } = useAuth();
   const [stats, setStats] = useState({ today: 0, week: 0, confirmed: 0, canceled: 0 });
   const [autoStats, setAutoStats] = useState({ totalExecutions: 0, successRate: 0, taggedContacts: 0, activeFlows: 0 });
   const [upcoming, setUpcoming] = useState<any[]>([]);
+  const [autoLogs7d, setAutoLogs7d] = useState<{ date: string; execuções: number; sucesso: number; falha: number }[]>([]);
 
   useEffect(() => {
     if (!companyId) return;
@@ -38,8 +40,9 @@ export default function Dashboard() {
       setUpcoming(upcomingRes.data || []);
 
       // Fetch automation stats
+      const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
       const [logsRes, tagsRes, flowsRes] = await Promise.all([
-        supabase.from('automation_logs').select('id, status').eq('company_id', companyId),
+        supabase.from('automation_logs').select('id, status, created_at').eq('company_id', companyId),
         supabase.from('contact_tags').select('id').eq('company_id', companyId),
         supabase.from('automation_flows').select('id, active').eq('company_id', companyId),
       ]);
@@ -55,6 +58,30 @@ export default function Dashboard() {
         taggedContacts: tagsRes.data?.length || 0,
         activeFlows: (flowsRes.data || []).filter((f) => f.active).length,
       });
+
+      // Build 7-day chart data
+      const chartMap: Record<string, { total: number; success: number; fail: number }> = {};
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(Date.now() - i * 86400000);
+        const key = d.toISOString().split('T')[0];
+        chartMap[key] = { total: 0, success: 0, fail: 0 };
+      }
+      for (const log of allLogs) {
+        const day = log.created_at?.split('T')[0];
+        if (day && chartMap[day] !== undefined) {
+          chartMap[day].total++;
+          if (log.status === 'executed') chartMap[day].success++;
+          else chartMap[day].fail++;
+        }
+      }
+      setAutoLogs7d(
+        Object.entries(chartMap).map(([date, v]) => ({
+          date: `${date.split('-')[2]}/${date.split('-')[1]}`,
+          execuções: v.total,
+          sucesso: v.success,
+          falha: v.fail,
+        }))
+      );
     };
 
     fetchData();
@@ -166,6 +193,39 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
+        {/* Automation Chart - 7 days */}
+        <Card className="glass-card-static rounded-2xl overflow-hidden border-0 shadow-sm">
+          <CardHeader className="pb-2 px-6 pt-6">
+            <CardTitle className="text-lg font-bold flex items-center gap-2">
+              <div className="h-8 w-8 rounded-lg bg-info/10 flex items-center justify-center">
+                <BarChart3 className="h-4 w-4 text-info" />
+              </div>
+              Execuções — Últimos 7 dias
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-6 pb-6">
+            {autoLogs7d.length > 0 ? (
+              <div className="h-[260px] mt-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={autoLogs7d} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="date" tick={{ fontSize: 12 }} className="text-muted-foreground" />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 12 }} className="text-muted-foreground" />
+                    <Tooltip
+                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
+                    />
+                    <Legend />
+                    <Line type="monotone" dataKey="execuções" stroke="hsl(var(--primary))" strokeWidth={2.5} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                    <Line type="monotone" dataKey="sucesso" stroke="hsl(var(--success))" strokeWidth={2} dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="falha" stroke="hsl(var(--destructive))" strokeWidth={2} dot={{ r: 3 }} strokeDasharray="5 5" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-8">Nenhuma execução registrada nos últimos 7 dias</p>
+            )}
+          </CardContent>
+        </Card>
 
         <Card className="glass-card-static rounded-2xl overflow-hidden border-0 shadow-sm">
           <CardHeader className="pb-2 px-6 pt-6">
