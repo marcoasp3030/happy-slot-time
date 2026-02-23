@@ -352,27 +352,34 @@ export default function Chat() {
   useEffect(() => {
     if (selectedConv) loadMessages(selectedConv.phone);
   }, [selectedConv?.phone, loadMessages]);
-  // Scroll to bottom - instant on first load, smooth only for new messages
+  // Ref for the scrollable messages container
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const isFirstLoad = useRef(true);
+  const prevMsgCount = useRef(0);
+
+  // Scroll to bottom - instant on first load, smooth only for new incoming messages when near bottom
   useEffect(() => {
-    if (!messages.length) return;
+    const container = messagesContainerRef.current;
+    if (!container || !messages.length) return;
+
     if (isFirstLoad.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+      // First load: jump instantly to bottom
+      container.scrollTop = container.scrollHeight;
       isFirstLoad.current = false;
-    } else {
-      // Only smooth-scroll if user is near bottom (within 300px)
-      const container = messagesEndRef.current?.parentElement;
-      if (container) {
-        const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-        if (distFromBottom < 300) {
-          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-        }
+    } else if (messages.length > prevMsgCount.current) {
+      // New message arrived - only scroll if user is near the bottom
+      const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      if (distFromBottom < 200) {
+        requestAnimationFrame(() => {
+          container.scrollTop = container.scrollHeight;
+        });
       }
     }
+    prevMsgCount.current = messages.length;
   }, [messages]);
 
   // Reset first load flag when switching conversations
-  useEffect(() => { isFirstLoad.current = true; }, [selectedConv?.phone]);
+  useEffect(() => { isFirstLoad.current = true; prevMsgCount.current = 0; }, [selectedConv?.phone]);
 
   // Realtime - single stable connection, no polling that causes page movement
   useEffect(() => {
@@ -741,7 +748,7 @@ export default function Chat() {
               </div>
 
               {/* Messages area - WhatsApp-style background */}
-              <div className="flex-1 overflow-y-auto py-3 chat-messages-bg">
+              <div ref={messagesContainerRef} className="flex-1 overflow-y-auto py-3 chat-messages-bg">
                 {loadingMsgs ? (
                   <div className="flex items-center justify-center py-16">
                     <div className="animate-pulse text-muted-foreground text-sm">Carregando mensagens...</div>
