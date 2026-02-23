@@ -317,37 +317,50 @@ export default function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Realtime - using ref to avoid re-subscribing on conv change
+  // Realtime - subscribe to ALL changes then filter client-side for reliability
   useEffect(() => {
     if (!companyId) return;
+
+    console.log('[Chat RT] Subscribing to realtime, companyId:', companyId);
+
     const channel = supabase
-      .channel(`chat-rt-${companyId}`)
+      .channel(`chat-messages-${companyId}`)
       .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'whatsapp_messages',
+        event: 'INSERT', schema: 'public', table: 'whatsapp_messages',
         filter: `company_id=eq.${companyId}`,
       }, (payload) => {
         const msg = payload.new as Message;
-        if (!msg || msg.content === '__DEBOUNCE_LOCK__' || msg.content === '__PROCESSING__' || msg.delivery_status === 'locking') return;
+        console.log('[Chat RT] INSERT whatsapp_messages:', msg?.id, msg?.direction, msg?.content?.substring(0, 50));
+        if (!msg || msg.content === '__DEBOUNCE_LOCK__' || msg.content === '__PROCESSING__' || msg.delivery_status === 'locking' || msg.delivery_status === 'processing') return;
 
-        if (payload.eventType === 'INSERT') {
-          // Only add to current chat if it matches selected conversation
-          setMessages(prev => {
-            if (prev.some(m => m.id === msg.id)) return prev;
-            if (msg.conversation_id === selectedConvRef.current?.id) return [...prev, msg];
-            return prev;
-          });
-          loadConversations();
-        } else if (payload.eventType === 'UPDATE') {
-          setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, ...msg } : m));
-        }
+        // Add to current chat if matches selected conversation
+        setMessages(prev => {
+          if (prev.some(m => m.id === msg.id)) return prev;
+          if (msg.conversation_id === selectedConvRef.current?.id) return [...prev, msg];
+          return prev;
+        });
+        // Always refresh conversation list (new message = updated timestamp)
+        loadConversations();
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'whatsapp_messages',
+        filter: `company_id=eq.${companyId}`,
+      }, (payload) => {
+        const msg = payload.new as Message;
+        if (!msg) return;
+        console.log('[Chat RT] UPDATE whatsapp_messages:', msg.id, 'status:', msg.delivery_status);
+        setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, ...msg } : m));
       })
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'whatsapp_conversations',
         filter: `company_id=eq.${companyId}`,
-      }, () => {
+      }, (payload) => {
+        console.log('[Chat RT] whatsapp_conversations changed:', payload.eventType);
         loadConversations();
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log('[Chat RT] Subscription status:', status);
+      });
 
     return () => { supabase.removeChannel(channel); };
   }, [companyId, loadConversations]);
