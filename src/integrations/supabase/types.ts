@@ -865,6 +865,131 @@ export type Database = {
           },
         ]
       }
+      mass_campaign_contacts: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          error_message: string | null
+          id: string
+          name: string
+          phone: string
+          sent_at: string | null
+          status: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          name: string
+          phone: string
+          sent_at?: string | null
+          status?: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          name?: string
+          phone?: string
+          sent_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mass_campaign_contacts_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "mass_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mass_campaigns: {
+        Row: {
+          buttons: Json | null
+          company_id: string
+          completed_at: string | null
+          created_at: string
+          created_by: string
+          delay_seconds: number
+          failed_count: number
+          footer_text: string | null
+          id: string
+          instance_id: string | null
+          list_sections: Json | null
+          message_text: string
+          message_type: string
+          name: string
+          scheduled_at: string | null
+          sent_count: number
+          started_at: string | null
+          status: string
+          total_contacts: number
+          updated_at: string
+        }
+        Insert: {
+          buttons?: Json | null
+          company_id: string
+          completed_at?: string | null
+          created_at?: string
+          created_by: string
+          delay_seconds?: number
+          failed_count?: number
+          footer_text?: string | null
+          id?: string
+          instance_id?: string | null
+          list_sections?: Json | null
+          message_text: string
+          message_type?: string
+          name: string
+          scheduled_at?: string | null
+          sent_count?: number
+          started_at?: string | null
+          status?: string
+          total_contacts?: number
+          updated_at?: string
+        }
+        Update: {
+          buttons?: Json | null
+          company_id?: string
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string
+          delay_seconds?: number
+          failed_count?: number
+          footer_text?: string | null
+          id?: string
+          instance_id?: string | null
+          list_sections?: Json | null
+          message_text?: string
+          message_type?: string
+          name?: string
+          scheduled_at?: string | null
+          sent_count?: number
+          started_at?: string | null
+          status?: string
+          total_contacts?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mass_campaigns_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mass_campaigns_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_instances"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       message_templates: {
         Row: {
           active: boolean
