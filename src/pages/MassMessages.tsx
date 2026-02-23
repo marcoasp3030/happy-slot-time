@@ -570,26 +570,32 @@ function CampaignCreator({
             </div>
 
             {/* Automation Flow */}
-            {automationFlows.length > 0 && (
-              <div className="space-y-2">
-                <Label className="flex items-center gap-1.5">
-                  <Zap className="h-3.5 w-3.5 text-primary" />
-                  Vincular automação <span className="text-xs text-muted-foreground">(opcional)</span>
-                </Label>
-                <Select value={automationFlowId || 'none'} onValueChange={(v) => setAutomationFlowId(v === 'none' ? null : v)}>
-                  <SelectTrigger><SelectValue placeholder="Sem automação" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sem automação</SelectItem>
-                    {automationFlows.map(f => (
-                      <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Ao vincular, as respostas dos contatos desta campanha serão processadas pelo fluxo selecionado.
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1.5">
+                <Zap className="h-3.5 w-3.5 text-primary" />
+                Vincular automação <span className="text-xs text-muted-foreground">(opcional)</span>
+              </Label>
+              {automationFlows.length > 0 ? (
+                <>
+                  <Select value={automationFlowId || 'none'} onValueChange={(v) => setAutomationFlowId(v === 'none' ? null : v)}>
+                    <SelectTrigger><SelectValue placeholder="Sem automação" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Sem automação</SelectItem>
+                      {automationFlows.map(f => (
+                        <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Ao vincular, as respostas dos contatos desta campanha serão processadas pelo fluxo selecionado.
+                  </p>
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground italic">
+                  Nenhuma automação ativa encontrada. Crie e ative uma automação na página de Automações para vincular aqui.
                 </p>
-              </div>
-            )}
+              )}
+            </div>
           </TabsContent>
         </Tabs>
 
