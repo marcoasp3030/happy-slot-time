@@ -352,13 +352,29 @@ export default function Chat() {
   useEffect(() => {
     if (selectedConv) loadMessages(selectedConv.phone);
   }, [selectedConv?.phone, loadMessages]);
-
-  // Scroll to bottom
+  // Scroll to bottom - instant on first load, smooth only for new messages
+  const isFirstLoad = useRef(true);
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!messages.length) return;
+    if (isFirstLoad.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+      isFirstLoad.current = false;
+    } else {
+      // Only smooth-scroll if user is near bottom (within 300px)
+      const container = messagesEndRef.current?.parentElement;
+      if (container) {
+        const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+        if (distFromBottom < 300) {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+      }
+    }
   }, [messages]);
 
-  // Realtime - subscribe WITHOUT server-side filter (avoids TIMED_OUT), filter client-side
+  // Reset first load flag when switching conversations
+  useEffect(() => { isFirstLoad.current = true; }, [selectedConv?.phone]);
+
+  // Realtime - single stable connection, no polling that causes page movement
   useEffect(() => {
     if (!companyId) return;
 
@@ -411,9 +427,9 @@ export default function Chat() {
           setRtStatus(status);
           addDebugLog(`Subscription: ${status}`);
           if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR') {
-            addDebugLog('Reconectando em 3s...');
+            addDebugLog('Reconectando em 5s...');
             supabase.removeChannel(channel);
-            retryTimeout = setTimeout(connect, 3000);
+            retryTimeout = setTimeout(connect, 5000);
           }
         });
 
@@ -422,13 +438,10 @@ export default function Chat() {
 
     connect();
 
-    // Fallback polling every 10s in case realtime fails
+    // Light polling - only refresh conversation list (not messages), every 30s
     const pollInterval = setInterval(() => {
       loadConversations();
-      if (selectedConvRef.current) {
-        loadMessages(selectedConvRef.current.phone);
-      }
-    }, 10000);
+    }, 30000);
 
     return () => {
       cancelled = true;
@@ -436,7 +449,7 @@ export default function Chat() {
       clearInterval(pollInterval);
       if (channelRef) supabase.removeChannel(channelRef);
     };
-  }, [companyId, loadConversations, addDebugLog, loadMessages]);
+  }, [companyId, loadConversations, addDebugLog]);
 
   // Send message
   const handleSend = async () => {
