@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/table';
 import {
   Send, Upload, Plus, Trash2, Clock, CheckCircle, XCircle,
-  FileSpreadsheet, Users, MessageSquare, List, AlertCircle, Play, Ban,
+  FileSpreadsheet, Users, MessageSquare, List, AlertCircle, Play, Ban, Eye, RefreshCw,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -503,6 +503,146 @@ function formatDate(d: string) {
   });
 }
 
+const statusContactConfig: Record<string, { label: string; color: string }> = {
+  pending: { label: 'Pendente', color: 'secondary' },
+  sent: { label: 'Enviado', color: 'default' },
+  failed: { label: 'Falhou', color: 'destructive' },
+};
+
+// ─── Campaign Details Dialog ───
+function CampaignDetailsDialog({
+  campaignId,
+  open,
+  onOpenChange,
+}: {
+  campaignId: string | null;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const [contacts, setContacts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [filter, setFilter] = useState<'all' | 'sent' | 'failed' | 'pending'>('all');
+
+  const fetchContacts = useCallback(async () => {
+    if (!campaignId) return;
+    setLoading(true);
+    let query = supabase
+      .from('mass_campaign_contacts')
+      .select('*')
+      .eq('campaign_id', campaignId)
+      .order('created_at', { ascending: true });
+
+    if (filter !== 'all') {
+      query = query.eq('status', filter);
+    }
+
+    const { data } = await query.limit(500);
+    setContacts(data || []);
+    setLoading(false);
+  }, [campaignId, filter]);
+
+  useEffect(() => {
+    if (open && campaignId) fetchContacts();
+  }, [open, campaignId, fetchContacts]);
+
+  const totalSent = contacts.filter(c => c.status === 'sent').length;
+  const totalFailed = contacts.filter(c => c.status === 'failed').length;
+  const totalPending = contacts.filter(c => c.status === 'pending').length;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Eye className="h-5 w-5 text-primary" /> Detalhes da Campanha
+          </DialogTitle>
+          <DialogDescription>Status individual de cada contato</DialogDescription>
+        </DialogHeader>
+
+        {/* Summary cards */}
+        <div className="grid grid-cols-3 gap-3 mt-2">
+          <div className="rounded-xl border p-3 text-center cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setFilter('sent')}>
+            <CheckCircle className="h-4 w-4 text-primary mx-auto mb-1" />
+            <p className="text-lg font-bold">{filter === 'all' ? totalSent : filter === 'sent' ? contacts.length : '–'}</p>
+            <p className="text-[10px] text-muted-foreground">Enviados</p>
+          </div>
+          <div className="rounded-xl border p-3 text-center cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setFilter('failed')}>
+            <XCircle className="h-4 w-4 text-destructive mx-auto mb-1" />
+            <p className="text-lg font-bold">{filter === 'all' ? totalFailed : filter === 'failed' ? contacts.length : '–'}</p>
+            <p className="text-[10px] text-muted-foreground">Falhas</p>
+          </div>
+          <div className="rounded-xl border p-3 text-center cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setFilter('pending')}>
+            <Clock className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
+            <p className="text-lg font-bold">{filter === 'all' ? totalPending : filter === 'pending' ? contacts.length : '–'}</p>
+            <p className="text-[10px] text-muted-foreground">Pendentes</p>
+          </div>
+        </div>
+
+        {/* Filter buttons */}
+        <div className="flex items-center gap-2 mt-2">
+          {(['all', 'failed', 'sent', 'pending'] as const).map(f => (
+            <Button
+              key={f}
+              size="sm"
+              variant={filter === f ? 'default' : 'outline'}
+              onClick={() => setFilter(f)}
+              className="text-xs"
+            >
+              {f === 'all' ? 'Todos' : f === 'failed' ? '❌ Falhas' : f === 'sent' ? '✅ Enviados' : '⏳ Pendentes'}
+            </Button>
+          ))}
+          <Button size="sm" variant="ghost" onClick={fetchContacts} className="ml-auto gap-1 text-xs">
+            <RefreshCw className="h-3 w-3" /> Atualizar
+          </Button>
+        </div>
+
+        {/* Contacts table */}
+        {loading ? (
+          <div className="text-center py-8 text-muted-foreground text-sm">Carregando...</div>
+        ) : contacts.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground text-sm">Nenhum contato encontrado</div>
+        ) : (
+          <div className="border rounded-xl overflow-hidden max-h-[400px] overflow-y-auto mt-2">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Telefone</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Erro</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {contacts.map(c => {
+                  const sc = statusContactConfig[c.status] || statusContactConfig.pending;
+                  return (
+                    <TableRow key={c.id}>
+                      <TableCell className="text-sm">{c.name}</TableCell>
+                      <TableCell className="text-sm font-mono">{c.phone}</TableCell>
+                      <TableCell>
+                        <Badge variant={sc.color as any} className="text-[10px]">{sc.label}</Badge>
+                      </TableCell>
+                      <TableCell className="max-w-[200px]">
+                        {c.error_message ? (
+                          <span className="text-xs text-destructive line-clamp-2" title={c.error_message}>
+                            {c.error_message}
+                          </span>
+                        ) : c.sent_at ? (
+                          <span className="text-[10px] text-muted-foreground">{formatDate(c.sent_at)}</span>
+                        ) : null}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Main Page ───
 export default function MassMessages() {
   const { companyId } = useAuth();
@@ -510,6 +650,8 @@ export default function MassMessages() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
+  const [detailsCampaignId, setDetailsCampaignId] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const fetchCampaigns = useCallback(async () => {
     if (!companyId) return;
@@ -564,6 +706,7 @@ export default function MassMessages() {
         </div>
 
         <CampaignCreator open={createOpen} onOpenChange={setCreateOpen} onCreated={fetchCampaigns} />
+        <CampaignDetailsDialog campaignId={detailsCampaignId} open={detailsOpen} onOpenChange={setDetailsOpen} />
 
         {loading ? (
           <div className="text-center py-12 text-muted-foreground">Carregando...</div>
@@ -633,6 +776,9 @@ export default function MassMessages() {
                       </div>
 
                       <div className="flex items-center gap-2 flex-shrink-0">
+                        <Button size="sm" variant="outline" onClick={() => { setDetailsCampaignId(campaign.id); setDetailsOpen(true); }} className="gap-1 text-xs">
+                          <Eye className="h-3 w-3" /> Detalhes
+                        </Button>
                         {campaign.status === 'draft' && (
                           <Button size="sm" onClick={() => startCampaign(campaign.id)} className="gap-1 text-xs">
                             <Play className="h-3 w-3" /> Iniciar
