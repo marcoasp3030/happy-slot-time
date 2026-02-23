@@ -1081,6 +1081,7 @@ export type Database = {
           delay_max: number
           delay_min: number
           delay_seconds: number
+          extra_messages: Json | null
           failed_count: number
           footer_text: string | null
           id: string
@@ -1113,6 +1114,7 @@ export type Database = {
           delay_max?: number
           delay_min?: number
           delay_seconds?: number
+          extra_messages?: Json | null
           failed_count?: number
           footer_text?: string | null
           id?: string
@@ -1145,6 +1147,7 @@ export type Database = {
           delay_max?: number
           delay_min?: number
           delay_seconds?: number
+          extra_messages?: Json | null
           failed_count?: number
           footer_text?: string | null
           id?: string

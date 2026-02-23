@@ -117,6 +117,9 @@ function CampaignCreator({
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
 
+  // Extra sequential messages
+  const [extraMessages, setExtraMessages] = useState<{ text: string; media_files: { url: string; type: string; name: string }[] }[]>([]);
+
   // Segment selection
   const [savedLists, setSavedLists] = useState<{ id: string; name: string; count: number }[]>([]);
   const [savedTags, setSavedTags] = useState<string[]>([]);
@@ -152,6 +155,7 @@ function CampaignCreator({
       setAutomationFlowId(null);
       setMediaFiles([]);
       setShowPreview(false);
+      setExtraMessages([]);
       setSelectedListIds(new Set());
       setSelectedTags(new Set());
     }
@@ -343,6 +347,7 @@ function CampaignCreator({
           media_url: mediaFiles.length > 0 ? mediaFiles[0].url : null,
           media_type: mediaFiles.length > 0 ? mediaFiles[0].type : null,
           media_files: mediaFiles.length > 0 ? mediaFiles : [],
+          extra_messages: extraMessages.filter(em => em.text.trim() || em.media_files.length > 0),
         } as any)
         .eq('id', editCampaign!.id);
 
@@ -402,6 +407,7 @@ function CampaignCreator({
           media_url: mediaFiles.length > 0 ? mediaFiles[0].url : null,
           media_type: mediaFiles.length > 0 ? mediaFiles[0].type : null,
           media_files: mediaFiles.length > 0 ? mediaFiles : [],
+          extra_messages: extraMessages.filter(em => em.text.trim() || em.media_files.length > 0),
         } as any)
         .select()
         .single();
@@ -453,6 +459,7 @@ function CampaignCreator({
     setAutomationFlowId(null);
     setMediaFiles([]);
     setShowPreview(false);
+    setExtraMessages([]);
     setSelectedListIds(new Set());
     setSelectedTags(new Set());
     setSaving(false);
@@ -637,6 +644,101 @@ function CampaignCreator({
                   ))}
                 </div>
               )}
+            </div>
+
+            {/* ── Extra Sequential Messages ── */}
+            <div className="space-y-3 border rounded-xl p-4 bg-primary/5">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold flex items-center gap-1.5">
+                  <MessageSquare className="h-4 w-4 text-primary" /> Mensagens sequenciais
+                  <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
+                </Label>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setExtraMessages(prev => [...prev, { text: '', media_files: [] }])}
+                  className="gap-1 text-xs h-7"
+                >
+                  <Plus className="h-3 w-3" /> Mensagem {extraMessages.length + 2}
+                </Button>
+              </div>
+
+              {extraMessages.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Adicione mensagens extras que serão enviadas na sequência após a mensagem principal. Útil para enviar informações em partes.
+                </p>
+              )}
+
+              {extraMessages.map((em, emIdx) => (
+                <div key={emIdx} className="border rounded-lg p-3 bg-background space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-semibold text-primary">Mensagem {emIdx + 2}</Label>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6"
+                      onClick={() => setExtraMessages(prev => prev.filter((_, i) => i !== emIdx))}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                    </Button>
+                  </div>
+                  <Textarea
+                    placeholder={`Texto da mensagem ${emIdx + 2} (use {{nome}} para personalizar)`}
+                    value={em.text}
+                    onChange={e => setExtraMessages(prev => prev.map((m, i) => i === emIdx ? { ...m, text: e.target.value } : m))}
+                    rows={3}
+                    className="text-sm"
+                  />
+                  {/* Extra message media upload */}
+                  <div className="space-y-1.5">
+                    <label className="block">
+                      <div className="flex items-center gap-1.5 px-3 py-2 border border-dashed rounded-lg cursor-pointer hover:bg-muted/50 transition-colors text-xs text-muted-foreground">
+                        <Upload className="h-3 w-3" />
+                        Anexar mídia à mensagem {emIdx + 2}
+                      </div>
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const files = e.target.files;
+                          if (!files || files.length === 0) return;
+                          const newFiles: { url: string; type: string; name: string }[] = [];
+                          for (const file of Array.from(files)) {
+                            let fileType = 'document';
+                            if (file.type.startsWith('image/')) fileType = 'image';
+                            else if (file.type.startsWith('audio/')) fileType = 'audio';
+                            const ext = file.name.split('.').pop() || 'bin';
+                            const path = `${companyId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+                            const { error: upErr } = await supabase.storage.from('campaign-media').upload(path, file);
+                            if (upErr) { toast({ title: `Erro ao enviar ${file.name}`, variant: 'destructive' }); continue; }
+                            const { data: urlData } = supabase.storage.from('campaign-media').getPublicUrl(path);
+                            newFiles.push({ url: urlData.publicUrl, type: fileType, name: file.name });
+                          }
+                          setExtraMessages(prev => prev.map((m, i) => i === emIdx ? { ...m, media_files: [...m.media_files, ...newFiles] } : m));
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                    {em.media_files.length > 0 && (
+                      <div className="space-y-1">
+                        {em.media_files.map((mf, mfIdx) => (
+                          <div key={mfIdx} className="flex items-center gap-1.5 bg-muted/50 rounded px-2 py-1 text-[11px]">
+                            {mf.type === 'image' ? <Image className="h-3 w-3 text-primary shrink-0" /> : mf.type === 'audio' ? <Mic className="h-3 w-3 text-primary shrink-0" /> : <File className="h-3 w-3 text-primary shrink-0" />}
+                            <span className="truncate flex-1">{mf.name}</span>
+                            <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() =>
+                              setExtraMessages(prev => prev.map((m, i) => i === emIdx ? { ...m, media_files: m.media_files.filter((_, fi) => fi !== mfIdx) } : m))
+                            }>
+                              <X className="h-2.5 w-2.5 text-destructive" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           </TabsContent>
 
@@ -974,6 +1076,36 @@ function CampaignCreator({
               )}
             </div>
 
+            {/* Extra messages preview */}
+            {extraMessages.filter(em => em.text.trim() || em.media_files.length > 0).map((em, emIdx) => (
+              <div key={emIdx} className="space-y-1">
+                <p className="text-[10px] text-muted-foreground ml-auto max-w-[85%] text-right">Mensagem {emIdx + 2}</p>
+                <div className="bg-[#dcf8c6] dark:bg-emerald-900/40 rounded-xl rounded-tr-none p-3 max-w-[85%] ml-auto shadow-sm space-y-2">
+                  {em.media_files.length > 0 && (
+                    <div className="space-y-1.5">
+                      {em.media_files.map((mf, mfIdx) => (
+                        <div key={mfIdx} className="flex items-center gap-2 text-xs">
+                          {mf.type === 'image' ? (
+                            <img src={mf.url} alt={mf.name} className="rounded-lg max-h-24 max-w-full object-cover" />
+                          ) : (
+                            <div className="flex items-center gap-1.5 bg-background/50 rounded-lg px-2 py-1.5">
+                              {mf.type === 'audio' ? <Mic className="h-3 w-3 text-primary" /> : <File className="h-3 w-3 text-primary" />}
+                              <span className="truncate max-w-[150px]">{mf.name}</span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {em.text.trim() && (
+                    <p className="text-sm whitespace-pre-wrap break-words">
+                      {em.text.replace(/\{\{nome\}\}/gi, 'João Silva')}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+
             {/* Campaign summary */}
             <div className="grid grid-cols-2 gap-2 text-xs mt-3">
               <div className="flex items-center gap-1.5">
@@ -982,7 +1114,7 @@ function CampaignCreator({
               </div>
               <div className="flex items-center gap-1.5">
                 <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
-                <span>{messageType === 'text' ? 'Texto' : messageType === 'button' ? 'Com botões' : 'Menu lista'}</span>
+                <span>{1 + extraMessages.filter(em => em.text.trim() || em.media_files.length > 0).length} mensagem(ns) • {messageType === 'text' ? 'Texto' : messageType === 'button' ? 'Com botões' : 'Menu lista'}</span>
               </div>
               {mediaFiles.length > 0 && (
                 <div className="flex items-center gap-1.5">

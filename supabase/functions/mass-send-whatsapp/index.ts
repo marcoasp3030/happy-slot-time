@@ -314,6 +314,35 @@ async function processCampaign(supabase: any, campaign: any) {
           }
         }
 
+        // ── Send extra sequential messages ──
+        const extraMessages: { text?: string; media_files?: { url: string; type: string; name: string }[] }[] = campaign.extra_messages || [];
+        for (let emIdx = 0; emIdx < extraMessages.length; emIdx++) {
+          const em = extraMessages[emIdx];
+          if (!em.text?.trim() && (!em.media_files || em.media_files.length === 0)) continue;
+
+          // Delay between sequential messages (2-5s)
+          await new Promise(r => setTimeout(r, randomDelay(2, 5) * 1000));
+
+          const emText = em.text ? em.text.replace(/\{\{nome\}\}/gi, contact.name) : "";
+          const emMediaFiles = em.media_files || [];
+
+          if (emMediaFiles.length > 0) {
+            for (let mi = 0; mi < emMediaFiles.length; mi++) {
+              const mf = emMediaFiles[mi];
+              const caption = mi === 0 && emText ? emText : undefined;
+              await sendMedia(ws, contact.phone, mf.url, mf.type, caption, mf.name);
+              if (mi < emMediaFiles.length - 1) {
+                await new Promise(r => setTimeout(r, randomDelay(1, 3) * 1000));
+              }
+            }
+            // If text exists but wasn't used as caption (no media or text-only extra)
+          } else if (emText) {
+            await sendText(ws, contact.phone, emText);
+          }
+
+          log(`  📨 Extra message ${emIdx + 2} sent to ${contact.phone}`);
+        }
+
         await supabase.from("mass_campaign_contacts").update({
           status: "sent",
           sent_at: new Date().toISOString(),
