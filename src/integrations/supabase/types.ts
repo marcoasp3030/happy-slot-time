@@ -1087,6 +1087,7 @@ export type Database = {
           instance_id: string | null
           last_sent_date: string | null
           list_sections: Json | null
+          media_files: Json | null
           media_type: string | null
           media_url: string | null
           message_text: string
@@ -1118,6 +1119,7 @@ export type Database = {
           instance_id?: string | null
           last_sent_date?: string | null
           list_sections?: Json | null
+          media_files?: Json | null
           media_type?: string | null
           media_url?: string | null
           message_text: string
@@ -1149,6 +1151,7 @@ export type Database = {
           instance_id?: string | null
           last_sent_date?: string | null
           list_sections?: Json | null
+          media_files?: Json | null
           media_type?: string | null
           media_url?: string | null
           message_text?: string

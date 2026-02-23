@@ -112,9 +112,9 @@ function CampaignCreator({
   const [automationFlowId, setAutomationFlowId] = useState<string | null>(null);
   const [automationFlows, setAutomationFlows] = useState<{ id: string; name: string }[]>([]);
 
-  // Media
-  const [mediaUrl, setMediaUrl] = useState('');
-  const [mediaType, setMediaType] = useState<string | null>(null);
+  // Media - multiple files
+  const [mediaFiles, setMediaFiles] = useState<{ url: string; type: string; name: string }[]>([]);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
 
   // Segment selection
   const [savedLists, setSavedLists] = useState<{ id: string; name: string; count: number }[]>([]);
@@ -149,8 +149,7 @@ function CampaignCreator({
       setContacts([]);
       setScheduledAt('');
       setAutomationFlowId(null);
-      setMediaUrl('');
-      setMediaType(null);
+      setMediaFiles([]);
       setSelectedListIds(new Set());
       setSelectedTags(new Set());
     }
@@ -339,8 +338,9 @@ function CampaignCreator({
           daily_limit: dailyLimit,
           business_hours_only: businessHoursOnly,
           rotate_instances: rotateInstances,
-          media_url: mediaUrl.trim() || null,
-          media_type: mediaType,
+          media_url: mediaFiles.length > 0 ? mediaFiles[0].url : null,
+          media_type: mediaFiles.length > 0 ? mediaFiles[0].type : null,
+          media_files: mediaFiles.length > 0 ? mediaFiles : [],
         } as any)
         .eq('id', editCampaign!.id);
 
@@ -397,8 +397,9 @@ function CampaignCreator({
           scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
           status: scheduledAt ? 'scheduled' : 'draft',
           created_by: user.id,
-          media_url: mediaUrl.trim() || null,
-          media_type: mediaType,
+          media_url: mediaFiles.length > 0 ? mediaFiles[0].url : null,
+          media_type: mediaFiles.length > 0 ? mediaFiles[0].type : null,
+          media_files: mediaFiles.length > 0 ? mediaFiles : [],
         } as any)
         .select()
         .single();
@@ -448,8 +449,7 @@ function CampaignCreator({
     setContacts([]);
     setScheduledAt('');
     setAutomationFlowId(null);
-    setMediaUrl('');
-    setMediaType(null);
+    setMediaFiles([]);
     setSelectedListIds(new Set());
     setSelectedTags(new Set());
     setSaving(false);
@@ -558,46 +558,80 @@ function CampaignCreator({
               </div>
             )}
 
-            {/* ── Media Attachment ── */}
+            {/* ── Media Attachment (Upload) ── */}
             <div className="space-y-3 border rounded-xl p-4 bg-muted/30">
               <div className="flex items-center justify-between">
                 <Label className="text-sm font-semibold flex items-center gap-1.5">
-                  <Image className="h-4 w-4 text-primary" /> Anexo de mídia <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
+                  <Image className="h-4 w-4 text-primary" /> Anexos de mídia <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
                 </Label>
-                {mediaType && (
-                  <Button size="sm" variant="ghost" onClick={() => { setMediaType(null); setMediaUrl(''); }} className="gap-1 text-xs h-7">
-                    <X className="h-3 w-3" /> Remover
+                {mediaFiles.length > 0 && (
+                  <Button size="sm" variant="ghost" onClick={() => setMediaFiles([])} className="gap-1 text-xs h-7">
+                    <X className="h-3 w-3" /> Remover todos
                   </Button>
                 )}
               </div>
-              <div className="flex items-center gap-2">
-                {(['image', 'audio', 'document'] as const).map(type => (
-                  <Button
-                    key={type}
-                    size="sm"
-                    variant={mediaType === type ? 'default' : 'outline'}
-                    onClick={() => setMediaType(mediaType === type ? null : type)}
-                    className="gap-1.5 text-xs"
-                  >
-                    {type === 'image' && <Image className="h-3 w-3" />}
-                    {type === 'audio' && <Mic className="h-3 w-3" />}
-                    {type === 'document' && <File className="h-3 w-3" />}
-                    {type === 'image' ? 'Imagem' : type === 'audio' ? 'Áudio' : 'Arquivo'}
-                  </Button>
-                ))}
-              </div>
-              {mediaType && (
-                <div className="space-y-1">
-                  <Label className="text-xs">URL do {mediaType === 'image' ? 'imagem' : mediaType === 'audio' ? 'áudio' : 'arquivo'}</Label>
-                  <Input
-                    placeholder={mediaType === 'image' ? 'https://exemplo.com/imagem.jpg' : mediaType === 'audio' ? 'https://exemplo.com/audio.mp3' : 'https://exemplo.com/documento.pdf'}
-                    value={mediaUrl}
-                    onChange={e => setMediaUrl(e.target.value)}
-                  />
-                  <p className="text-[10px] text-muted-foreground">
-                    {mediaType === 'image' ? 'Formatos: JPG, PNG, WEBP' : mediaType === 'audio' ? 'Formatos: MP3, OGG, WAV' : 'Formatos: PDF, DOC, XLS, etc.'}
-                    {mediaType !== 'audio' && ' • A mensagem de texto será enviada como legenda'}
-                  </p>
+
+              <label className="block">
+                <div className={`flex items-center gap-2 px-4 py-3 border-2 border-dashed rounded-xl cursor-pointer hover:bg-muted/50 transition-colors text-center justify-center ${uploadingMedia ? 'opacity-50 pointer-events-none' : ''}`}>
+                  {uploadingMedia ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4 text-muted-foreground" />}
+                  <span className="text-sm text-muted-foreground">
+                    {uploadingMedia ? 'Enviando...' : 'Clique para enviar imagens, áudios ou arquivos'}
+                  </span>
+                </div>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar"
+                  className="hidden"
+                  disabled={uploadingMedia}
+                  onChange={async (e) => {
+                    const files = e.target.files;
+                    if (!files || files.length === 0) return;
+                    setUploadingMedia(true);
+                    const newFiles: { url: string; type: string; name: string }[] = [];
+                    for (const file of Array.from(files)) {
+                      // Determine type
+                      let fileType = 'document';
+                      if (file.type.startsWith('image/')) fileType = 'image';
+                      else if (file.type.startsWith('audio/')) fileType = 'audio';
+
+                      const ext = file.name.split('.').pop() || 'bin';
+                      const path = `${companyId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+                      const { error: upErr } = await supabase.storage.from('campaign-media').upload(path, file);
+                      if (upErr) {
+                        toast({ title: `Erro ao enviar ${file.name}`, description: upErr.message, variant: 'destructive' });
+                        continue;
+                      }
+                      const { data: urlData } = supabase.storage.from('campaign-media').getPublicUrl(path);
+                      newFiles.push({ url: urlData.publicUrl, type: fileType, name: file.name });
+                    }
+                    setMediaFiles(prev => [...prev, ...newFiles]);
+                    if (newFiles.length > 0) toast({ title: `${newFiles.length} arquivo(s) enviado(s)` });
+                    setUploadingMedia(false);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+
+              <p className="text-[10px] text-muted-foreground">
+                Imagens (JPG, PNG, WEBP) • Áudios (MP3, OGG, WAV) • Documentos (PDF, DOC, XLS, etc.) — Envie vários arquivos de uma vez
+              </p>
+
+              {/* File list */}
+              {mediaFiles.length > 0 && (
+                <div className="space-y-1.5">
+                  {mediaFiles.map((mf, idx) => (
+                    <div key={idx} className="flex items-center gap-2 bg-background rounded-lg px-3 py-2 text-xs">
+                      {mf.type === 'image' && <Image className="h-3.5 w-3.5 text-blue-500 shrink-0" />}
+                      {mf.type === 'audio' && <Mic className="h-3.5 w-3.5 text-green-500 shrink-0" />}
+                      {mf.type === 'document' && <File className="h-3.5 w-3.5 text-orange-500 shrink-0" />}
+                      <span className="truncate flex-1">{mf.name}</span>
+                      <Badge variant="outline" className="text-[10px] shrink-0">{mf.type === 'image' ? 'Imagem' : mf.type === 'audio' ? 'Áudio' : 'Arquivo'}</Badge>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setMediaFiles(prev => prev.filter((_, i) => i !== idx))}>
+                        <X className="h-3 w-3 text-destructive" />
+                      </Button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
