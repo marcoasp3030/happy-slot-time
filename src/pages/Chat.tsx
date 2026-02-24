@@ -661,7 +661,16 @@ export default function Chat() {
 
           // Add message to active chat
           setMessages(prev => {
-            if (prev.some(m => m.id === msg.id)) return prev;
+            if (prev.some(m => m.id === msg.id || m.wa_message_id === msg.wa_message_id && msg.wa_message_id)) return prev;
+            // Replace optimistic message if this is the server version
+            const optimisticIdx = isForActiveChat && msg.direction === 'outgoing'
+              ? prev.findIndex(m => m.id.startsWith('opt-') && m.content === msg.content)
+              : -1;
+            if (optimisticIdx >= 0) {
+              const updated = [...prev];
+              updated[optimisticIdx] = msg;
+              return updated;
+            }
             if (isForActiveChat) {
               addDebugLog(`  → Adicionada ao chat ativo ✅`);
               return [...prev, msg];
@@ -767,6 +776,32 @@ export default function Chat() {
     setReplyTo(null);
     setSending(true);
 
+    // Optimistic: add message to UI immediately
+    const optimisticId = `opt-${Date.now()}`;
+    const optimisticMsg: Message = {
+      id: optimisticId,
+      conversation_id: selectedConv.id,
+      direction: 'outgoing',
+      message_type: 'text',
+      content: text,
+      media_url: null,
+      metadata: null,
+      created_at: new Date().toISOString(),
+      delivery_status: 'pending',
+      wa_message_id: null,
+      company_id: companyId!,
+    };
+    setMessages(prev => [...prev, optimisticMsg]);
+
+    // Update preview & conversation order instantly
+    setLastMsgPreviews(prev => ({
+      ...prev,
+      [selectedConv.phone]: { content: text, direction: 'outgoing', message_type: 'text', created_at: optimisticMsg.created_at },
+    }));
+    setConversations(prev => prev.map(c =>
+      c.id === selectedConv.id ? { ...c, last_message_at: optimisticMsg.created_at } : c
+    ));
+
     try {
       const body: any = {
         action: 'send-text',
@@ -784,8 +819,15 @@ export default function Chat() {
       const { data, error } = await supabase.functions.invoke('chat-send', { body });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
+
+      // Replace optimistic msg with real msg from server
+      if (data?.message) {
+        setMessages(prev => prev.map(m => m.id === optimisticId ? { ...data.message } : m));
+      }
     } catch (err: any) {
       toast.error('Erro ao enviar: ' + (err.message || 'Tente novamente'));
+      // Remove optimistic message on failure
+      setMessages(prev => prev.filter(m => m.id !== optimisticId));
       setMessageText(text);
     } finally {
       setSending(false);
