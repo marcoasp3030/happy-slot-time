@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import {
   Building2, Users, CreditCard, BarChart3, Bell, Calendar,
-  Menu, X, LogOut, ChevronRight, Shield, ArrowLeft, Settings, ScrollText, Activity, Package,
+  Menu, X, LogOut, ChevronRight, Shield, ArrowLeft, Settings, ScrollText, Package,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -18,8 +18,6 @@ const adminNavItems = [
   { title: 'Notificações', icon: Bell, path: '/admin/notificacoes' },
   { title: 'Google Calendar', icon: Calendar, path: '/admin/google-calendar' },
   { title: 'Logs & Auditoria', icon: ScrollText, path: '/admin/logs' },
-  { title: 'Consumo de Tokens', icon: Activity, path: '/admin/tokens' },
-  { title: 'Biblioteca de Prompts', icon: ScrollText, path: '/admin/prompts' },
   { title: 'Plataforma', icon: Settings, path: '/admin/plataforma' },
 ];
 
