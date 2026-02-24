@@ -5,8 +5,8 @@ import { useRole } from '@/hooks/useRole';
 import { useFormLabel } from '@/hooks/useFormLabel';
 import {
   LayoutDashboard, Users, Clock, Calendar,
-  Palette, MessageSquare, CreditCard, Menu, X, LogOut,
-  ChevronRight, Bell, Shield, Search, ClipboardList, Layers, ScrollText, Bot, Activity, Headphones, Send, Zap, Tag,
+  Palette, CreditCard, Menu, X, LogOut,
+  ChevronRight, Bell, Shield, Search, ClipboardList, Layers, ScrollText, Headphones,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -21,20 +21,13 @@ const baseNavItems = [
   { title: 'Profissionais', icon: Users, path: '/profissionais' },
   { title: 'Horários', icon: Clock, path: '/horarios' },
   { title: 'Fichas de Clientes', icon: ClipboardList, path: '/fichas' },
-  { title: 'Mensagens em Massa', icon: Send, path: '/mensagens-massa' },
-  { title: 'Automações', icon: Zap, path: '/automacoes' },
-  { title: 'Tags de Contatos', icon: Tag, path: '/tags' },
-  { title: 'Chat WhatsApp', icon: MessageSquare, path: '/chat' },
 ];
 
 const settingsItems = [
   { title: 'Aparência', icon: Palette, path: '/aparencia' },
-  { title: 'WhatsApp', icon: MessageSquare, path: '/whatsapp' },
-  { title: 'Agente IA', icon: Bot, path: '/agente-ia' },
   { title: 'Google Agenda', icon: Calendar, path: '/google-calendar' },
   { title: 'LGPD & Privacidade', icon: Shield, path: '/privacidade' },
   { title: 'Logs & Auditoria', icon: ScrollText, path: '/logs' },
-  { title: 'Consumo de Tokens', icon: Activity, path: '/consumo-tokens' },
   { title: 'Plano', icon: CreditCard, path: '/plano' },
 ];
 
@@ -80,7 +73,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-screen w-full bg-background">
-      {/* Mobile overlay */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden transition-opacity"
@@ -88,13 +80,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={`fixed inset-y-0 left-0 z-50 w-[260px] gradient-sidebar text-sidebar-foreground transform transition-transform duration-300 ease-out lg:translate-x-0 lg:static lg:z-auto flex flex-col ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-5 h-16 flex-shrink-0">
           <Link to="/dashboard" className="flex items-center gap-2.5">
             <div className="h-8 w-8 rounded-lg gradient-primary flex items-center justify-center">
@@ -106,7 +96,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </button>
         </div>
 
-        {/* Nav */}
         <nav className="flex-1 px-3 py-2 overflow-y-auto space-y-1">
           <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
             Principal
@@ -143,7 +132,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           )}
         </nav>
 
-        {/* User */}
         <div className="px-3 py-3 border-t border-sidebar-border flex-shrink-0">
           <div className="flex items-center gap-3 px-3 py-2">
             <Avatar className="h-9 w-9 bg-sidebar-accent">
@@ -166,15 +154,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
 
-      {/* Main content */}
       <div className="flex flex-1 flex-col min-w-0">
-        {/* Top bar */}
         <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-border/60 bg-background/80 backdrop-blur-xl px-4 lg:px-8">
           <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-muted-foreground hover:text-foreground transition-colors">
             <Menu className="h-5 w-5" />
           </button>
 
-          {/* Search bar */}
           <div className="hidden md:flex items-center gap-2 flex-1 max-w-md">
             <div className="relative w-full">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -201,7 +186,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </header>
 
-        {/* Page content */}
         <main className="flex-1 p-4 lg:p-8 page-transition">
           {children}
         </main>
