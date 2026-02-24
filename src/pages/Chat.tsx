@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, memo } from 'react';
+import { useState, useEffect, useRef, useCallback, memo, useMemo } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import {
   Search, Send, Paperclip, Smile, Phone, MoreVertical,
   Check, CheckCheck, Clock, X, MessageSquare, ArrowLeft,
-  FileText, Download, ExternalLink,
+  FileText, Download, ExternalLink, Tag, Plus, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -19,6 +19,9 @@ import {
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from '@/components/ui/popover';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { format, isToday, isYesterday, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -56,9 +59,36 @@ interface ReplyTo {
   message_type: string;
 }
 
+interface LastMsgPreview {
+  content: string;
+  direction: string;
+  message_type: string;
+  created_at: string;
+}
+
+interface ContactTag {
+  id: string;
+  phone: string;
+  tag: string;
+  name: string | null;
+}
+
 // ── Helpers ────────────────────────────────────────────
 const EMOJI_LIST = ['😀','😂','❤️','👍','👋','🔥','🎉','😢','😮','🙏','✅','❌','👏','💪','🤔','😎','🥰','😡','💯','⭐'];
 const QUICK_REACTIONS = ['👍','❤️','😂','😮','😢','🙏'];
+
+const TAG_COLORS: Record<string, string> = {
+  'urgente': 'bg-destructive/20 text-destructive border-destructive/30',
+  'aguardando': 'bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-500/30',
+  'resolvido': 'bg-green-500/20 text-green-700 dark:text-green-400 border-green-500/30',
+  'vip': 'bg-purple-500/20 text-purple-700 dark:text-purple-400 border-purple-500/30',
+  'novo': 'bg-blue-500/20 text-blue-700 dark:text-blue-400 border-blue-500/30',
+  'follow-up': 'bg-orange-500/20 text-orange-700 dark:text-orange-400 border-orange-500/30',
+};
+
+function getTagClasses(tag: string) {
+  return TAG_COLORS[tag.toLowerCase()] || 'bg-muted text-muted-foreground border-border';
+}
 
 function formatConvDate(dateStr: string | null) {
   if (!dateStr) return '';
@@ -79,6 +109,19 @@ function formatPhoneDisplay(phone: string) {
   return phone;
 }
 
+function getMessagePreviewText(msg: LastMsgPreview | undefined): string {
+  if (!msg) return '';
+  const prefix = msg.direction === 'outgoing' ? '✓ ' : '';
+  switch (msg.message_type) {
+    case 'image': return prefix + '📷 Foto';
+    case 'video': return prefix + '🎥 Vídeo';
+    case 'audio': return prefix + '🎵 Áudio';
+    case 'document': return prefix + '📄 Documento';
+    case 'sticker': return prefix + '🎭 Figurinha';
+    default: return prefix + (msg.content?.substring(0, 60) || '');
+  }
+}
+
 // ── Delivery status icon ──────────────────────────────
 const DeliveryIcon = memo(function DeliveryIcon({ status }: { status: string | null }) {
   if (!status || status === 'pending') return <Clock className="h-3 w-3 text-primary-foreground/40" />;
@@ -92,14 +135,10 @@ const DeliveryIcon = memo(function DeliveryIcon({ status }: { status: string | n
 // ── Interactive buttons rendering ─────────────────────
 function InteractiveButtons({ metadata, onButtonClick }: { metadata: any; onButtonClick?: (text: string) => void }) {
   if (!metadata) return null;
-
-  // Parse metadata if string
   let meta = metadata;
   if (typeof meta === 'string') {
     try { meta = JSON.parse(meta); } catch { return null; }
   }
-
-  // Button message
   const buttons = meta?.buttons || meta?.choices;
   if (buttons && Array.isArray(buttons) && buttons.length > 0) {
     return (
@@ -109,11 +148,8 @@ function InteractiveButtons({ metadata, onButtonClick }: { metadata: any; onButt
             ? btn.split('|')[0]
             : btn?.text || btn?.title || btn?.displayText || btn?.buttonText || String(btn);
           return (
-            <button
-              key={i}
-              onClick={() => onButtonClick?.(label)}
-              className="w-full text-center py-2 px-3 text-sm font-medium text-accent-foreground bg-accent/30 hover:bg-accent/50 rounded-lg transition-colors border border-border/20"
-            >
+            <button key={i} onClick={() => onButtonClick?.(label)}
+              className="w-full text-center py-2 px-3 text-sm font-medium text-accent-foreground bg-accent/30 hover:bg-accent/50 rounded-lg transition-colors border border-border/20">
               {label}
             </button>
           );
@@ -121,8 +157,6 @@ function InteractiveButtons({ metadata, onButtonClick }: { metadata: any; onButt
       </div>
     );
   }
-
-  // List message sections
   const sections = meta?.list_sections || meta?.sections;
   if (sections && Array.isArray(sections) && sections.length > 0) {
     return (
@@ -133,11 +167,8 @@ function InteractiveButtons({ metadata, onButtonClick }: { metadata: any; onButt
               <p className="text-[10px] font-semibold uppercase text-muted-foreground/70 px-1 mb-1">{section.title}</p>
             )}
             {section.rows?.map((row: any, ri: number) => (
-              <button
-                key={ri}
-                onClick={() => onButtonClick?.(row.title || row.description)}
-                className="w-full text-left py-1.5 px-3 text-sm hover:bg-accent/30 rounded-md transition-colors"
-              >
+              <button key={ri} onClick={() => onButtonClick?.(row.title || row.description)}
+                className="w-full text-left py-1.5 px-3 text-sm hover:bg-accent/30 rounded-md transition-colors">
                 <span className="font-medium">{row.title}</span>
                 {row.description && <span className="text-xs text-muted-foreground ml-1">— {row.description}</span>}
               </button>
@@ -147,24 +178,23 @@ function InteractiveButtons({ metadata, onButtonClick }: { metadata: any; onButt
       </div>
     );
   }
-
   return null;
 }
 
 // ── Message Bubble ────────────────────────────────────
 const MessageBubble = memo(function MessageBubble({
-  message, onReact, onButtonClick, onReply, allMessages,
+  message, onReact, onButtonClick, onReply, allMessages, highlightText,
 }: {
   message: Message;
   onReact: (emoji: string) => void;
   onButtonClick?: (text: string) => void;
   onReply?: (msg: Message) => void;
   allMessages?: Message[];
+  highlightText?: string;
 }) {
   const isOutgoing = message.direction === 'outgoing';
   const [showReactions, setShowReactions] = useState(false);
 
-  // Check if this message is a reply (has quoted message in metadata)
   const quotedMsg = (() => {
     if (!message.metadata) return null;
     let meta = message.metadata;
@@ -176,13 +206,26 @@ const MessageBubble = memo(function MessageBubble({
     return null;
   })();
 
+  const renderHighlightedText = (text: string) => {
+    if (!highlightText || !text) return text;
+    const idx = text.toLowerCase().indexOf(highlightText.toLowerCase());
+    if (idx === -1) return text;
+    return (
+      <>
+        {text.slice(0, idx)}
+        <mark className="bg-amber-300/60 dark:bg-amber-500/40 text-inherit rounded-sm px-0.5">{text.slice(idx, idx + highlightText.length)}</mark>
+        {text.slice(idx + highlightText.length)}
+      </>
+    );
+  };
+
   const renderContent = () => {
     if (message.message_type === 'image' && message.media_url) {
       return (
         <div>
           <img src={message.media_url} alt="" className="max-w-full rounded-lg mb-1 cursor-pointer" loading="lazy"
             onClick={() => window.open(message.media_url!, '_blank')} />
-          {message.content && <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{message.content}</p>}
+          {message.content && <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{renderHighlightedText(message.content)}</p>}
         </div>
       );
     }
@@ -190,7 +233,7 @@ const MessageBubble = memo(function MessageBubble({
       return (
         <div>
           <video src={message.media_url} controls className="max-w-full rounded-lg mb-1" />
-          {message.content && <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{message.content}</p>}
+          {message.content && <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{renderHighlightedText(message.content)}</p>}
         </div>
       );
     }
@@ -215,14 +258,13 @@ const MessageBubble = memo(function MessageBubble({
         </a>
       );
     }
-    // Default text
-    return <p className="text-[13px] leading-relaxed whitespace-pre-wrap break-words">{message.content}</p>;
+    return <p className="text-[13px] leading-relaxed whitespace-pre-wrap break-words">{renderHighlightedText(message.content || '')}</p>;
   };
 
   const bubbleWidth = (message.message_type === 'audio' || message.message_type === 'document') ? 'min-w-[250px]' : '';
 
   return (
-    <div className={cn("flex mb-1 px-[6%] group", isOutgoing ? "justify-end" : "justify-start")}>
+    <div id={`msg-${message.id}`} className={cn("flex mb-1 px-[6%] group", isOutgoing ? "justify-end" : "justify-start")}>
       <div
         className={cn(
           "relative max-w-[60%] px-2.5 py-1.5 shadow-sm",
@@ -232,13 +274,10 @@ const MessageBubble = memo(function MessageBubble({
             : "bg-card text-foreground rounded-lg rounded-tl-none border border-border/20"
         )}
       >
-        {/* Quoted message */}
         {quotedMsg && (
           <div className={cn(
             "rounded-md px-2.5 py-1.5 mb-1.5 border-l-[3px] cursor-pointer",
-            isOutgoing
-              ? "bg-white/10 border-white/50"
-              : "bg-muted/60 border-primary/60"
+            isOutgoing ? "bg-white/10 border-white/50" : "bg-muted/60 border-primary/60"
           )}>
             <p className={cn("text-[10px] font-semibold", isOutgoing ? "text-white/70" : "text-primary")}>
               {quotedMsg.direction === 'incoming' ? 'Cliente' : 'Você'}
@@ -250,11 +289,8 @@ const MessageBubble = memo(function MessageBubble({
         )}
 
         {renderContent()}
-
-        {/* Interactive buttons */}
         <InteractiveButtons metadata={message.metadata} onButtonClick={onButtonClick} />
 
-        {/* Time + delivery status */}
         <div className={cn(
           "flex items-center justify-end gap-1 mt-0.5 -mb-0.5",
           isOutgoing ? "text-white/60" : "text-muted-foreground"
@@ -263,18 +299,13 @@ const MessageBubble = memo(function MessageBubble({
           {isOutgoing && <DeliveryIcon status={message.delivery_status} />}
         </div>
 
-        {/* Reaction + Reply popover on hover */}
         <div className={cn(
           "absolute -bottom-3 opacity-0 group-hover:opacity-100 transition-all z-10 flex gap-1",
           isOutgoing ? "left-0" : "right-0"
         )}>
-          {/* Reply button */}
           {onReply && (
-            <button
-              onClick={() => onReply(message)}
-              className="bg-card border border-border/60 rounded-full p-1 shadow-md hover:shadow-lg transition-shadow"
-              title="Responder"
-            >
+            <button onClick={() => onReply(message)}
+              className="bg-card border border-border/60 rounded-full p-1 shadow-md hover:shadow-lg transition-shadow" title="Responder">
               <ArrowLeft className="h-3.5 w-3.5 text-muted-foreground rotate-[225deg]" />
             </button>
           )}
@@ -324,6 +355,18 @@ export default function Chat() {
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [hasOlderMsgs, setHasOlderMsgs] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  // Last message preview per phone
+  const [lastMsgPreviews, setLastMsgPreviews] = useState<Record<string, LastMsgPreview>>({});
+  // Message search within conversation
+  const [msgSearchQuery, setMsgSearchQuery] = useState('');
+  const [msgSearchResults, setMsgSearchResults] = useState<string[]>([]);
+  const [msgSearchIdx, setMsgSearchIdx] = useState(0);
+  const [showMsgSearch, setShowMsgSearch] = useState(false);
+  // Tags
+  const [contactTags, setContactTags] = useState<ContactTag[]>([]);
+  const [showTagDialog, setShowTagDialog] = useState(false);
+  const [newTagInput, setNewTagInput] = useState('');
+  const [tagDialogPhone, setTagDialogPhone] = useState('');
 
   const addDebugLog = useCallback((msg: string) => {
     const ts = new Date().toLocaleTimeString('pt-BR');
@@ -363,6 +406,61 @@ export default function Chat() {
     setLoadingConvs(false);
   }, [companyId]);
 
+  // Load last message previews for all conversations
+  const loadLastMsgPreviews = useCallback(async (convIds: string[]) => {
+    if (convIds.length === 0) return;
+    // Get the latest message per conversation_id using a single query
+    // We'll fetch the latest message for each conv and build a phone->preview map
+    const { data } = await supabase
+      .from('whatsapp_messages')
+      .select('conversation_id, content, direction, message_type, created_at')
+      .in('conversation_id', convIds)
+      .not('content', 'eq', '__DEBOUNCE_LOCK__')
+      .not('content', 'eq', '__PROCESSING__')
+      .not('delivery_status', 'eq', 'locking')
+      .not('delivery_status', 'eq', 'processing')
+      .order('created_at', { ascending: false })
+      .limit(400);
+
+    if (!data) return;
+
+    // Group by conversation_id, take first (most recent) per conv
+    const convMsgMap = new Map<string, typeof data[0]>();
+    for (const msg of data) {
+      if (!convMsgMap.has(msg.conversation_id)) {
+        convMsgMap.set(msg.conversation_id, msg);
+      }
+    }
+
+    // Map conv_id -> phone using conversations
+    const previews: Record<string, LastMsgPreview> = {};
+    for (const [convId, msg] of convMsgMap) {
+      const conv = conversations.find(c => c.id === convId);
+      if (conv) {
+        const existing = previews[conv.phone];
+        if (!existing || msg.created_at > existing.created_at) {
+          previews[conv.phone] = {
+            content: msg.content || '',
+            direction: msg.direction,
+            message_type: msg.message_type,
+            created_at: msg.created_at,
+          };
+        }
+      }
+    }
+    setLastMsgPreviews(prev => ({ ...prev, ...previews }));
+  }, [conversations]);
+
+  // Load tags
+  const loadContactTags = useCallback(async () => {
+    if (!companyId) return;
+    const { data } = await supabase
+      .from('contact_tags')
+      .select('id, phone, tag, name')
+      .eq('company_id', companyId);
+    if (data) setContactTags(data as ContactTag[]);
+  }, [companyId]);
+
   // Load instances
   useEffect(() => {
     if (!companyId) return;
@@ -370,7 +468,14 @@ export default function Chat() {
       .eq('company_id', companyId).then(({ data }) => { if (data) setInstances(data); });
   }, [companyId]);
 
-  useEffect(() => { loadConversations(); }, [loadConversations]);
+  useEffect(() => { loadConversations(); loadContactTags(); }, [loadConversations, loadContactTags]);
+
+  // Load previews when conversations change
+  useEffect(() => {
+    if (conversations.length > 0) {
+      loadLastMsgPreviews(conversations.map(c => c.id));
+    }
+  }, [conversations.length]); // Only re-run when count changes, not every update
 
   // Ref to always have fresh conversations without causing loadMessages to re-create
   const conversationsRef = useRef<Conversation[]>([]);
@@ -440,6 +545,7 @@ export default function Chat() {
       selectedPhoneConvIdsRef.current = conversations.filter(c => c.phone === selectedConv.phone).map(c => c.id);
     }
   }, [conversations, selectedConv?.phone]);
+
   // Ref for the scrollable messages container
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const isFirstLoad = useRef(true);
@@ -451,11 +557,9 @@ export default function Chat() {
     if (!container || !messages.length) return;
 
     if (isFirstLoad.current) {
-      // First load: jump instantly to bottom
       container.scrollTop = container.scrollHeight;
       isFirstLoad.current = false;
     } else if (messages.length > prevMsgCount.current) {
-      // New message arrived - only scroll if user is near the bottom
       const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
       if (distFromBottom < 200) {
         requestAnimationFrame(() => {
@@ -467,7 +571,15 @@ export default function Chat() {
   }, [messages]);
 
   // Reset first load flag when switching conversations
-  useEffect(() => { isFirstLoad.current = true; prevMsgCount.current = 0; setHasOlderMsgs(true); setReplyTo(null); }, [selectedConv?.phone]);
+  useEffect(() => {
+    isFirstLoad.current = true;
+    prevMsgCount.current = 0;
+    setHasOlderMsgs(true);
+    setReplyTo(null);
+    setShowMsgSearch(false);
+    setMsgSearchQuery('');
+    setMsgSearchResults([]);
+  }, [selectedConv?.phone]);
 
   // Scroll to top → load older messages
   useEffect(() => {
@@ -490,7 +602,37 @@ export default function Chat() {
     return () => container.removeEventListener('scroll', handleScroll);
   }, [hasOlderMsgs, loadingOlder, messages, loadMessages]);
 
-  // Realtime - single stable connection, no polling that causes page movement
+  // Message search within conversation
+  useEffect(() => {
+    if (!msgSearchQuery.trim()) {
+      setMsgSearchResults([]);
+      setMsgSearchIdx(0);
+      return;
+    }
+    const q = msgSearchQuery.toLowerCase();
+    const results = messages
+      .filter(m => m.content?.toLowerCase().includes(q))
+      .map(m => m.id);
+    setMsgSearchResults(results);
+    setMsgSearchIdx(results.length > 0 ? results.length - 1 : 0);
+    // Scroll to last (most recent) result
+    if (results.length > 0) {
+      const el = document.getElementById(`msg-${results[results.length - 1]}`);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [msgSearchQuery, messages]);
+
+  const navigateSearchResult = (direction: 'up' | 'down') => {
+    if (msgSearchResults.length === 0) return;
+    let newIdx = direction === 'up' ? msgSearchIdx - 1 : msgSearchIdx + 1;
+    if (newIdx < 0) newIdx = msgSearchResults.length - 1;
+    if (newIdx >= msgSearchResults.length) newIdx = 0;
+    setMsgSearchIdx(newIdx);
+    const el = document.getElementById(`msg-${msgSearchResults[newIdx]}`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  // Realtime - single stable connection
   useEffect(() => {
     if (!companyId) return;
 
@@ -527,6 +669,20 @@ export default function Chat() {
             return prev;
           });
 
+          // Update last message preview
+          const conv = conversationsRef.current.find(c => c.id === msg.conversation_id);
+          if (conv) {
+            setLastMsgPreviews(prev => ({
+              ...prev,
+              [conv.phone]: {
+                content: msg.content || '',
+                direction: msg.direction,
+                message_type: msg.message_type,
+                created_at: msg.created_at,
+              },
+            }));
+          }
+
           // Update conversations list locally: move to top + update last_message_at
           setConversations(prev => {
             const updated = prev.map(c =>
@@ -534,7 +690,6 @@ export default function Chat() {
                 ? { ...c, last_message_at: msg.created_at }
                 : c
             );
-            // If conversation doesn't exist yet, re-fetch from DB
             if (!updated.some(c => c.id === msg.conversation_id)) {
               loadConversations();
               return prev;
@@ -544,11 +699,10 @@ export default function Chat() {
 
           // Increment unread count for non-active conversations (incoming only)
           if (msg.direction === 'incoming') {
-            const conv = conversationsRef.current.find(c => c.id === msg.conversation_id);
             const msgPhone = conv?.phone;
             if (msgPhone && msgPhone !== activePhone) {
               setUnreadCounts(prev => ({ ...prev, [msgPhone]: (prev[msgPhone] || 0) + 1 }));
-              addDebugLog(`  → Unread +1 para ${msgPhone} (total: ${(unreadCounts[msgPhone] || 0) + 1})`);
+              addDebugLog(`  → Unread +1 para ${msgPhone}`);
             }
           }
         })
@@ -565,7 +719,6 @@ export default function Chat() {
           const conv = payload.new as Conversation;
           if (conv?.company_id !== companyId) return;
           addDebugLog(`Nova conversa: ${conv?.phone}`);
-          // Add new conversation to list locally at the top
           setConversations(prev => {
             if (prev.some(c => c.id === conv.id)) return prev;
             return [conv, ...prev];
@@ -593,7 +746,6 @@ export default function Chat() {
 
     connect();
 
-    // Light polling - only refresh conversation list (not messages), every 30s
     const pollInterval = setInterval(() => {
       loadConversations();
     }, 30000);
@@ -623,7 +775,6 @@ export default function Chat() {
         conversation_id: selectedConv.id,
         instance_id: selectedConv.instance_id,
       };
-      // Include quoted message if replying
       if (currentReply) {
         const originalMsg = messages.find(m => m.id === currentReply.id);
         if (originalMsg?.wa_message_id) {
@@ -702,7 +853,6 @@ export default function Chat() {
     e.target.value = '';
   };
 
-  // Handle interactive button click - send as text reply
   const handleButtonClick = (text: string) => {
     setMessageText(text);
     inputRef.current?.focus();
@@ -711,12 +861,40 @@ export default function Chat() {
   const selectConversation = (conv: Conversation) => {
     setSelectedConv(conv);
     setShowMobileChat(true);
-    // Clear unread count for this conversation
     setUnreadCounts(prev => {
       const next = { ...prev };
       delete next[conv.phone];
       return next;
     });
+  };
+
+  // Tag management
+  const getTagsForPhone = (phone: string) => contactTags.filter(t => t.phone === phone);
+
+  const addTag = async (phone: string, tag: string) => {
+    if (!companyId || !tag.trim()) return;
+    const conv = unifiedConversations.find(c => c.phone === phone);
+    const { error } = await supabase.from('contact_tags').insert({
+      company_id: companyId,
+      phone,
+      tag: tag.trim().toLowerCase(),
+      name: conv?.client_name || null,
+    });
+    if (error) {
+      toast.error('Erro ao adicionar etiqueta');
+    } else {
+      loadContactTags();
+      toast.success('Etiqueta adicionada');
+    }
+  };
+
+  const removeTag = async (tagId: string) => {
+    const { error } = await supabase.from('contact_tags').delete().eq('id', tagId);
+    if (error) {
+      toast.error('Erro ao remover etiqueta');
+    } else {
+      loadContactTags();
+    }
   };
 
   // Filter conversations (use unified list)
@@ -726,7 +904,6 @@ export default function Chat() {
     return (c.client_name?.toLowerCase().includes(q)) || c.phone.includes(q);
   });
 
-  // Get instance label
   const getInstanceLabel = (instanceId: string | null) => {
     if (!instanceId) return null;
     const inst = instances.find(i => i.id === instanceId);
@@ -750,15 +927,15 @@ export default function Chat() {
     return groups;
   }, []);
 
-  // Get last message preview for conversation list
-  const getLastMessagePreview = (conv: Conversation) => {
-    // We don't have last message content in conversation table, just show phone
-    return formatPhoneDisplay(conv.phone);
-  };
+  // Suggested tags for quick add
+  const suggestedTags = useMemo(() => {
+    const all = new Set(contactTags.map(t => t.tag));
+    ['urgente', 'aguardando', 'resolvido', 'vip', 'novo', 'follow-up'].forEach(t => all.add(t));
+    return Array.from(all);
+  }, [contactTags]);
 
   return (
     <DashboardLayout>
-      {/* Full-height container that fills the entire content area */}
       <div className="h-[calc(100vh-4rem)] -m-4 lg:-m-8 flex overflow-hidden bg-background relative pb-8">
         {/* ─── Left Panel: Conversations ─── */}
         <div className={cn(
@@ -809,6 +986,9 @@ export default function Chat() {
                 {filtered.map(conv => {
                   const isSelected = selectedConv?.id === conv.id;
                   const instLabel = getInstanceLabel(conv.instance_id);
+                  const preview = lastMsgPreviews[conv.phone];
+                  const tags = getTagsForPhone(conv.phone);
+                  const hasUnread = !!unreadCounts[conv.phone];
                   return (
                     <button
                       key={conv.id}
@@ -825,23 +1005,24 @@ export default function Chat() {
                       </Avatar>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
-                          <p className={cn("text-[15px] truncate", unreadCounts[conv.phone] ? "font-bold text-foreground" : "font-medium text-foreground")}>
+                          <p className={cn("text-[15px] truncate", hasUnread ? "font-bold text-foreground" : "font-medium text-foreground")}>
                             {conv.client_name || formatPhoneDisplay(conv.phone)}
                           </p>
                           <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
-                            {unreadCounts[conv.phone] && (
+                            {hasUnread && (
                               <span className="min-w-[20px] h-5 flex items-center justify-center rounded-full bg-primary text-primary-foreground text-[11px] font-bold px-1.5">
                                 {unreadCounts[conv.phone]}
                               </span>
                             )}
-                            <span className={cn("text-[11px] flex-shrink-0", unreadCounts[conv.phone] ? "text-primary font-semibold" : "text-muted-foreground")}>
+                            <span className={cn("text-[11px] flex-shrink-0", hasUnread ? "text-primary font-semibold" : "text-muted-foreground")}>
                               {formatConvDate(conv.last_message_at)}
                             </span>
                           </div>
                         </div>
+                        {/* Last message preview */}
                         <div className="flex items-center gap-1.5 mt-0.5">
-                          <p className="text-[13px] text-muted-foreground truncate flex-1">
-                            {conv.client_name ? formatPhoneDisplay(conv.phone) : ''}
+                          <p className={cn("text-[13px] truncate flex-1", hasUnread ? "text-foreground font-medium" : "text-muted-foreground")}>
+                            {preview ? getMessagePreviewText(preview) : (conv.client_name ? formatPhoneDisplay(conv.phone) : '')}
                           </p>
                           {conv.handoff_requested && (
                             <Badge variant="destructive" className="text-[9px] px-1.5 py-0 h-4 flex-shrink-0">Transbordo</Badge>
@@ -850,6 +1031,19 @@ export default function Chat() {
                             <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 flex-shrink-0">{instLabel}</Badge>
                           )}
                         </div>
+                        {/* Tags */}
+                        {tags.length > 0 && (
+                          <div className="flex gap-1 mt-1 flex-wrap">
+                            {tags.slice(0, 3).map(t => (
+                              <span key={t.id} className={cn("text-[9px] px-1.5 py-0.5 rounded-full border font-medium", getTagClasses(t.tag))}>
+                                {t.tag}
+                              </span>
+                            ))}
+                            {tags.length > 3 && (
+                              <span className="text-[9px] text-muted-foreground">+{tags.length - 3}</span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </button>
                   );
@@ -865,7 +1059,6 @@ export default function Chat() {
           !showMobileChat && "hidden md:flex"
         )}>
           {!selectedConv ? (
-            /* Empty state - WhatsApp Web style */
             <div className="flex-1 flex flex-col items-center justify-center bg-muted/20 border-b-[6px] border-primary/60">
               <div className="max-w-md text-center">
                 <div className="h-[200px] w-[200px] mx-auto mb-8 rounded-full bg-muted/30 flex items-center justify-center">
@@ -893,11 +1086,24 @@ export default function Chat() {
                   <p className="font-medium text-[15px] text-foreground truncate">
                     {selectedConv.client_name || formatPhoneDisplay(selectedConv.phone)}
                   </p>
-                  <p className="text-[12px] text-muted-foreground">
-                    {selectedConv.client_name ? formatPhoneDisplay(selectedConv.phone) : 'Online'}
-                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-[12px] text-muted-foreground">
+                      {selectedConv.client_name ? formatPhoneDisplay(selectedConv.phone) : 'Online'}
+                    </p>
+                    {/* Tags in header */}
+                    {getTagsForPhone(selectedConv.phone).map(t => (
+                      <span key={t.id} className={cn("text-[9px] px-1.5 py-0 rounded-full border font-medium", getTagClasses(t.tag))}>
+                        {t.tag}
+                      </span>
+                    ))}
+                  </div>
                 </div>
                 <div className="flex items-center gap-1">
+                  {/* Search in messages */}
+                  <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground"
+                    onClick={() => { setShowMsgSearch(!showMsgSearch); if (showMsgSearch) { setMsgSearchQuery(''); setMsgSearchResults([]); } }}>
+                    <Search className="h-5 w-5" />
+                  </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground">
@@ -911,14 +1117,48 @@ export default function Chat() {
                       <DropdownMenuItem onClick={() => loadMessages(selectedConv.phone)}>
                         Atualizar mensagens
                       </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => { setTagDialogPhone(selectedConv.phone); setShowTagDialog(true); }}>
+                        <Tag className="h-4 w-4 mr-2" /> Gerenciar etiquetas
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
               </div>
 
-              {/* Messages area - WhatsApp-style background */}
+              {/* Search bar within messages */}
+              {showMsgSearch && (
+                <div className="flex items-center gap-2 px-4 py-2 bg-card border-b border-border/20 flex-shrink-0">
+                  <Input
+                    placeholder="Pesquisar mensagens..."
+                    value={msgSearchQuery}
+                    onChange={(e) => setMsgSearchQuery(e.target.value)}
+                    className="flex-1 h-8 text-sm"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') navigateSearchResult(e.shiftKey ? 'up' : 'down');
+                      if (e.key === 'Escape') { setShowMsgSearch(false); setMsgSearchQuery(''); setMsgSearchResults([]); }
+                    }}
+                  />
+                  {msgSearchResults.length > 0 && (
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">
+                      {msgSearchIdx + 1}/{msgSearchResults.length}
+                    </span>
+                  )}
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigateSearchResult('up')}>
+                    <ChevronUp className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigateSearchResult('down')}>
+                    <ChevronDown className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8"
+                    onClick={() => { setShowMsgSearch(false); setMsgSearchQuery(''); setMsgSearchResults([]); }}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+
+              {/* Messages area */}
               <div ref={messagesContainerRef} className="flex-1 overflow-y-auto py-3 chat-messages-bg">
-                {/* Load older messages indicator */}
                 {loadingOlder && (
                   <div className="flex justify-center py-3">
                     <div className="animate-pulse text-muted-foreground text-xs bg-card/80 px-3 py-1 rounded-full shadow-sm">Carregando anteriores...</div>
@@ -960,6 +1200,7 @@ export default function Chat() {
                           onButtonClick={handleButtonClick}
                           onReply={(m) => setReplyTo({ id: m.id, content: m.content, direction: m.direction, message_type: m.message_type })}
                           allMessages={messages}
+                          highlightText={msgSearchQuery.trim() && msgSearchResults.includes(msg.id) ? msgSearchQuery : undefined}
                         />
                       ))}
                     </div>
@@ -985,9 +1226,8 @@ export default function Chat() {
                 </div>
               )}
 
-              {/* Input area - WhatsApp Web style */}
+              {/* Input area */}
               <div className="flex items-center gap-2 px-4 py-2.5 bg-muted/40 border-t border-border/20 flex-shrink-0">
-                {/* Emoji picker */}
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground hover:text-foreground flex-shrink-0 rounded-full">
@@ -1004,7 +1244,6 @@ export default function Chat() {
                   </PopoverContent>
                 </Popover>
 
-                {/* Attachment */}
                 <label className="flex-shrink-0">
                   <input type="file" className="hidden" onChange={handleMediaUpload}
                     accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx" />
@@ -1013,7 +1252,6 @@ export default function Chat() {
                   </Button>
                 </label>
 
-                {/* Text input */}
                 <Input
                   ref={inputRef}
                   placeholder="Digite uma mensagem"
@@ -1024,7 +1262,6 @@ export default function Chat() {
                   disabled={sending}
                 />
 
-                {/* Send button */}
                 <Button
                   onClick={handleSend}
                   disabled={!messageText.trim() || sending}
@@ -1039,6 +1276,74 @@ export default function Chat() {
           )}
         </div>
 
+        {/* ─── Tag Management Dialog ─── */}
+        <Dialog open={showTagDialog} onOpenChange={setShowTagDialog}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Tag className="h-5 w-5" /> Etiquetas
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              {/* Current tags */}
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-2">Etiquetas atuais</p>
+                <div className="flex flex-wrap gap-2">
+                  {getTagsForPhone(tagDialogPhone).length === 0 && (
+                    <p className="text-sm text-muted-foreground/60">Nenhuma etiqueta</p>
+                  )}
+                  {getTagsForPhone(tagDialogPhone).map(t => (
+                    <span key={t.id} className={cn("inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border font-medium", getTagClasses(t.tag))}>
+                      {t.tag}
+                      <button onClick={() => removeTag(t.id)} className="hover:opacity-70">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quick add tags */}
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-2">Adicionar etiqueta</p>
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {suggestedTags
+                    .filter(t => !getTagsForPhone(tagDialogPhone).some(ct => ct.tag === t))
+                    .map(t => (
+                      <button key={t} onClick={() => addTag(tagDialogPhone, t)}
+                        className={cn("text-xs px-2.5 py-1 rounded-full border font-medium hover:opacity-80 transition-opacity", getTagClasses(t))}>
+                        + {t}
+                      </button>
+                    ))}
+                </div>
+                {/* Custom tag input */}
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Nova etiqueta personalizada..."
+                    value={newTagInput}
+                    onChange={(e) => setNewTagInput(e.target.value)}
+                    className="h-9 text-sm"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newTagInput.trim()) {
+                        addTag(tagDialogPhone, newTagInput);
+                        setNewTagInput('');
+                      }
+                    }}
+                  />
+                  <Button size="sm" className="h-9" onClick={() => {
+                    if (newTagInput.trim()) {
+                      addTag(tagDialogPhone, newTagInput);
+                      setNewTagInput('');
+                    }
+                  }}>
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* ─── Debug Panel ─── */}
         <div className={cn(
           "absolute bottom-0 left-0 right-0 bg-card border-t border-border z-50 transition-all",
@@ -1048,7 +1353,7 @@ export default function Chat() {
             onClick={() => setShowDebug(!showDebug)}
             className={cn(
               "w-full h-8 flex items-center justify-between px-4 text-xs font-mono",
-              rtStatus === 'SUBSCRIBED' ? "text-green-500" : "text-destructive"
+              rtStatus === 'SUBSCRIBED' ? "text-primary" : "text-destructive"
             )}
           >
             <span>🔌 RT: {rtStatus} | Conversas: {unifiedConversations.length} (raw: {conversations.length}) | Msgs: {messages.length}</span>
@@ -1059,7 +1364,7 @@ export default function Chat() {
               <div className="space-y-0.5 font-mono text-[11px] text-muted-foreground">
                 {debugLogs.map((log, i) => (
                   <div key={i} className={cn(
-                    log.includes('✅') ? 'text-green-500' : log.includes('Ignorado') ? 'text-yellow-500' : ''
+                    log.includes('✅') ? 'text-primary' : log.includes('Ignorado') ? 'text-amber-500' : ''
                   )}>{log}</div>
                 ))}
                 {debugLogs.length === 0 && <div className="text-muted-foreground/50">Aguardando eventos...</div>}
