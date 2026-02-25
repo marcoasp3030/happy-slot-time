@@ -93,6 +93,22 @@ export default function Appointments() {
     if (error) { toast.error('Erro ao atualizar'); return; }
     toast.success('Status atualizado');
 
+    // Send WhatsApp notification for confirmed/canceled/rescheduled
+    if (['confirmed', 'canceled', 'rescheduled'].includes(status)) {
+      supabase.functions.invoke('notify-appointment-status', {
+        body: { appointment_id: id, new_status: status },
+      }).then(({ data, error: notifErr }) => {
+        if (notifErr) {
+          console.error('WhatsApp notification error:', notifErr);
+        } else if (data?.sent) {
+          toast.success('Notificação WhatsApp enviada');
+        } else if (data?.success && !data?.sent) {
+          // Notification disabled or no template - silent
+        } else {
+          console.warn('WhatsApp notification issue:', data);
+        }
+      });
+    }
 
     // Audit log for status change
     const apt = appointments.find(a => a.id === id);

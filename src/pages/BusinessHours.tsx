@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { logAudit } from '@/lib/auditLog';
 import { Clock, Settings } from 'lucide-react';
 import TimeBlocks from '@/components/TimeBlocks';
+import MassCancelDialog from '@/components/MassCancelDialog';
 
 const dayNames = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
@@ -58,6 +59,7 @@ export default function BusinessHours() {
             <h1 className="section-title">Horários</h1>
             <p className="section-subtitle">Configure horários de funcionamento, bloqueios e regras</p>
           </div>
+          <MassCancelDialog />
         </div>
 
         <Card className="glass-card-static rounded-2xl">

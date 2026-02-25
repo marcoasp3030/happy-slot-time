@@ -16,6 +16,7 @@ import Staff from "./pages/Staff";
 import BusinessHours from "./pages/BusinessHours";
 import Appointments from "./pages/Appointments";
 import Appearance from "./pages/Appearance";
+import WhatsAppSettings from "./pages/WhatsAppSettings";
 import Plan from "./pages/Plan";
 import PublicBooking from "./pages/PublicBooking";
 import NotFound from "./pages/NotFound";
@@ -35,8 +36,16 @@ import ClientRecords from "./pages/ClientRecords";
 import PrivacyPolicySettings from "./pages/PrivacyPolicySettings";
 import PrivacyPolicyPublic from "./pages/PrivacyPolicyPublic";
 import AuditLogs from "./pages/AuditLogs";
+import WhatsAppAgent from "./pages/WhatsAppAgent";
+import AdminTokenUsage from "./pages/admin/AdminTokenUsage";
+import AdminPromptTemplates from "./pages/admin/AdminPromptTemplates";
 import AdminPlans from "./pages/admin/AdminPlans";
+import TokenUsage from "./pages/TokenUsage";
 import Atendimentos from "./pages/Atendimentos";
+import MassMessages from "./pages/MassMessages";
+import Automations from "./pages/Automations";
+import ContactTags from "./pages/ContactTags";
+import Chat from "./pages/Chat";
 
 const queryClient = new QueryClient();
 
@@ -57,6 +66,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (loading || checkingBlock) return <div className="min-h-screen flex items-center justify-center"><div className="animate-pulse text-muted-foreground">Carregando...</div></div>;
   if (!user) return <Navigate to="/login" replace />;
   
+  // Staff users get redirected to their own dashboard
   if (profileRole === 'staff') return <Navigate to="/staff-dashboard" replace />;
   
   if (blocked && !isSuperAdmin) return (
@@ -110,21 +120,30 @@ function AnimatedRoutes() {
       <Route path="/agendar/:slug" element={<PageTransition><PublicBooking /></PageTransition>} />
       <Route path="/privacidade/:slug" element={<PageTransition><PrivacyPolicyPublic /></PageTransition>} />
       
+      {/* Staff route */}
       <Route path="/staff-dashboard" element={<StaffRoute><PageTransition><StaffDashboard /></PageTransition></StaffRoute>} />
       
+      {/* Admin/Owner routes */}
       <Route path="/dashboard" element={<ProtectedRoute><PageTransition><Dashboard /></PageTransition></ProtectedRoute>} />
       <Route path="/servicos" element={<ProtectedRoute><PageTransition><Services /></PageTransition></ProtectedRoute>} />
       <Route path="/profissionais" element={<ProtectedRoute><PageTransition><Staff /></PageTransition></ProtectedRoute>} />
       <Route path="/horarios" element={<ProtectedRoute><PageTransition><BusinessHours /></PageTransition></ProtectedRoute>} />
       <Route path="/agendamentos" element={<ProtectedRoute><PageTransition><Appointments /></PageTransition></ProtectedRoute>} />
       <Route path="/aparencia" element={<ProtectedRoute><PageTransition><Appearance /></PageTransition></ProtectedRoute>} />
+      <Route path="/whatsapp" element={<ProtectedRoute><PageTransition><WhatsAppSettings /></PageTransition></ProtectedRoute>} />
       <Route path="/plano" element={<ProtectedRoute><PageTransition><Plan /></PageTransition></ProtectedRoute>} />
       <Route path="/google-calendar" element={<ProtectedRoute><PageTransition><GoogleCalendarSettings /></PageTransition></ProtectedRoute>} />
       <Route path="/anamnese" element={<ProtectedRoute><PageTransition><AnamnesisTemplates /></PageTransition></ProtectedRoute>} />
       <Route path="/fichas" element={<ProtectedRoute><PageTransition><ClientRecords /></PageTransition></ProtectedRoute>} />
       <Route path="/privacidade" element={<ProtectedRoute><PageTransition><PrivacyPolicySettings /></PageTransition></ProtectedRoute>} />
       <Route path="/logs" element={<ProtectedRoute><PageTransition><AuditLogs /></PageTransition></ProtectedRoute>} />
+      <Route path="/agente-ia" element={<ProtectedRoute><PageTransition><WhatsAppAgent /></PageTransition></ProtectedRoute>} />
       <Route path="/atendimentos" element={<ProtectedRoute><PageTransition><Atendimentos /></PageTransition></ProtectedRoute>} />
+      <Route path="/consumo-tokens" element={<ProtectedRoute><PageTransition><TokenUsage /></PageTransition></ProtectedRoute>} />
+      <Route path="/mensagens-massa" element={<ProtectedRoute><PageTransition><MassMessages /></PageTransition></ProtectedRoute>} />
+      <Route path="/automacoes" element={<ProtectedRoute><PageTransition><Automations /></PageTransition></ProtectedRoute>} />
+      <Route path="/tags" element={<ProtectedRoute><PageTransition><ContactTags /></PageTransition></ProtectedRoute>} />
+      <Route path="/chat" element={<ProtectedRoute><PageTransition><Chat /></PageTransition></ProtectedRoute>} />
       
       {/* Super admin routes */}
       <Route path="/admin" element={<AdminRoute><PageTransition><AdminDashboard /></PageTransition></AdminRoute>} />
@@ -135,6 +154,8 @@ function AnimatedRoutes() {
       <Route path="/admin/google-calendar" element={<AdminRoute><PageTransition><AdminGoogleCalendar /></PageTransition></AdminRoute>} />
       <Route path="/admin/plataforma" element={<AdminRoute><PageTransition><AdminPlatformSettings /></PageTransition></AdminRoute>} />
       <Route path="/admin/logs" element={<AdminRoute><PageTransition><AdminAuditLogs /></PageTransition></AdminRoute>} />
+      <Route path="/admin/tokens" element={<AdminRoute><PageTransition><AdminTokenUsage /></PageTransition></AdminRoute>} />
+      <Route path="/admin/prompts" element={<AdminRoute><PageTransition><AdminPromptTemplates /></PageTransition></AdminRoute>} />
       <Route path="/admin/planos" element={<AdminRoute><PageTransition><AdminPlans /></PageTransition></AdminRoute>} />
       
       <Route path="*" element={<PageTransition><NotFound /></PageTransition>} />

@@ -405,6 +405,123 @@ export type Database = {
           },
         ]
       }
+      automation_flows: {
+        Row: {
+          active: boolean
+          campaign_id: string | null
+          company_id: string
+          created_at: string
+          description: string | null
+          edges: Json
+          id: string
+          name: string
+          nodes: Json
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          campaign_id?: string | null
+          company_id: string
+          created_at?: string
+          description?: string | null
+          edges?: Json
+          id?: string
+          name: string
+          nodes?: Json
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          campaign_id?: string | null
+          company_id?: string
+          created_at?: string
+          description?: string | null
+          edges?: Json
+          id?: string
+          name?: string
+          nodes?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_flows_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "mass_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_flows_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      automation_logs: {
+        Row: {
+          action_result: Json | null
+          action_type: string
+          company_id: string
+          contact_name: string | null
+          contact_phone: string
+          created_at: string
+          error_message: string | null
+          flow_id: string
+          id: string
+          node_id: string
+          status: string
+          trigger_type: string
+          trigger_value: string | null
+        }
+        Insert: {
+          action_result?: Json | null
+          action_type: string
+          company_id: string
+          contact_name?: string | null
+          contact_phone: string
+          created_at?: string
+          error_message?: string | null
+          flow_id: string
+          id?: string
+          node_id: string
+          status?: string
+          trigger_type: string
+          trigger_value?: string | null
+        }
+        Update: {
+          action_result?: Json | null
+          action_type?: string
+          company_id?: string
+          contact_name?: string | null
+          contact_phone?: string
+          created_at?: string
+          error_message?: string | null
+          flow_id?: string
+          id?: string
+          node_id?: string
+          status?: string
+          trigger_type?: string
+          trigger_value?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "automation_logs_flow_id_fkey"
+            columns: ["flow_id"]
+            isOneToOne: false
+            referencedRelation: "automation_flows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       business_hours: {
         Row: {
           close_time: string
@@ -677,6 +794,51 @@ export type Database = {
           },
         ]
       }
+      contact_tags: {
+        Row: {
+          company_id: string
+          created_at: string
+          flow_id: string | null
+          id: string
+          name: string | null
+          phone: string
+          tag: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          flow_id?: string | null
+          id?: string
+          name?: string | null
+          phone: string
+          tag: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          flow_id?: string | null
+          id?: string
+          name?: string | null
+          phone?: string
+          tag?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_tags_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_tags_flow_id_fkey"
+            columns: ["flow_id"]
+            isOneToOne: false
+            referencedRelation: "automation_flows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       google_calendar_tokens: {
         Row: {
           access_token: string
@@ -727,6 +889,460 @@ export type Database = {
             columns: ["staff_id"]
             isOneToOne: false
             referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      llm_model_pricing: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          input_cost_per_1k: number
+          model: string
+          output_cost_per_1k: number
+          provider: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          input_cost_per_1k?: number
+          model: string
+          output_cost_per_1k?: number
+          provider: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          input_cost_per_1k?: number
+          model?: string
+          output_cost_per_1k?: number
+          provider?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      llm_usage_limits: {
+        Row: {
+          alert_100_sent: boolean
+          alert_50_sent: boolean
+          alert_80_sent: boolean
+          company_id: string
+          created_at: string
+          current_month: string
+          id: string
+          monthly_token_limit: number
+          updated_at: string
+        }
+        Insert: {
+          alert_100_sent?: boolean
+          alert_50_sent?: boolean
+          alert_80_sent?: boolean
+          company_id: string
+          created_at?: string
+          current_month?: string
+          id?: string
+          monthly_token_limit?: number
+          updated_at?: string
+        }
+        Update: {
+          alert_100_sent?: boolean
+          alert_50_sent?: boolean
+          alert_80_sent?: boolean
+          company_id?: string
+          created_at?: string
+          current_month?: string
+          id?: string
+          monthly_token_limit?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "llm_usage_limits_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      llm_usage_logs: {
+        Row: {
+          company_id: string
+          conversation_id: string | null
+          cost_per_1k: number | null
+          created_at: string
+          id: string
+          input_tokens: number
+          model: string
+          output_tokens: number
+          provider: string
+          total_cost: number
+          total_tokens: number
+        }
+        Insert: {
+          company_id: string
+          conversation_id?: string | null
+          cost_per_1k?: number | null
+          created_at?: string
+          id?: string
+          input_tokens?: number
+          model: string
+          output_tokens?: number
+          provider: string
+          total_cost?: number
+          total_tokens?: number
+        }
+        Update: {
+          company_id?: string
+          conversation_id?: string | null
+          cost_per_1k?: number | null
+          created_at?: string
+          id?: string
+          input_tokens?: number
+          model?: string
+          output_tokens?: number
+          provider?: string
+          total_cost?: number
+          total_tokens?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "llm_usage_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "llm_usage_logs_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mass_campaign_contacts: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          error_message: string | null
+          id: string
+          name: string
+          phone: string
+          sent_at: string | null
+          status: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          name: string
+          phone: string
+          sent_at?: string | null
+          status?: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          name?: string
+          phone?: string
+          sent_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mass_campaign_contacts_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "mass_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mass_campaigns: {
+        Row: {
+          business_hours_only: boolean
+          buttons: Json | null
+          company_id: string
+          completed_at: string | null
+          created_at: string
+          created_by: string
+          daily_limit: number
+          daily_sent_count: number
+          delay_max: number
+          delay_min: number
+          delay_seconds: number
+          extra_messages: Json | null
+          failed_count: number
+          footer_text: string | null
+          id: string
+          instance_id: string | null
+          last_sent_date: string | null
+          list_sections: Json | null
+          media_files: Json | null
+          media_type: string | null
+          media_url: string | null
+          message_text: string
+          message_type: string
+          name: string
+          rotate_instances: boolean
+          scheduled_at: string | null
+          sent_count: number
+          started_at: string | null
+          status: string
+          total_contacts: number
+          updated_at: string
+        }
+        Insert: {
+          business_hours_only?: boolean
+          buttons?: Json | null
+          company_id: string
+          completed_at?: string | null
+          created_at?: string
+          created_by: string
+          daily_limit?: number
+          daily_sent_count?: number
+          delay_max?: number
+          delay_min?: number
+          delay_seconds?: number
+          extra_messages?: Json | null
+          failed_count?: number
+          footer_text?: string | null
+          id?: string
+          instance_id?: string | null
+          last_sent_date?: string | null
+          list_sections?: Json | null
+          media_files?: Json | null
+          media_type?: string | null
+          media_url?: string | null
+          message_text: string
+          message_type?: string
+          name: string
+          rotate_instances?: boolean
+          scheduled_at?: string | null
+          sent_count?: number
+          started_at?: string | null
+          status?: string
+          total_contacts?: number
+          updated_at?: string
+        }
+        Update: {
+          business_hours_only?: boolean
+          buttons?: Json | null
+          company_id?: string
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string
+          daily_limit?: number
+          daily_sent_count?: number
+          delay_max?: number
+          delay_min?: number
+          delay_seconds?: number
+          extra_messages?: Json | null
+          failed_count?: number
+          footer_text?: string | null
+          id?: string
+          instance_id?: string | null
+          last_sent_date?: string | null
+          list_sections?: Json | null
+          media_files?: Json | null
+          media_type?: string | null
+          media_url?: string | null
+          message_text?: string
+          message_type?: string
+          name?: string
+          rotate_instances?: boolean
+          scheduled_at?: string | null
+          sent_count?: number
+          started_at?: string | null
+          status?: string
+          total_contacts?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mass_campaigns_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mass_campaigns_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_instances"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mass_contact_lists: {
+        Row: {
+          company_id: string
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mass_contact_lists_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mass_contacts: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          list_id: string | null
+          name: string
+          notes: string | null
+          phone: string
+          tags: string[] | null
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          list_id?: string | null
+          name: string
+          notes?: string | null
+          phone: string
+          tags?: string[] | null
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          list_id?: string | null
+          name?: string
+          notes?: string | null
+          phone?: string
+          tags?: string[] | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mass_contacts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mass_contacts_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "mass_contact_lists"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      message_templates: {
+        Row: {
+          active: boolean
+          buttons: Json | null
+          company_id: string
+          created_at: string
+          id: string
+          send_notification: boolean
+          template: string
+          type: string
+        }
+        Insert: {
+          active?: boolean
+          buttons?: Json | null
+          company_id: string
+          created_at?: string
+          id?: string
+          send_notification?: boolean
+          template: string
+          type: string
+        }
+        Update: {
+          active?: boolean
+          buttons?: Json | null
+          company_id?: string
+          created_at?: string
+          id?: string
+          send_notification?: boolean
+          template?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_templates_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_rules: {
+        Row: {
+          active: boolean
+          company_id: string
+          created_at: string
+          id: string
+          minutes_before: number
+          type: string
+        }
+        Insert: {
+          active?: boolean
+          company_id: string
+          created_at?: string
+          id?: string
+          minutes_before?: number
+          type: string
+        }
+        Update: {
+          active?: boolean
+          company_id?: string
+          created_at?: string
+          id?: string
+          minutes_before?: number
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_rules_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
         ]
@@ -1322,6 +1938,609 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      whatsapp_agent_files: {
+        Row: {
+          active: boolean
+          company_id: string
+          created_at: string
+          description: string | null
+          file_name: string
+          file_type: string
+          file_url: string
+          id: string
+        }
+        Insert: {
+          active?: boolean
+          company_id: string
+          created_at?: string
+          description?: string | null
+          file_name: string
+          file_type?: string
+          file_url: string
+          id?: string
+        }
+        Update: {
+          active?: boolean
+          company_id?: string
+          created_at?: string
+          description?: string | null
+          file_name?: string
+          file_type?: string
+          file_url?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_agent_files_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_agent_logs: {
+        Row: {
+          action: string
+          company_id: string
+          conversation_id: string | null
+          created_at: string
+          details: Json | null
+          id: string
+        }
+        Insert: {
+          action: string
+          company_id: string
+          conversation_id?: string | null
+          created_at?: string
+          details?: Json | null
+          id?: string
+        }
+        Update: {
+          action?: string
+          company_id?: string
+          conversation_id?: string | null
+          created_at?: string
+          details?: Json | null
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_agent_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_agent_logs_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_agent_settings: {
+        Row: {
+          ai_model: string | null
+          auto_react_enabled: boolean | null
+          can_handle_anamnesis: boolean | null
+          can_read_media: boolean | null
+          can_send_audio: boolean | null
+          can_send_files: boolean | null
+          can_send_images: boolean | null
+          can_send_payment_link: boolean | null
+          can_send_pix: boolean | null
+          can_share_address: boolean | null
+          can_share_business_hours: boolean | null
+          can_share_phone: boolean | null
+          can_share_professionals: boolean | null
+          can_share_services: boolean | null
+          cancellation_policy_hours: number | null
+          collect_area: boolean | null
+          collect_client_email: boolean | null
+          collect_client_name: boolean | null
+          collect_client_phone: boolean | null
+          collect_company_name: boolean | null
+          collect_region: boolean | null
+          collect_segment: boolean | null
+          company_id: string
+          created_at: string
+          custom_business_info: string | null
+          custom_collect_fields: Json | null
+          custom_prompt: string | null
+          deduplicate_outgoing: boolean | null
+          elevenlabs_api_key: string | null
+          elevenlabs_voice_id: string | null
+          enabled: boolean
+          frequency_penalty: number | null
+          gemini_api_key: string | null
+          greeting_message: string | null
+          handoff_after_failures: number | null
+          id: string
+          ignore_groups: boolean | null
+          instance_id: string | null
+          max_reschedule_suggestions: number | null
+          max_tokens: number | null
+          media_vision_model: string | null
+          message_delay_enabled: boolean | null
+          message_delay_seconds: number | null
+          openai_api_key: string | null
+          payment_link_url: string | null
+          pix_instructions: string | null
+          pix_key: string | null
+          pix_name: string | null
+          pix_send_as_text: boolean | null
+          preferred_provider: string | null
+          presence_penalty: number | null
+          react_on_booking: string | null
+          react_on_cancel: string | null
+          react_on_confirm: string | null
+          react_on_greeting: string | null
+          react_on_thanks: string | null
+          reaction_triggers: Json | null
+          respond_audio_with_audio: boolean | null
+          temperature: number | null
+          timezone: string | null
+          top_p: number | null
+          updated_at: string
+        }
+        Insert: {
+          ai_model?: string | null
+          auto_react_enabled?: boolean | null
+          can_handle_anamnesis?: boolean | null
+          can_read_media?: boolean | null
+          can_send_audio?: boolean | null
+          can_send_files?: boolean | null
+          can_send_images?: boolean | null
+          can_send_payment_link?: boolean | null
+          can_send_pix?: boolean | null
+          can_share_address?: boolean | null
+          can_share_business_hours?: boolean | null
+          can_share_phone?: boolean | null
+          can_share_professionals?: boolean | null
+          can_share_services?: boolean | null
+          cancellation_policy_hours?: number | null
+          collect_area?: boolean | null
+          collect_client_email?: boolean | null
+          collect_client_name?: boolean | null
+          collect_client_phone?: boolean | null
+          collect_company_name?: boolean | null
+          collect_region?: boolean | null
+          collect_segment?: boolean | null
+          company_id: string
+          created_at?: string
+          custom_business_info?: string | null
+          custom_collect_fields?: Json | null
+          custom_prompt?: string | null
+          deduplicate_outgoing?: boolean | null
+          elevenlabs_api_key?: string | null
+          elevenlabs_voice_id?: string | null
+          enabled?: boolean
+          frequency_penalty?: number | null
+          gemini_api_key?: string | null
+          greeting_message?: string | null
+          handoff_after_failures?: number | null
+          id?: string
+          ignore_groups?: boolean | null
+          instance_id?: string | null
+          max_reschedule_suggestions?: number | null
+          max_tokens?: number | null
+          media_vision_model?: string | null
+          message_delay_enabled?: boolean | null
+          message_delay_seconds?: number | null
+          openai_api_key?: string | null
+          payment_link_url?: string | null
+          pix_instructions?: string | null
+          pix_key?: string | null
+          pix_name?: string | null
+          pix_send_as_text?: boolean | null
+          preferred_provider?: string | null
+          presence_penalty?: number | null
+          react_on_booking?: string | null
+          react_on_cancel?: string | null
+          react_on_confirm?: string | null
+          react_on_greeting?: string | null
+          react_on_thanks?: string | null
+          reaction_triggers?: Json | null
+          respond_audio_with_audio?: boolean | null
+          temperature?: number | null
+          timezone?: string | null
+          top_p?: number | null
+          updated_at?: string
+        }
+        Update: {
+          ai_model?: string | null
+          auto_react_enabled?: boolean | null
+          can_handle_anamnesis?: boolean | null
+          can_read_media?: boolean | null
+          can_send_audio?: boolean | null
+          can_send_files?: boolean | null
+          can_send_images?: boolean | null
+          can_send_payment_link?: boolean | null
+          can_send_pix?: boolean | null
+          can_share_address?: boolean | null
+          can_share_business_hours?: boolean | null
+          can_share_phone?: boolean | null
+          can_share_professionals?: boolean | null
+          can_share_services?: boolean | null
+          cancellation_policy_hours?: number | null
+          collect_area?: boolean | null
+          collect_client_email?: boolean | null
+          collect_client_name?: boolean | null
+          collect_client_phone?: boolean | null
+          collect_company_name?: boolean | null
+          collect_region?: boolean | null
+          collect_segment?: boolean | null
+          company_id?: string
+          created_at?: string
+          custom_business_info?: string | null
+          custom_collect_fields?: Json | null
+          custom_prompt?: string | null
+          deduplicate_outgoing?: boolean | null
+          elevenlabs_api_key?: string | null
+          elevenlabs_voice_id?: string | null
+          enabled?: boolean
+          frequency_penalty?: number | null
+          gemini_api_key?: string | null
+          greeting_message?: string | null
+          handoff_after_failures?: number | null
+          id?: string
+          ignore_groups?: boolean | null
+          instance_id?: string | null
+          max_reschedule_suggestions?: number | null
+          max_tokens?: number | null
+          media_vision_model?: string | null
+          message_delay_enabled?: boolean | null
+          message_delay_seconds?: number | null
+          openai_api_key?: string | null
+          payment_link_url?: string | null
+          pix_instructions?: string | null
+          pix_key?: string | null
+          pix_name?: string | null
+          pix_send_as_text?: boolean | null
+          preferred_provider?: string | null
+          presence_penalty?: number | null
+          react_on_booking?: string | null
+          react_on_cancel?: string | null
+          react_on_confirm?: string | null
+          react_on_greeting?: string | null
+          react_on_thanks?: string | null
+          reaction_triggers?: Json | null
+          respond_audio_with_audio?: boolean | null
+          temperature?: number | null
+          timezone?: string | null
+          top_p?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_agent_settings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_agent_settings_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_instances"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_conversations: {
+        Row: {
+          client_name: string | null
+          company_id: string
+          created_at: string
+          current_appointment_id: string | null
+          current_intent: string | null
+          handoff_requested: boolean | null
+          id: string
+          instance_id: string | null
+          last_message_at: string | null
+          phone: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          client_name?: string | null
+          company_id: string
+          created_at?: string
+          current_appointment_id?: string | null
+          current_intent?: string | null
+          handoff_requested?: boolean | null
+          id?: string
+          instance_id?: string | null
+          last_message_at?: string | null
+          phone: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          client_name?: string | null
+          company_id?: string
+          created_at?: string
+          current_appointment_id?: string | null
+          current_intent?: string | null
+          handoff_requested?: boolean | null
+          id?: string
+          instance_id?: string | null
+          last_message_at?: string | null
+          phone?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_conversations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_conversations_current_appointment_id_fkey"
+            columns: ["current_appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_conversations_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_instances"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_instances: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          instance_id: string | null
+          instance_name: string
+          is_primary: boolean
+          label: string | null
+          phone_number: string | null
+          status: string
+          token: string | null
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          instance_id?: string | null
+          instance_name: string
+          is_primary?: boolean
+          label?: string | null
+          phone_number?: string | null
+          status?: string
+          token?: string | null
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          instance_id?: string | null
+          instance_name?: string
+          is_primary?: boolean
+          label?: string | null
+          phone_number?: string | null
+          status?: string
+          token?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_instances_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_knowledge_base: {
+        Row: {
+          active: boolean
+          category: string
+          company_id: string
+          content: string
+          created_at: string
+          id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          category?: string
+          company_id: string
+          content: string
+          created_at?: string
+          id?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          category?: string
+          company_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_knowledge_base_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_logs: {
+        Row: {
+          appointment_id: string | null
+          company_id: string
+          created_at: string
+          error: string | null
+          id: string
+          payload: Json | null
+          phone: string
+          status: string
+          type: string
+        }
+        Insert: {
+          appointment_id?: string | null
+          company_id: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          payload?: Json | null
+          phone: string
+          status?: string
+          type: string
+        }
+        Update: {
+          appointment_id?: string | null
+          company_id?: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          payload?: Json | null
+          phone?: string
+          status?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_logs_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_messages: {
+        Row: {
+          company_id: string
+          content: string | null
+          conversation_id: string
+          created_at: string
+          delivery_status: string | null
+          direction: string
+          id: string
+          media_url: string | null
+          message_type: string
+          metadata: Json | null
+          wa_message_id: string | null
+        }
+        Insert: {
+          company_id: string
+          content?: string | null
+          conversation_id: string
+          created_at?: string
+          delivery_status?: string | null
+          direction?: string
+          id?: string
+          media_url?: string | null
+          message_type?: string
+          metadata?: Json | null
+          wa_message_id?: string | null
+        }
+        Update: {
+          company_id?: string
+          content?: string | null
+          conversation_id?: string
+          created_at?: string
+          delivery_status?: string | null
+          direction?: string
+          id?: string
+          media_url?: string | null
+          message_type?: string
+          metadata?: Json | null
+          wa_message_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_messages_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_settings: {
+        Row: {
+          active: boolean
+          admin_token: string | null
+          base_url: string | null
+          company_id: string
+          created_at: string
+          from_number: string | null
+          id: string
+          instance_id: string | null
+          token: string | null
+        }
+        Insert: {
+          active?: boolean
+          admin_token?: string | null
+          base_url?: string | null
+          company_id: string
+          created_at?: string
+          from_number?: string | null
+          id?: string
+          instance_id?: string | null
+          token?: string | null
+        }
+        Update: {
+          active?: boolean
+          admin_token?: string | null
+          base_url?: string | null
+          company_id?: string
+          created_at?: string
+          from_number?: string | null
+          id?: string
+          instance_id?: string | null
+          token?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_settings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
