@@ -677,6 +677,41 @@ export type Database = {
           },
         ]
       }
+      contact_tags: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          name: string | null
+          phone: string
+          tag: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          name?: string | null
+          phone: string
+          tag: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          name?: string | null
+          phone?: string
+          tag?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_tags_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       google_calendar_tokens: {
         Row: {
           access_token: string
@@ -727,6 +762,82 @@ export type Database = {
             columns: ["staff_id"]
             isOneToOne: false
             referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      message_templates: {
+        Row: {
+          buttons: Json | null
+          company_id: string
+          created_at: string
+          id: string
+          send_notification: boolean | null
+          template: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          buttons?: Json | null
+          company_id: string
+          created_at?: string
+          id?: string
+          send_notification?: boolean | null
+          template: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          buttons?: Json | null
+          company_id?: string
+          created_at?: string
+          id?: string
+          send_notification?: boolean | null
+          template?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_templates_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_rules: {
+        Row: {
+          active: boolean
+          company_id: string
+          created_at: string
+          id: string
+          minutes_before: number
+          type: string
+        }
+        Insert: {
+          active?: boolean
+          company_id: string
+          created_at?: string
+          id?: string
+          minutes_before?: number
+          type: string
+        }
+        Update: {
+          active?: boolean
+          company_id?: string
+          created_at?: string
+          id?: string
+          minutes_before?: number
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_rules_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
         ]
@@ -1322,6 +1433,103 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      whatsapp_instances: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          instance_id: string | null
+          instance_name: string
+          is_primary: boolean
+          label: string
+          phone_number: string | null
+          status: string
+          token: string | null
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          instance_id?: string | null
+          instance_name: string
+          is_primary?: boolean
+          label?: string
+          phone_number?: string | null
+          status?: string
+          token?: string | null
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          instance_id?: string | null
+          instance_name?: string
+          is_primary?: boolean
+          label?: string
+          phone_number?: string | null
+          status?: string
+          token?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_instances_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_settings: {
+        Row: {
+          active: boolean
+          admin_token: string | null
+          base_url: string | null
+          company_id: string
+          created_at: string
+          from_number: string | null
+          id: string
+          instance_id: string | null
+          token: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          admin_token?: string | null
+          base_url?: string | null
+          company_id: string
+          created_at?: string
+          from_number?: string | null
+          id?: string
+          instance_id?: string | null
+          token?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          admin_token?: string | null
+          base_url?: string | null
+          company_id?: string
+          created_at?: string
+          from_number?: string | null
+          id?: string
+          instance_id?: string | null
+          token?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_settings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
